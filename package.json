@@ -1,0 +1,12 @@
+{
+  "name": "ufi-mihomo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsdown",
+    "check": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": { "yaml": "^2.8.1" },
+  "devDependencies": { "@types/bun": "latest", "tsdown": "latest", "typescript": "^5.9.3" }
+}
