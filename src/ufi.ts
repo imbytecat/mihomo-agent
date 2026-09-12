@@ -1,4 +1,5 @@
 import { RELEASE_API, selectRelease } from './release';
+import { emptyState, parseState } from './state';
 
 declare const runShellWithRoot: (
   command: string, timeout?: number,
@@ -31,6 +32,18 @@ export async function shell(command: string, timeout = 30_000) {
 
 export const service = (action: string, timeout?: number) =>
   shell(`sh ${DIR}/service.sh ${quote(action)}`, timeout);
+
+export async function readDeviceState() {
+  return parseState(await shell(`
+    [ "$(id -u)" = 0 ] || { echo '请先开启 UFI 高级功能'; exit 1; }
+    [ ! -L ${DIR} ] || { echo '安装目录异常，已暂停操作'; exit 1; }
+    if [ -f ${DIR}/service.sh ] && [ -f ${DIR}/network.sh ]; then
+      exec sh ${DIR}/service.sh inspect
+    fi
+    [ ! -e ${DIR} ] || { echo '安装文件不完整，已暂停操作，请检查设备安装目录'; exit 1; }
+    printf '%s' ${quote(JSON.stringify(emptyState))}
+  `));
+}
 
 export async function installOfficial(progress: (message: string) => void) {
   progress('正在查询官方最新稳定版…');

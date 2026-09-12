@@ -8,6 +8,9 @@ export PATH="/system/bin:/system/xbin:/vendor/bin:$PATH"
 . "$DIR/network.sh"
 
 fail() { echo "$*" >&2; exit 1; }
+disable_boot() {
+  [ ! -f "$BOOT" ] || sed -i '/^sh \/data\/ufi-mihomo\/service\.sh start # ufi-mihomo$/d' "$BOOT"
+}
 alive() {
   [ -f "$DIR/$1.pid" ] || return 1
   pid=$(cat "$DIR/$1.pid")
@@ -40,10 +43,6 @@ start_service() {
   alive supervisor && return 0
   [ -x "$DIR/mihomo" ] && [ -s "$DIR/config.yaml" ] || return 1
   resolve_interfaces >/dev/null || { echo '无法识别共享网络，请查看诊断信息' >&2; return 1; }
-  if pgrep -f '/data/clash/.*(Clash|clash)' >/dev/null 2>&1; then
-    echo '旧猫猫服务仍在运行，请先在旧插件停止并关闭自启' >&2
-    return 1
-  fi
   timeout 30 "$DIR/mihomo" -t -d "$DIR" -f "$DIR/config.yaml" >> "$DIR/service.log" 2>&1 || return 1
   # A SIGKILL of the supervisor may have left an orphaned core.
   network_stop || return 1
@@ -73,6 +72,21 @@ start_service() {
 }
 
 case "${1:-status}" in
+  inspect)
+    flag() { if "$@" >/dev/null 2>&1; then printf true; else printf false; fi; }
+    core_running=false; alive core && core_running=true
+    supervisor_running=false; alive supervisor && supervisor_running=true
+    running=false; [ "$core_running" = false ] && [ "$supervisor_running" = false ] || running=true
+    owner=$(cat "$DIR/lock/pid" 2>/dev/null)
+    locked=false
+    case "$owner" in ''|*[!0-9]*) ;; *) [ "$owner" -le 1 ] || { kill -0 "$owner" 2>/dev/null && locked=true; };; esac
+    capture=false; [ ! -f "$DIR/network.active" ] && [ ! -f "$DIR/network.pending" ] || capture=true
+    printf '{"service":true,"core":%s,"config":%s,"subscription":%s,"running":%s,"supervisor":%s,"listeners":%s,"network":%s,"boot":%s,"locked":%s,"capture":%s}\n' \
+      "$(flag test -x "$DIR/mihomo")" "$(flag test -s "$DIR/config.yaml")" \
+      "$(flag test -s "$DIR/subscription.curl")" "$running" "$supervisor_running" \
+      "$(flag listeners_ready)" "$(flag network_ok)" \
+      "$(flag grep -qxF "sh $DIR/service.sh start # ufi-mihomo" "$BOOT")" "$locked" "$capture"
+    exit 0;;
   supervise)
     trap 'network_stop && kill_owned core; exit 0' TERM INT
     trap '' HUP
@@ -174,9 +188,8 @@ case "$1" in
     fi
     echo '配置已更新'
     ;;
-  core|import-zip|install-official)
-    alive supervisor && fail '更新核心前请先停止服务'
-    if [ "$1" = install-official ]; then
+  install-official)
+    { alive supervisor || alive core; } && fail '更新核心前请先停止服务'
       # The UI resolves latest once; download and digest must refer to that same release.
       version=$(sed -n '1p' "$DIR/core-release")
       abi=$(sed -n '2p' "$DIR/core-release")
@@ -187,7 +200,7 @@ case "$1" in
       case "$abi" in
         arm64-v8a) arch=arm64-v8;;
         armeabi-v7a|armeabi) arch=armv7;;
-        *) fail '官方安装支持 Android ARM64 / ARMv7，请为其他架构手动上传核心';;
+        *) fail '不支持此设备架构，目前仅支持 Android ARM64 / ARMv7';;
       esac
       asset="https://github.com/MetaCubeX/mihomo/releases/download/$version/mihomo-android-$arch-$version.gz"
       mirror=$(cat "$DIR/core-mirror" 2>/dev/null)
@@ -199,30 +212,29 @@ case "$1" in
       [ "${actual%% *}" = "$checksum" ] || fail '核心 SHA-256 不匹配，拒绝执行'
       gzip -dc "$DIR/mihomo.gz.next" > "$DIR/mihomo.next" || fail '核心解压失败'
       rm -f "$DIR/mihomo.gz.next"
-    fi
-    if [ "$1" = import-zip ]; then
-      unzip -p "$DIR/bundle.zip" Proxy/Clash.Core > "$DIR/mihomo.next" || fail 'ZIP 中缺少 Proxy/Clash.Core'
-    fi
     chmod 700 "$DIR/mihomo.next" || exit 1
     "$DIR/mihomo.next" -v || fail '核心不能在本机执行，请检查架构'
     if [ -f "$DIR/config.yaml" ]; then
       timeout 30 "$DIR/mihomo.next" -t -d "$DIR" -f "$DIR/config.yaml" >> "$DIR/service.log" 2>&1 || fail '新核心无法加载当前配置'
     fi
     mv "$DIR/mihomo.next" "$DIR/mihomo" || exit 1
-    if [ "$1" = import-zip ]; then
-      for geo in GeoIP GeoSite; do
-        lower=$(echo "$geo" | tr '[:upper:]' '[:lower:]')
-        if [ ! -f "$DIR/$lower.dat" ]; then
-          unzip -p "$DIR/bundle.zip" "Proxy/$geo.dat" > "$DIR/$lower.dat.next" && mv "$DIR/$lower.dat.next" "$DIR/$lower.dat"
-        fi
-      done
-      rm -f "$DIR/bundle.zip"
-    fi
     ;;
   boot-on)
+    [ -x "$DIR/mihomo" ] && [ -s "$DIR/config.yaml" ] || fail '请先安装核心并更新订阅，再开启自启'
     touch "$BOOT" || exit 1
     grep -qxF "sh $DIR/service.sh start # ufi-mihomo" "$BOOT" || printf '\nsh %s/service.sh start # ufi-mihomo\n' "$DIR" >> "$BOOT"
     ;;
-  boot-off) [ ! -f "$BOOT" ] || sed -i '/^sh \/data\/ufi-mihomo\/service\.sh start # ufi-mihomo$/d' "$BOOT";;
+  boot-off) disable_boot;;
+  uninstall)
+    [ -d "$DIR" ] && [ ! -L "$DIR" ] || fail '安装目录异常，未卸载'
+    stop_service || fail '停止或规则清理失败，文件未移除'
+    disable_boot || fail '关闭自启失败，文件未移除'
+    backup="$DIR.uninstalled-$(date +%Y%m%d-%H%M%S)-$$"
+    [ ! -e "$backup" ] || fail '备份目录已存在，未移除文件'
+    mv "$DIR" "$backup" || fail '备份安装目录失败'
+    trap 'rm -f "$backup/lock/pid"; rmdir "$backup/lock"' EXIT
+    echo "服务已卸载，开机自启和接管规则已清理。文件备份：$backup"
+    echo '如不再使用，请在 UFI 插件管理中删除本插件界面。'
+    ;;
   *) fail '未知操作';;
 esac

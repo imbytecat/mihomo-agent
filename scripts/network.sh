@@ -94,7 +94,7 @@ network_stop() {
   done
   while ip -4 rule del priority "$PRIORITY" fwmark "$MARK/$MARK" table "$TABLE" >/dev/null 2>&1; do :; done
   ip -4 route del local 0.0.0.0/0 dev lo table "$TABLE" >/dev/null 2>&1
-  rm -f "$DIR/network.active" "$DIR/network.pending" "$DIR/interfaces.active"
+  rm -f "$DIR/network.active" "$DIR/network.pending"
   return 0
 }
 
@@ -139,7 +139,7 @@ switch_slot() {
     case "$entries" in
       0) "$1" -t "$2" -A "$4" -j "${4}_$slot" || return 1;;
       1) "$1" -t "$2" -R "$4" 1 -j "${4}_$slot" || return 1;;
-      *) echo '旧版本规则仍在，请先停止服务再更新' >&2; return 1;;
+      *) echo '入口链状态异常，请停止服务后重试' >&2; return 1;;
     esac
     "$1" -t "$2" -C "$3" -j "$4" >/dev/null 2>&1 || "$1" -t "$2" -I "$3" 1 -j "$4" || return 1
   done

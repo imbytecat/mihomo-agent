@@ -17,8 +17,7 @@
 #ufi-mihomo *, #ufi-mihomo *::before, #ufi-mihomo *::after { box-sizing: border-box; }
 #ufi-mihomo summary { cursor: pointer; list-style: none; }
 #ufi-mihomo summary::-webkit-details-marker { display: none; }
-#ufi-mihomo summary::after { content: '+'; margin-left: auto; opacity: .6; font-size: 18px; }
-#ufi-mihomo details[open] > summary::after, #ufi-mihomo[open] > summary::after { content: '−'; }
+#ufi-mihomo details[open] > summary [data-chevron], #ufi-mihomo[open] > summary [data-chevron] { transform: rotate(180deg); }
 #ufi-mihomo button {
   margin: 0;
   padding: 10px 14px;
@@ -36,8 +35,12 @@
 #ufi-mihomo button:hover { background: #64748b35; }
 #ufi-mihomo button[data-primary] { background: #0d9488; color: white; border-color: #0d9488; }
 #ufi-mihomo button[data-primary]:hover { background: #0f766e; }
-#ufi-mihomo button:disabled, #ufi-mihomo input:disabled { opacity: .45; cursor: wait; }
-#ufi-mihomo input:not([type=file]) {
+#ufi-mihomo button:disabled, #ufi-mihomo input:disabled { opacity: .4; cursor: not-allowed; }
+#ufi-mihomo[aria-busy=true] button:disabled, #ufi-mihomo[aria-busy=true] input:disabled { cursor: wait; }
+#ufi-mihomo button[data-danger] { color: #fda4af; border-color: #f43f5e66; background: #f43f5e12; }
+#ufi-mihomo dialog { position: fixed; width: min(440px, 90vw); padding: 22px; border: 1px solid #64748b66; border-radius: 16px; background: #0f172a; color: #e2e8f0; font: inherit; }
+#ufi-mihomo dialog::backdrop { background: #020617aa; }
+#ufi-mihomo input:is([type=text], [type=password], [type=url]) {
   display: block;
   width: 100%;
   margin-top: 8px;
@@ -50,6 +53,11 @@
   font-size: 16px;
   min-width: 0;
 }
+#ufi-mihomo input[role=switch] { appearance: none; -webkit-appearance: none; flex-shrink: 0; width: 42px; height: 24px; margin: 0; padding: 3px; border: 0; border-radius: 99px; background: #64748b66; cursor: pointer; }
+#ufi-mihomo input[role=switch]::before { content: ''; display: block; width: 18px; height: 18px; border-radius: 50%; background: #e2e8f0; }
+#ufi-mihomo input[role=switch]:checked { background: #0d9488; }
+#ufi-mihomo input[role=switch]:checked::before { transform: translateX(18px); }
+#ufi-mihomo input[role=switch]:disabled { cursor: not-allowed; }
 #ufi-mihomo :is(button, input, summary):focus-visible { outline: 2px solid #2dd4bf; outline-offset: 3px; }
 #ufi-mihomo [data-output][data-error=true] { color: #fb7185; }
 #ufi-mihomo [data-dot] { background: #94a3b8; }

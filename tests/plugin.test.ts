@@ -1,11 +1,12 @@
 import { afterEach, expect, test } from 'bun:test';
-import { mkdtemp, readFile, rm, writeFile, chmod, mkdir, symlink } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile, chmod, mkdir, symlink, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 import { adaptConfig, curlConfig, downloadMirror, interfaces } from '../src/config';
 import { quote, shellCommand, shellResult } from '../src/ufi';
 import { selectRelease } from '../src/release';
+import { disabledReason, emptyState, lifecycleAction, nextStep, parseState } from '../src/state';
 
 const temporary: string[] = [];
 afterEach(async () => { for (const dir of temporary.splice(0)) await rm(dir, { recursive: true, force: true }); });
@@ -141,6 +142,9 @@ test('built plugin is one classic script with HTML-safe boundaries', async () =>
   expect(output.trimEnd().endsWith('//</script>')).toBe(true);
   expect(output.match(/<\/script\s*>/gi)?.length).toBe(1);
   expect(output.length).toBeLessThan(5 * 1024 * 1024);
+  expect(await readdir('dist')).toEqual(['ufi-mihomo.js']);
+  expect(output).not.toContain('mockDeviceState');
+  expect(output).not.toContain('react_dom_client');
   expect(() => new Function(output)).not.toThrow();
 });
 
@@ -305,4 +309,95 @@ test('recycled core PID is not considered owned', async () => {
   await rm(join(dir, 'proc/123/exe'));
   await symlink(`${dir}/mihomo`, join(dir, 'proc/123/exe'));
   expect(await run()).toBe(0);
+});
+
+test('UI gates actions by real prerequisites and keeps recovery actions accessible', () => {
+  expect(disabledReason('install', null)).not.toBe('');
+  expect(disabledReason('refresh', null)).toBe('');
+  expect(disabledReason('install', emptyState)).toBe('');
+  expect(disabledReason('uninstall', emptyState)).not.toBe('');
+  const installed = { ...emptyState, service: true };
+  expect(lifecycleAction(null)).toBe(null);
+  expect(lifecycleAction(emptyState)).toBe('install');
+  expect(lifecycleAction(installed)).toBe('uninstall');
+  expect(disabledReason('install', installed)).toContain('已安装');
+  expect(disabledReason('service-update', installed)).toBe('');
+  expect(disabledReason('uninstall', null)).not.toBe('');
+  expect(disabledReason('uninstall', installed, true)).not.toBe('');
+  for (const action of ['start', 'restart', 'update', 'boot-on'] as const) expect(disabledReason(action, installed)).not.toBe('');
+  expect(disabledReason('download', installed)).toBe('');
+  expect(disabledReason('save', installed)).toBe('');
+  expect(nextStep(installed)).toContain('核心');
+  const ready = { ...installed, core: true, config: true, subscription: true };
+  expect(disabledReason('start', ready)).toBe('');
+  expect(disabledReason('update', ready, false, 'https://new.example')).toContain('保存');
+  expect(disabledReason('update', ready, false, '')).toBe('');
+  expect(disabledReason('start', { ...ready, running: true })).not.toBe('');
+  expect(disabledReason('download', { ...ready, running: true })).not.toBe('');
+  expect(disabledReason('stop', { ...ready, running: true })).toBe('');
+  expect(disabledReason('boot-off', { ...installed, boot: true })).toBe('');
+  expect(disabledReason('uninstall', { ...ready, locked: true })).not.toBe('');
+  expect(disabledReason('logs', { ...ready, locked: true })).toBe('');
+  expect(() => parseState('{"service":true}')).toThrow();
+  expect(parseState(JSON.stringify(ready))).toEqual(ready);
+});
+
+test('uninstall backs up only its installation and preserves files when stop fails', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ufi-mihomo-uninstall-'));
+  temporary.push(root);
+  const dir = join(root, 'installation');
+  const boot = join(root, 'boot.sh');
+  await mkdir(dir);
+  await writeFile(join(dir, 'network.sh'), '');
+  await writeFile(join(dir, 'config.yaml'), 'private config');
+  await writeFile(join(root, 'other-plugin'), 'keep me');
+  const original = (await readFile('scripts/service.sh', 'utf8'))
+    .replace('DIR=/data/ufi-mihomo', `DIR=${quote(dir)}`)
+    .replace('BOOT=/sdcard/ufi_tools_boot.sh', `BOOT=${quote(boot)}`);
+  await writeFile(boot, 'other-plugin start\nsh /data/ufi-mihomo/service.sh start # ufi-mihomo\n');
+  const run = async (stopSucceeds: boolean) => {
+    await writeFile(join(dir, 'service.sh'), original.replace('case "${1:-status}" in',
+      `stop_service() { return ${stopSucceeds ? 0 : 1}; }
+sed() {
+  if [ "$1" = -i ]; then command sed "$2" "$3" > "$3.next" && mv "$3.next" "$3";
+  else command sed "$@"; fi
+}
+case "\${1:-status}" in`));
+    const proc = Bun.spawn(['sh', join(dir, 'service.sh'), 'uninstall'], { stdout: 'pipe', stderr: 'pipe' });
+    return { code: await proc.exited, output: await new Response(proc.stdout).text() + await new Response(proc.stderr).text() };
+  };
+  expect((await run(false)).code).toBe(1);
+  expect(await readFile(join(dir, 'config.yaml'), 'utf8')).toBe('private config');
+  const result = await run(true);
+  expect(result).toMatchObject({ code: 0 });
+  expect(result.output).toContain('服务已卸载');
+  const backup = (await readdir(root)).find(name => name.startsWith('installation.uninstalled-'))!;
+  expect(backup).toBeDefined();
+  expect(await readFile(join(root, backup, 'config.yaml'), 'utf8')).toBe('private config');
+  expect(await readFile(join(root, 'other-plugin'), 'utf8')).toBe('keep me');
+  expect(await readFile(boot, 'utf8')).toBe('other-plugin start\n');
+  expect(await Bun.file(join(dir, 'service.sh')).exists()).toBe(false);
+  expect(await Bun.file(join(root, backup, 'lock/pid')).exists()).toBe(false);
+});
+
+test('device inspection reports installation prerequisites as booleans', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ufi-mihomo-inspect-'));
+  temporary.push(dir);
+  const source = (await readFile('scripts/service.sh', 'utf8'))
+    .replace('DIR=/data/ufi-mihomo', `DIR=${quote(dir)}`)
+    .replace('BOOT=/sdcard/ufi_tools_boot.sh', `BOOT=${quote(join(dir, 'boot'))}`);
+  await writeFile(join(dir, 'service.sh'), source);
+  await writeFile(join(dir, 'network.sh'), '');
+  const run = async () => {
+    const proc = Bun.spawn(['sh', join(dir, 'service.sh'), 'inspect'], { stdout: 'pipe' });
+    const state = parseState(await new Response(proc.stdout).text());
+    expect(await proc.exited).toBe(0);
+    return state;
+  };
+  expect(await run()).toMatchObject({ service: true, core: false, config: false, running: false, locked: false });
+  await writeFile(join(dir, 'mihomo'), '#!/bin/sh\nexit 0\n');
+  await chmod(join(dir, 'mihomo'), 0o700);
+  await writeFile(join(dir, 'config.yaml'), 'rules: []');
+  await writeFile(join(dir, 'subscription.curl'), 'url = "https://example.com"');
+  expect(await run()).toMatchObject({ core: true, config: true, subscription: true, listeners: false, network: false });
 });

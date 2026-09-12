@@ -1,5 +1,5 @@
 module.exports = {
-  content: ['./src/index.ts'],
+  content: { relative: true, files: ['./src/**/*.{ts,tsx}'] },
   prefix: 'ufi-',
   important: '#ufi-mihomo',
   corePlugins: { preflight: false },

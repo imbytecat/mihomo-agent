@@ -1,25 +1,37 @@
 # UFI Mihomo
 
-中兴 F50 / UFI-TOOLS 完整版的单订阅代理网关插件。Bun + TypeScript 开发，tsdown 生成一个可导入的 JS；设备运行 mihomo 与 Android Shell，不需要 Bun/Node。
+中兴 F50 / UFI-TOOLS 完整版的单订阅代理网关插件。Bun + React + TypeScript 开发，Vite 库模式生成一个可导入的 JS；设备运行 mihomo 与 Android Shell，不需要 Bun/Node。
 
 ## 使用
 
 ```sh
 bun install --frozen-lockfile
+bun run dev
+```
+
+开发预览为 `http://127.0.0.1:5173/`，支持 React 热更新。它使用模拟 UFI 接口，不执行设备命令。可用 `?state=missing-core`、`missing-config`、`ready`、`running`、`locked` 切换初始状态；默认未安装服务。
+
+```sh
 bun run check
 bun run build
 bun test
 ```
 
-1. 在旧猫猫插件停止服务、关闭自启。确认旧进程和网络规则已清理，再停用旧插件界面。
+1. 停用其他透明代理服务与自启，避免网络规则冲突。
 2. UFI 开启高级功能，在插件管理导入 `dist/ufi-mihomo.js`，提交保存并刷新页面。
-3. 展开「Mihomo 网关」，点击「安装 / 更新服务」。安装不会自动接管网络。
-4. 点击「安装最新官方核心」：查询 MetaCubeX/mihomo 最新稳定版，按设备 ABI 下载 Android ARM64/ARMv7 核心，验证该版本 SHA-256 后解压、检查版本再安装。版本查询完成并启动后台下载后，关闭网页不会中断安装；失败保留原核心。其他架构请手动导入对应 ELF。
+3. 展开「Mihomo 网关」，在「服务管理」点击「安装服务」。同一个按钮在安装后变为「卸载服务」；核心是否已下载单独显示，不用核心缺失推断服务未安装。
+4. 点击「安装最新官方核心」：查询 MetaCubeX/mihomo 最新稳定版，按设备 ABI 下载 Android ARM64/ARMv7 核心，验证该版本 SHA-256 后解压、检查版本再安装。版本查询完成并启动后台下载后，关闭网页不会中断安装；失败保留原核心。目前仅支持这两种设备架构。
 5. 默认自动识别热点 / USB 共享入口，无需找接口名。旧版本已保存的手动接口会保留；想切回自动，可在「高级设置」清空共享入口并保存。
 6. 填写返回完整 mihomo YAML 的订阅链接，「保存设置」→「更新订阅」→「启动」。服务运行中更新订阅会重启；停止状态更新只保存。
-7. 实测 Wi-Fi / USB 客户端 DNS、TCP、UDP 正常后，点击「开启自启」。关闭网页不影响运行。
+7. 实测 Wi-Fi / USB 客户端 DNS、TCP、UDP 正常后，在主面板打开「开机自启」开关。开关直接显示开启/关闭状态；缺少核心或配置时不能开启。关闭网页不影响运行。
 
-更新插件 JS 后，再点「安装 / 更新服务」才能更新设备脚本；此操作先停止服务，完成后需手动启动。删除/停用 UFI 页面插件不会停止设备服务：先点「关闭自启」「停止」。设备数据保留在 `/data/ufi-mihomo/`，不自动删除配置。
+更新插件 JS 后，停止服务，再到「高级设置」点「更新服务文件」，完成后需手动启动。服务更新与安装/卸载是独立动作。前端与服务脚本需使用同一版本；不提供旧版协议兼容、旧核心复用、ZIP 导入或第三方插件迁移。
+
+界面按服务、核心、配置、订阅、进程、自启和设备锁状态控制操作。缺核心时禁用启动、重启、订阅更新和开启自启；缺配置时引导更新订阅；运行时禁止替换核心和修改设置。操作失败后重新读取状态，不会将所有按钮一律启用。状态未知时只保留刷新和诊断，每次修改操作前也会重新检查状态。
+
+安装/卸载按钮在检测中或失败时显示「检测中 / 状态未知」并禁用，不将异常当作未安装。仅安装目录不存在时判定未安装；目录存在但脚本缺失、目录为符号链接、状态查询失败时暂停修改操作。点击安装前再次查询，若服务已被其他操作安装则中止，不隐式改做更新或卸载。
+
+「卸载服务」需确认：停止服务、清理本插件规则并关闭自启后，把 `/data/ufi-mihomo/` 移到 `/data/ufi-mihomo.uninstalled-<时间>-<PID>`，保留核心、配置、订阅和日志备份。停止或清理失败就中止，文件不移除。备份可手动移回原目录恢复；不再需要时自行清理备份目录。卸载不会删除旧猫猫的数据，也不会自动删除 UFI 中保存的插件界面；如不再使用，请在 UFI 插件管理中移除界面。直接停用/删除页面插件不会停止后台代理。
 
 ## 官方来源与国内下载
 
@@ -28,6 +40,8 @@ bun test
 管理浏览器需能访问 `api.github.com`；核心下载镜像只代理设备的 Release 文件下载，不代理版本查询。API 限流或不可达时会明确报错，不静默退回旧版本或跳过校验。
 
 GitHub 直连困难时，可填写自己管理的 Cloudflare Worker 或可信下载代理前缀。假设前缀为 `https://download.example/`，实际请求为：
+
+镜像地址可在安装服务前填写，只有操作执行期间暂时禁用编辑。「保存设置」或下载核心时会保存到设备，再次打开页面会读取；下载按钮单独检查服务安装和运行状态。
 
 ```text
 https://download.example/https://github.com/MetaCubeX/mihomo/releases/download/<版本>/mihomo-android-arm64-v8-<版本>.gz
@@ -47,7 +61,7 @@ geox-url:
 
 这些 Geo 链接跟随上游 `release` 分支，不使用核心安装时的 Release 摘要校验；具体网络可达性需在 F50 验证。不使用 Geo 规则就不需要这些数据。
 
-可选迁移入口仍保留：「导入核心 / ZIP」支持旧 `mihomo-tproxy.zip`，只提取核心与 Geo 数据；「复用旧核心」复制旧设备核心。手动导入不具备官方下载的 Release 摘要校验，仅执行架构/配置检查，应只使用信任的文件。
+核心只从官方 Release 下载，可选择下载镜像；没有手动导入或旧插件复用入口。订阅与规则全部由你自己的完整 YAML 提供。
 
 ## 配置边界
 
@@ -107,13 +121,15 @@ sh /data/ufi-mihomo/service.sh stop
 
 ## 验证
 
-`bun run check`、`bun run build`、`bun test`；Shell 静态检查：`shellcheck -x -s sh scripts/service.sh scripts/network.sh`。测试覆盖配置保留、命令注入边界、配置和规则切换回滚、路由冲突、监听 socket 归属、PID 复用、日志脱敏、自动接口识别、核心摘要拒绝与产物包装。
+`bun run check`、`bun run build`、`bun test`；Shell 静态检查：`shellcheck -x -s sh scripts/service.sh scripts/network.sh`。测试覆盖配置保留、命令注入边界、配置和规则切换回滚、路由冲突、监听 socket 归属、PID 复用、日志脱敏、自动接口识别、核心摘要拒绝、按钮权限、卸载备份与产物包装。
 
 `bun tests/preview.ts` 在 `127.0.0.1:3007` 启动模拟 UFI 页面，用真实 DOMParser 加载构建产物，所有设备命令均为模拟，不执行本机 Shell。可用于浏览器检查导入、设置与更新流程，不能替代 F50 联网验收。
 
 ## 界面与运行层
 
-使用 Tailwind CSS 3 构建手机卡片界面；关闭 preflight，类名加 `ufi-` 前缀，并将选择器限定在 `#ufi-mihomo`。生成的 CSS 随 JS 一起嵌入，不运行时加载 CDN 样式。日常操作、安装更新、高级选项分组；当前使用原生 DOM，没有 React 运行时。React 可以打进同一产物，出现复杂组件交互时再引入。
+使用 React 管理设备状态、按钮权限和表单，Lucide React 提供按需导入的图标，Tailwind CSS 3 构建手机卡片界面。关闭 preflight，类名加 `ufi-` 前缀，并将选择器限定在 `#ufi-mihomo`。日常操作、安装更新、高级选项和卸载分区。
+
+Vite 用于 React 开发热更新与生产打包；生产为 IIFE，React、图标、CSS 和设备 Shell 脚本全部嵌入 `dist/ufi-mihomo.js`，不会依赖额外 JS/CSS 文件或 CDN。开发模拟器不会进入生产插件。最终仍通过 UFI 的 `<script>` 包装加载，不能把普通 Vite SPA 的 `index.html` 直接当作插件上传。
 
 设备侧的启停、下载、保活和网络规则由 Shell 实现，不依赖 clashctl。Go 更适合复杂状态管理、多固件适配和网络事件监听；目前单设备需求沿用 Shell。两者均只管理核心，不承担代理数据流，改用 Go 本身不会提升 mihomo 吞吐。TUN 的 `auto-detect-interface` 主要识别出口，不等于替插件判断 TProxy 应接管哪些共享入口；TProxy 与 TUN 的实际性能需在设备上测量。
 
