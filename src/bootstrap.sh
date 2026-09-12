@@ -1,0 +1,61 @@
+#!/system/bin/sh
+# Only provisions the native binary. All device mutations after that use Go/flock.
+set -u
+BASE=/data/ufi-mihomo-bootstrap
+CURL=/data/data/com.minikano.f50_sms/files/curl
+umask 077
+mode=$1
+id=$2
+case "$id" in ''|*[!a-f0-9]*) exit 1;; esac
+[ "${#id}" = 32 ] || exit 1
+job="$BASE/jobs/$id"
+state() {
+  printf '{"id":"%s","action":"bootstrap","state":"%s","phase":"%s","updated":"%s","hash":"","result":"","error":""}\n' "$id" "$1" "$2" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$job/state.next"
+  mv "$job/state.next" "$job/state.json"
+}
+if [ "$mode" = status ]; then
+  pid=$(cat "$job/worker.pid" 2>/dev/null)
+  if grep -Eq '"state":"(queued|running)"' "$job/state.json" 2>/dev/null; then
+    case "$pid" in ''|*[!0-9]*) state interrupted interrupted;;
+      *) if ! kill -0 "$pid" 2>/dev/null || ! tr '\000' '\n' < "/proc/$pid/cmdline" | grep -qxF "$0"; then state interrupted interrupted; fi;;
+    esac
+  fi
+  cat "$job/state.json"
+  exit 0
+fi
+if [ "$mode" = submit ]; then
+  state queued preparing
+  printf '%s' "$id" > "$BASE/latest-$id"
+  mv "$BASE/latest-$id" "$BASE/latest"
+  shift 2
+  nohup sh "$0" worker "$id" "$@" </dev/null > "$job/log.txt" 2>&1 &
+  echo $! > "$job/worker.pid"
+  cat "$job/state.json"
+  exit 0
+fi
+[ "$mode" = worker ] || exit 1
+cleanup() {
+  code=$?
+  if [ "$code" != 0 ]; then state failed failed; fi
+  rm -f "$job/agent"
+}
+trap cleanup EXIT
+trap '' HUP
+state running download
+mirror=$3
+case "$mirror" in '') ;; https://*) ;; *) echo '无效镜像'; exit 1;; esac
+case "$(getprop ro.product.cpu.abi)" in
+  arm64-v8a) address=$4; digest=$5;;
+  armeabi-v7a|armeabi) address=$6; digest=$7;;
+  *) echo '不支持的设备架构'; exit 1;;
+esac
+[ -x "$CURL" ] || { echo 'UFI 缺少 curl，请更新 UFI'; exit 1; }
+[ -z "$mirror" ] || address="${mirror%/}/$address"
+"$CURL" -q -fL --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 300 --max-filesize 33554432 "$address" -o "$job/agent" || exit 1
+state running verify
+actual=$(sha256sum "$job/agent") || exit 1
+[ "${actual%% *}" = "$digest" ] || { echo '后端文件校验失败'; exit 1; }
+chmod 700 "$job/agent" || exit 1
+state running installing
+"$job/agent" install --mirror "$mirror" || exit 1
+state succeeded "done"

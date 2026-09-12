@@ -2,11 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import PQueue from 'p-queue';
 import { toast } from 'sonner';
-import { adaptConfig, curlConfig, downloadMirror, interfaces } from './config';
-import { DIR, installOfficial, readDeviceState, readDownload, service, shell, upload } from './ufi';
-import { disabledReason, type Action, type DeviceState } from './state';
-import serviceScript from '../scripts/service.sh?raw';
-import networkScript from '../scripts/network.sh?raw';
+import { subscriptionURL, downloadMirror, interfaces } from './config';
+import { bootstrapAgent, deviceLogs, readDeviceState, submitTask, waitTask, phases } from './ufi';
+import { disabledReason, type Action, type DeviceState, type DeviceJob } from './state';
 
 type Fields = { subscription: string; mirror: string; interfaces: string };
 export type Setting = 'mirror' | 'interfaces';
@@ -14,7 +12,6 @@ export type Operation = Exclude<Action, 'save-mirror' | 'save-interfaces'>;
 const defaults: Fields = { subscription: '', mirror: '', interfaces: '' };
 const normalize = { mirror: downloadMirror, interfaces };
 const settingAction = { mirror: 'save-mirror', interfaces: 'save-interfaces' } as const;
-const settingFile = { mirror: 'core-mirror', interfaces: 'interfaces' };
 const settingLabel = { mirror: '镜像', interfaces: '接口' };
 const notification = { id: 'ufi-mihomo-operation', toasterId: 'ufi-mihomo' };
 
@@ -35,6 +32,13 @@ export function useGateway() {
   const [detail, setDetail] = useState('');
   const [detailOpen, setDetailOpen] = useState(false);
   const [error, setError] = useState(false);
+  const lastTask = useRef('');
+  const observe = (task: DeviceJob) => {
+    setDevice(current => current && ({ ...current, task, locked: ['queued', 'running'].includes(task.state) }));
+    const label = phases[task.phase] || task.phase;
+    setDetail([label, task.result, task.error, `任务 ID：${task.id}`].filter(Boolean).join('\n'));
+    if (busyRef.current) toast.loading(label, notification);
+  };
 
   const readState = async () => {
     try {
@@ -43,7 +47,15 @@ export function useGateway() {
         loaded.current = false;
         savedRef.current = { mirror: null, interfaces: null }; setSaved({ ...savedRef.current });
       }
-      deviceRef.current = state; setDevice(state); return state;
+      deviceRef.current = state; setDevice(state);
+      if (state.task && lastTask.current !== state.task.id + state.task.updated) {
+        lastTask.current = state.task.id + state.task.updated;
+        if (!busyRef.current) {
+          observe(state.task);
+          setError(['failed', 'interrupted'].includes(state.task.state));
+        }
+      }
+      return state;
     } catch (error) { deviceRef.current = null; setDevice(null); throw error; }
   };
   const refresh = async () => {
@@ -51,7 +63,7 @@ export function useGateway() {
     if (state.service && !loaded.current) {
       try {
         for (const name of ['mirror', 'interfaces'] as const) {
-          const text = await shell(`[ ! -f ${DIR}/${settingFile[name]} ] || cat ${DIR}/${settingFile[name]}`);
+          const text = name === 'mirror' ? state.settings.mirror : state.settings.interfaces.join(' ');
           const value = normalize[name](text);
           savedRef.current[name] = value;
           if (!form.getFieldState(name).isDirty) form.resetField(name, { defaultValue: value === 'auto' ? '' : value });
@@ -79,13 +91,13 @@ export function useGateway() {
     if (reason) throw new Error(reason);
     setSaving(name);
     try {
-      await upload(settingFile[name], value + '\n');
+      await waitTask(await submitTask(settingAction[name], value), () => {});
       savedRef.current[name] = value; setSaved({ ...savedRef.current });
       if (form.getValues(name) === snapshot) form.resetField(name, { defaultValue: value === 'auto' ? '' : value });
       toast.dismiss(`ufi-mihomo-${name}`);
     } catch (error) {
       form.setError(name, { type: 'server', message: '保存失败，点此重试' }); throw error;
-    } finally { setSaving(null); }
+    } finally { setSaving(null); await readState(); }
   };
 
   const autosave = (name: Setting) => {
@@ -117,39 +129,41 @@ export function useGateway() {
         let result = '';
         switch (id) {
           case 'install': case 'service-update':
-            await shell(`[ ! -f ${DIR}/service.sh ] || sh ${DIR}/service.sh stop`, 95_000);
-            await upload('network.sh', networkScript); await upload('service.sh', serviceScript);
-            result = id === 'install' ? '服务已安装' : '服务已更新'; break;
+            result = await waitTask(id === 'service-update' || !state.agent
+              ? await bootstrapAgent(downloadMirror(snapshot.mirror)) : await submitTask('install'), observe);
+            result = id === 'install' ? '服务已安装' : '设备组件已更新'; break;
           case 'download':
-            await persist('mirror', snapshot.mirror);
-            result = await installOfficial(text => { setDetail(text); toast.loading(text, notification); }); break;
+            result = await waitTask(await submitTask('download', downloadMirror(snapshot.mirror)), observe);
+            loaded.current = false; break;
           case 'update':
             if (snapshot.subscription.trim()) {
-              let config: string;
-              try { config = curlConfig(snapshot.subscription.trim()); }
+              try { subscriptionURL(snapshot.subscription.trim()); }
               catch (error) { form.setError('subscription', { message: '请输入有效订阅链接' }); throw error; }
-              await upload('subscription.curl', config);
             }
-            await service('fetch', 95_000);
-            await upload('candidate.yaml', adaptConfig(await readDownload()));
-            result = await service('apply', 95_000);
+            result = await waitTask(await submitTask('update', snapshot.subscription.trim()), observe);
             if (form.getValues('subscription') === snapshot.subscription) form.resetField('subscription', { defaultValue: '' });
             break;
           case 'start':
-            await persist('interfaces', snapshot.interfaces);
-            result = await service('start', 95_000) || '代理已启动'; break;
+            result = await waitTask(await submitTask('start', interfaces(snapshot.interfaces)), observe);
+            loaded.current = false; break;
           case 'uninstall':
-            result = await service('uninstall', 95_000);
+            result = await waitTask(await submitTask('uninstall'), observe);
             loaded.current = false; form.reset(defaults);
             savedRef.current = { mirror: null, interfaces: null }; setSaved({ ...savedRef.current });
             break;
           case 'diagnose':
-            result = await shell('ip -o -4 addr show; ip -4 rule show; ip -4 route show table all; ip -6 route show table all; getprop ro.product.cpu.abi'); break;
-          case 'refresh': result = '状态已刷新'; break;
+            result = await deviceLogs(true); break;
+          case 'logs': result = await deviceLogs(); break;
+          case 'refresh':
+            if (state.task) {
+              observe(state.task);
+              setError(['failed', 'interrupted'].includes(state.task.state));
+            }
+            result = '状态已刷新'; break;
           default:
-            result = await service(id, 95_000) || ({ stop: '代理已停止', restart: '代理已重启', 'boot-on': '自启已开启', 'boot-off': '自启已关闭' }[id as string] ?? '完成');
+            result = await waitTask(await submitTask(id), observe);
         }
-        if (!quiet) setDetail(result);
+        if (!quiet && id !== 'refresh') setDetail(result);
         if (id === 'logs' || id === 'diagnose') setDetailOpen(true);
         if (!quiet) toast.success(id === 'logs' ? '日志已加载' : id === 'diagnose' ? '诊断完成' : result.split('\n')[0]!.slice(0, 180), notification);
       });
@@ -171,7 +185,7 @@ export function useGateway() {
     void perform('refresh', true);
     const timer = setInterval(() => {
       if (open.current && !document.hidden && !busyRef.current && !queue.pending && !queue.size) void queue.add(refresh).catch(() => {});
-    }, 15000);
+    }, 5000);
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (pendingSaves.current || form.getValues('subscription').trim()
         || (['mirror', 'interfaces'] as const).some(name => form.getFieldState(name).isDirty && dirty(name))) {
@@ -183,7 +197,7 @@ export function useGateway() {
   }, []);
 
   const validate = (name: keyof Fields, value: string) => {
-    try { if (name === 'subscription') { if (value.trim()) curlConfig(value.trim()); } else normalize[name](value); return true; }
+    try { if (name === 'subscription') { if (value.trim()) subscriptionURL(value.trim()); } else normalize[name](value); return true; }
     catch (error) { return error instanceof Error ? error.message : '格式不正确'; }
   };
   const saveStatus = (name: Setting) => {

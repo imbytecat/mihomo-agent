@@ -37,29 +37,29 @@ try {
   // The click itself blurs the input; it must survive the ensuing autosave render.
   await browser('find', 'role', 'button', 'click', '--name', '更新核心', '--exact');
   await browser('wait', '--text', '校验通过');
-  await check('mockStored.mirror === "https://ghfast.top" && mockUploads.filter(x => x.name === "core-mirror").length === 1');
+  await check('mockDeviceState.settings.mirror === "https://ghfast.top" && mockIntents.filter(x => x.action === "save-mirror").length === 1');
 
   await browser('fill', '[data-setting=mirror]', 'https://first.example');
   await browser('press', 'Tab');
   await browser('wait', '--fn', 'document.querySelector("[data-save-status=mirror]")?.textContent.includes("保存中")');
   await browser('fill', '[data-setting=mirror]', 'https://second.example');
-  await browser('wait', '--fn', 'mockStored.mirror === "https://first.example"');
+  await browser('wait', '--fn', 'mockDeviceState.settings.mirror === "https://first.example"');
   await check('document.querySelector("[data-setting=mirror]").value === "https://second.example"');
   await browser('press', 'Tab');
-  await browser('wait', '--fn', 'mockStored.mirror === "https://second.example"');
+  await browser('wait', '--fn', 'mockDeviceState.settings.mirror === "https://second.example"');
 
   await browser('eval', 'window.mockUploadDelayMs = 0; window.mockUploadFailure = true');
   await browser('fill', '[data-setting=mirror]', 'https://retry.example');
   await browser('press', 'Tab');
   await browser('wait', '--text', '重试保存');
-  await check('mockStored.mirror === "https://second.example"');
+  await check('mockDeviceState.settings.mirror === "https://second.example"');
   await browser('eval', 'window.mockUploadFailure = false');
   await browser('find', 'role', 'button', 'click', '--name', '重试保存', '--exact');
-  await browser('wait', '--fn', 'mockStored.mirror === "https://retry.example"');
+  await browser('wait', '--fn', 'mockDeviceState.settings.mirror === "https://retry.example"');
   await browser('fill', '[data-setting=mirror]', 'http://invalid.example');
   await browser('find', 'role', 'button', 'click', '--name', '更新核心', '--exact');
   await idle();
-  await check('mockStored.mirror === "https://retry.example" && mockCommands.filter(c => c.includes("install-official")).length === 1');
+  await check('mockDeviceState.settings.mirror === "https://retry.example" && mockIntents.filter(x => x.action === "download").length === 1');
 
   await page('missing-service');
   await browser('fill', '[data-setting=mirror]', 'https://before-install.example');
@@ -68,7 +68,7 @@ try {
   await check('document.querySelector("[data-setting=mirror]").value === "https://before-install.example"');
   await browser('find', 'role', 'button', 'click', '--name', '下载核心', '--exact');
   await browser('wait', '--text', '校验通过');
-  await check('mockStored.mirror === "https://before-install.example"');
+  await check('mockDeviceState.settings.mirror === "https://before-install.example"');
   await browser('fill', '[data-url]', 'https://example.com/subscription');
   await browser('find', 'role', 'button', 'click', '--name', '保存并更新', '--exact');
   await browser('wait', '--text', '配置已更新');
@@ -84,7 +84,7 @@ try {
   await browser('find', 'role', 'button', 'click', '--name', '关闭详情', '--exact');
   await browser('find', 'role', 'button', 'click', '--name', '卸载', '--exact');
   await browser('find', 'role', 'button', 'click', '--name', '取消', '--exact');
-  await check('!mockCommands.some(c => c.includes("uninstall"))');
+  await check('!mockIntents.some(x => x.action === "uninstall")');
   await browser('find', 'role', 'button', 'click', '--name', '卸载', '--exact');
   await browser('find', 'role', 'button', 'click', '--name', '卸载并备份', '--exact');
   await browser('wait', '--fn', '!mockDeviceState.service');
@@ -92,14 +92,22 @@ try {
   await check('!mockDeviceState.running && !mockDeviceState.boot');
   assert.equal(await browser('errors'), '');
   await page('missing-core');
-  await browser('eval', 'window.mockReleaseFailure = "network"; window.mockDisconnectAfterReleaseFailure = true');
+  await browser('eval', 'window.mockTaskFailure = "F50 TLS 握手失败：api.github.com"; window.mockTaskDelayMs = 9000');
   await browser('find', 'role', 'button', 'click', '--name', '下载核心', '--exact');
-  await browser('wait', '--text', '查询最新版本失败');
-  await browser('find', 'role', 'button', 'click', '--name', '详情', '--exact');
+  await browser('wait', '--fn', 'mockDeviceState.locked');
+  await browser('reload');
+  await browser('wait', '#ufi-mihomo > summary');
+  await browser('click', '#ufi-mihomo > summary');
+  await browser('wait', '--fn', 'mockDeviceState.task?.state === "failed"');
+  await browser('click', '[data-task]');
   await browser('wait', '[data-result][open]');
-  await check('document.querySelector("[data-output]").textContent.includes("api.github.com") && document.querySelector("[data-output]").textContent.includes("Failed to fetch")');
-  await check('document.querySelector("[data-output]").textContent.includes("状态刷新失败") && !mockCommands.some(c => c.includes("install-official"))');
+  await check('document.querySelector("[data-output]").textContent.includes("F50 TLS")');
+  await check('mockIntents.length === 0 && mockRequests.every(u => new URL(u, location.href).origin === location.origin)');
   console.log('UI checks passed: autosave ordering, newer edits, retry, setup, subscription, controls, and uninstall.');
+} catch (error) {
+  console.error(await browser('snapshot'));
+  console.error(await browser('eval', 'JSON.stringify({state: mockDeviceState, intents: mockIntents, detail: document.querySelector("[data-output]")?.textContent})'));
+  throw error;
 } finally {
   await browser('close').catch(() => {});
   server.kill();

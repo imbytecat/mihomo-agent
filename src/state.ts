@@ -1,17 +1,36 @@
-export const emptyState = {
+import { z } from 'zod';
+
+export const jobSchema = z.object({
+  id: z.string().regex(/^[a-f0-9]{32}$/), action: z.enum(['bootstrap', 'install', 'download', 'update', 'start', 'stop', 'restart', 'boot-on', 'boot-off', 'uninstall', 'save-mirror', 'save-interfaces']),
+  state: z.enum(['queued', 'running', 'succeeded', 'failed', 'interrupted']), phase: z.string(), updated: z.string(),
+  result: z.string().optional().default(''), error: z.string().optional().default(''), hash: z.string(),
+});
+export type DeviceJob = z.infer<typeof jobSchema>;
+export type TaskAction = Exclude<DeviceJob['action'], 'bootstrap'>;
+const stateSchema = z.object({
+  protocol: z.literal(1), version: z.string(), publicKey: z.string(), service: z.boolean(), core: z.boolean(), config: z.boolean(), subscription: z.boolean(),
+  running: z.boolean(), supervisor: z.boolean(), listeners: z.boolean(), network: z.boolean(), boot: z.boolean(), locked: z.boolean(), capture: z.boolean(),
+  settings: z.object({ mirror: z.string(), interfaces: z.array(z.string()) }), task: jobSchema.nullable(),
+});
+export type DeviceState = z.infer<typeof stateSchema> & { agent: boolean };
+export const emptyState: DeviceState = {
   service: false, core: false, config: false, subscription: false,
   running: false, supervisor: false, listeners: false, network: false,
   boot: false, locked: false, capture: false,
+  agent: false, protocol: 1, version: '', publicKey: '', settings: { mirror: '', interfaces: [] }, task: null,
 };
-export type DeviceState = typeof emptyState;
 export type Action = 'install' | 'service-update' | 'download' | 'save-mirror' | 'save-interfaces' | 'update'
   | 'start' | 'stop' | 'restart' | 'boot-on' | 'boot-off' | 'logs' | 'refresh' | 'diagnose' | 'uninstall';
 
 export function parseState(text: string): DeviceState {
-  const value: unknown = JSON.parse(text);
-  if (!value || typeof value !== 'object' || Object.keys(emptyState).some(key =>
-    typeof (value as Record<string, unknown>)[key] !== 'boolean')) throw new Error('设备状态格式异常，请更新服务');
-  return value as DeviceState;
+  const result = stateSchema.safeParse(JSON.parse(text));
+  if (!result.success) throw new Error('设备后端协议不匹配，请更新设备组件');
+  return { ...result.data, agent: true };
+}
+export function parseJob(value: unknown): DeviceJob {
+  const result = jobSchema.safeParse(value);
+  if (!result.success) throw new Error('设备任务响应无效');
+  return result.data;
 }
 
 export function lifecycleAction(state: DeviceState | null): 'install' | 'uninstall' | null {

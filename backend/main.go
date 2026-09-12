@@ -15,6 +15,7 @@ func main() {
 	flags := flag.NewFlagSet("ufi-agent", flag.ContinueOnError)
 	root := flags.String("root", "/data/ufi-mihomo", "device state directory")
 	uploads := flags.String("uploads", "/data/data/com.minikano.f50_sms/files/uploads", "UFI upload directory")
+	mirror := flags.String("mirror", "", "initial download mirror")
 	if len(os.Args) < 2 {
 		fatal(fmt.Errorf("missing command"))
 	}
@@ -26,6 +27,7 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
+	a.InitialMirror = *mirror
 	var result any
 	switch command {
 	case "version":
@@ -49,6 +51,13 @@ func main() {
 		result, err = a.Job(flags.Arg(0))
 	case "logs":
 		result, err = a.Logs()
+	case "diagnose":
+		result, err = a.Diagnose()
+	case "job-log":
+		if len(flags.Args()) != 1 {
+			fatal(fmt.Errorf("job-log requires id"))
+		}
+		result, err = a.JobLog(flags.Arg(0))
 	case "worker":
 		if len(flags.Args()) != 1 {
 			fatal(fmt.Errorf("worker requires id"))

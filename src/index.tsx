@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useGateway, type Operation, type Setting } from './use-gateway';
 import { disabledReason, lifecycleAction } from './state';
+import { phases } from './ufi';
 import styleText from './style.css?inline';
 
 export default function Gateway() {
@@ -103,12 +104,17 @@ export default function Gateway() {
                   {menuItem('diagnose', '网络诊断', Stethoscope)}
                   <DropdownMenu.Separator className="mh-menu-separator" />
                   {menuItem('restart', '重启代理', RefreshCw)}
-                  {menuItem('service-update', '更新服务文件', Download)}
+                  {menuItem('service-update', '更新设备组件', Download)}
                 </DropdownMenu.Content>
               </DropdownMenu.Portal>
             </DropdownMenu.Root>
           </div>
           <h2 data-status>{title}</h2><p className="mh-subtitle">{subtitle}</p>
+          {device?.task && <button type="button" data-task className="mh-detail-link" aria-live="polite"
+            onClick={() => model.setDetailOpen(true)}>
+            {['failed', 'interrupted'].includes(device.task.state) ? '任务失败 · 查看详情'
+              : device.locked ? phases[device.task.phase] || '设备处理中' : device.task.result || '最近任务'}
+          </button>}
           {stage === 'unknown' ? action('refresh', '重新检测', RefreshCw, undefined, true)
             : stage === 'ready' || device?.running || device?.capture
               ? action(runAction, runAction === 'stop' ? '停止代理' : '启动代理', runAction === 'stop' ? Square : Play, undefined, true)

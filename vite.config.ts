@@ -6,7 +6,11 @@ import tailwindcss from 'tailwindcss';
 export default defineConfig(({ mode }) => ({
   root: 'dev',
   server: { host: '127.0.0.1' },
-  define: { 'process.env.NODE_ENV': JSON.stringify(mode === 'production' ? 'production' : 'development') },
+  define: {
+    'process.env.NODE_ENV': JSON.stringify(mode === 'production' ? 'production' : 'development'),
+    // libsodium embeds its WASM. An injected classic script has no module URL.
+    ...(mode === 'production' ? { 'import.meta.url': 'undefined' } : {}),
+  },
   plugins: [react(), {
     name: 'ufi-single-script',
     generateBundle(_, bundle) {

@@ -191,3 +191,10 @@ func (a *Agent) readJobLog(id string) string {
 }
 
 func (a *Agent) jobDir(id string) string { return filepath.Join(a.Root, "tasks", id) }
+
+func (a *Agent) JobLog(id string) (string, error) {
+	if _, err := a.Job(id); err != nil {
+		return "", err
+	}
+	return a.readJobLog(id), nil
+}

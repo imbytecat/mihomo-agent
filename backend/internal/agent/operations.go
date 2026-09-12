@@ -65,7 +65,11 @@ func (a *Agent) installRuntime() error {
 		return err
 	}
 	if !regularFile(a.runtime("settings.json")) {
-		if err := writeJSON(a.runtime("settings.json"), Settings{Interfaces: []string{}}); err != nil {
+		mirror, err := validateURL(a.InitialMirror, true)
+		if err != nil {
+			return err
+		}
+		if err := writeJSON(a.runtime("settings.json"), Settings{Mirror: mirror, Interfaces: []string{}}); err != nil {
 			return err
 		}
 	}
@@ -122,10 +126,39 @@ func (a *Agent) execute(ctx context.Context, request Request, phase func(string)
 		settings.Interfaces = value
 		return "接口已保存", writeJSON(a.runtime("settings.json"), settings)
 	case "download":
+		mirror, err := validateURL(request.Value, true)
+		if err != nil {
+			return "", err
+		}
+		settings, err := a.settings()
+		if err != nil {
+			return "", err
+		}
+		settings.Mirror = mirror
+		if err = writeJSON(a.runtime("settings.json"), settings); err != nil {
+			return "", err
+		}
 		return a.downloadCore(ctx, work, phase)
 	case "update":
 		return a.updateConfig(ctx, request, work, phase)
 	case "start":
+		if a.running() {
+			return "", errors.New("代理已运行")
+		}
+		if request.Value != "" {
+			value, err := parseInterfaces(request.Value)
+			if err != nil {
+				return "", err
+			}
+			settings, err := a.settings()
+			if err != nil {
+				return "", err
+			}
+			settings.Interfaces = value
+			if err = writeJSON(a.runtime("settings.json"), settings); err != nil {
+				return "", err
+			}
+		}
 		phase("starting")
 		return "代理已启动", a.startRuntime(ctx)
 	case "stop":

@@ -20,6 +20,7 @@ type Agent struct {
 	httpClient             HTTPClient
 	runCommand             func(context.Context, string, ...string) ([]byte, error)
 	BootPath               string
+	InitialMirror          string
 }
 
 func New(root, uploads, version string) (*Agent, error) {

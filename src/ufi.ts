@@ -1,143 +1,163 @@
-import { RELEASE_API, selectRelease } from './release';
-import { emptyState, parseState } from './state';
+import sodium from 'libsodium-wrappers';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+import manifest from '../backend-release.json';
+import bootstrapScript from './bootstrap.sh?raw';
+import { emptyState, parseState, parseJob, type DeviceJob, type TaskAction } from './state';
 import { request, requestFailure, responseJSON, transportFailure } from './request';
 
-declare const runShellWithRoot: (
-  command: string, timeout?: number,
-) => Promise<{ success: boolean; content?: string }>;
+declare const runShellWithRoot: (command: string, timeout?: number) => Promise<{ success: boolean; content?: string }>;
 declare const KANO_baseURL: string;
 declare const common_headers: HeadersInit;
-
 export const DIR = '/data/ufi-mihomo';
+const AGENT = DIR + '/agent';
+const BOOT = '/data/ufi-mihomo-bootstrap';
 export const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 
 export function shellCommand(command: string, marker: string) {
-  // A child shell keeps `exit` and `set -e` away from UFI's persistent root shell.
   return `sh -c ${quote(command)}; printf '\\n${marker}%s\\n' "$?"`;
 }
-
 export function shellResult(content: string, marker: string) {
   const match = content.match(new RegExp(`\\n${marker}(\\d+)\\s*$`));
-  if (!match) throw new Error('UFI 未返回命令退出码，请刷新状态后重试');
+  if (!match) throw new Error('设备未返回完整响应');
   const output = content.slice(0, match.index).trim();
-  if (match[1] !== '0') throw new Error(output || `命令失败 (${match[1]})`);
+  if (match[1] !== '0') {
+    try { const value = JSON.parse(output); if (typeof value.error === 'string') throw new Error(value.error); }
+    catch (error) { if (error instanceof Error && !(error instanceof SyntaxError)) throw error; }
+    throw new Error(output || `命令失败 (${match[1]})`);
+  }
   return output;
 }
-
-export async function shell(command: string, timeout = 30_000, step = '执行设备命令') {
+export async function shell(command: string, timeout = 30_000) {
   const marker = `UFI_EXIT_${Date.now()}_${Math.random().toString(36).slice(2)}_`;
-  const context = { step, target: 'F50 /api/root_shell', hint: '确认仍连接 F50，UFI 页面可访问且已登录、已开启高级功能。' };
+  const context = { step: '连接设备', target: 'F50 /api/root_shell', hint: '检查 F50 连接、UFI 登录和高级功能。任务可能仍在设备上运行，恢复连接后刷新状态。' };
   let result;
   try { result = await runShellWithRoot(shellCommand(command, marker), timeout); }
   catch (error) { throw transportFailure(context, error); }
-  if (!result.success) throw requestFailure(context, result.content || 'UFI Root 接口不可用');
+  if (!result.success) throw requestFailure(context, result.content || 'Root 接口不可用');
   return shellResult(result.content || '', marker);
 }
-
-export const service = (action: string, timeout?: number) =>
-  shell(`sh ${DIR}/service.sh ${quote(action)}`, timeout, `设备操作 ${action}`);
-
+async function agent(args: string[]) {
+  const result = await shell([quote(AGENT), ...args.map(quote)].join(' '));
+  return JSON.parse(result) as unknown;
+}
+export const phases: Record<string, string> = {
+  accepted: '任务已接收', preparing: '准备中', release: '查询官方版本', download: '下载中',
+  verify: '校验文件', installing: '安装中', subscription: '下载订阅', validate: '校验配置',
+  applying: '应用配置', rollback: '恢复上一配置', saving: '保存设置', starting: '启动代理',
+  stopping: '停止代理', done: '已完成', interrupted: '任务已中断', failed: '任务失败',
+};
 export async function readDeviceState() {
-  return parseState(await shell(`
-    [ "$(id -u)" = 0 ] || { echo '请先开启 UFI 高级功能'; exit 1; }
-    [ ! -L ${DIR} ] || { echo '安装目录异常，已暂停操作'; exit 1; }
-    if [ -f ${DIR}/service.sh ] && [ -f ${DIR}/network.sh ]; then
-      exec sh ${DIR}/service.sh inspect
-    fi
-    [ ! -e ${DIR} ] || { echo '安装文件不完整，已暂停操作，请检查设备安装目录'; exit 1; }
-    printf '%s' ${quote(JSON.stringify(emptyState))}
-  `, 30_000, '读取设备状态'));
-}
-
-export async function installOfficial(progress: (message: string) => void) {
-  progress('正在检查设备…');
-  const abi = await shell('getprop ro.product.cpu.abi', 30_000, '读取设备架构');
-  progress('正在查询官方最新稳定版…');
-  const context = {
-    step: '查询最新版本', target: `管理浏览器 GET ${RELEASE_API}`,
-    hint: '在同一浏览器打开上述地址检查访问情况。下载镜像仅用于核心文件，不代理此版本查询；此时核心下载尚未开始。',
-  };
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30_000);
-  let release;
-  try {
-    // Browser fetch: never send UFI authentication headers to GitHub.
-    const response = await request(RELEASE_API, { cache: 'no-store', signal: controller.signal }, context);
-    const metadata = await responseJSON(response, context);
-    try { release = selectRelease(metadata, abi); }
-    catch (error) { throw requestFailure({ ...context, step: '解析官方版本' }, `${error instanceof Error ? error.message : String(error)}\n设备架构：${abi}`); }
-  } finally {
-    clearTimeout(timer);
-  }
-  progress(`准备安装 ${release.version}…`);
-  await upload('core-release', release.manifest);
-  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const resultPath = `${DIR}/install-${id}.result`;
-  const job = `sh ${DIR}/service.sh install-official > ${DIR}/install.log 2>&1; code=$?; printf '%s' "$code" > ${resultPath}`;
-  try { await shell(`nohup sh -c ${quote(job)} </dev/null >/dev/null 2>&1 &`, 30_000, '启动核心下载任务'); }
-  catch (error) { throw new Error(`${error instanceof Error ? error.message : String(error)}\n任务是否启动尚不确定，请恢复连接后刷新状态，勿重复安装。`); }
-  for (let i = 0; i < 240; i++) {
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    let result;
-    try { result = await shell(`if [ -f ${resultPath} ]; then cat ${resultPath}; else echo pending; fi`, 30_000, '读取核心下载进度'); }
-    catch (error) { throw new Error(`${error instanceof Error ? error.message : String(error)}\n任务可能仍在 F50 上运行，请恢复连接后刷新状态，勿重复安装。`); }
-    if (result !== 'pending') {
-      await shell(`rm -f ${resultPath}`).catch(() => {});
-      if (result !== '0') {
-        let log;
-        try {
-          log = await shell(`tail -n 25 ${DIR}/install.log | awk '{ gsub(/https?:\\/\\/[^[:space:]"<>]+/, "[URL hidden]"); if (tolower($0) ~ /(password|secret|token|authorization)[[:space:]"=:]/) print "[sensitive log line hidden]"; else print }'`, 10_000, '读取安装日志');
-        } catch (error) { log = error instanceof Error ? error.message : String(error); }
-        throw new Error(`核心安装失败\n执行位置：F50\n退出码：${result}\n安装日志：\n${log || '日志为空'}\n请根据日志检查下载镜像、设备联网、存储空间或校验错误。`);
-      }
-      return `核心 ${release.version} 已安装，校验通过`;
+  const output = await shell(`
+    [ "$(id -u)" = 0 ] || { echo '请开启 UFI 高级功能'; exit 1; }
+    [ ! -L ${DIR} ] || { echo '设备目录异常'; exit 1; }
+    if [ -x ${AGENT} ]; then exec ${AGENT} inspect; fi
+    printf null
+  `);
+  const task = await readBootstrap();
+  if (output !== 'null') {
+    const state = parseState(output);
+    if (task && (!state.task || ['queued', 'running'].includes(task.state) || Date.parse(task.updated) > Date.parse(state.task.updated))) {
+      state.task = task;
+      state.locked ||= ['queued', 'running'].includes(task.state);
     }
-    progress(`下载核心 ${release.version} · ${Math.round((i + 1) * 1.5)} 秒`);
+    return state;
   }
-  throw new Error('等待安装超时，请刷新状态并查看日志，勿重复安装');
+  return { ...emptyState, task, locked: !!task && ['queued', 'running'].includes(task.state) };
 }
-
-export async function upload(name: string, data: string | File) {
-  if (!/^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/.test(name)) throw new Error('无效文件名');
+async function uploadBytes(bytes: Uint8Array) {
   const body = new FormData();
-  body.append('file', typeof data === 'string'
-    ? new File([data], name, { type: 'application/octet-stream' }) : data);
-  const context = { step: '上传到 F50', target: `POST /api/upload_img（${name}）`, hint: '检查与 F50 的连接和 UFI 登录状态；这是设备上传接口，不是 GitHub 下载源。' };
-  const response = await request(`${KANO_baseURL}/upload_img`, {
-    method: 'POST', headers: common_headers, body,
-  }, context);
+  body.append('file', new File([new Uint8Array(bytes)], 'request.bin', { type: 'application/octet-stream' }));
+  const context = { step: '上传设备请求', target: 'F50 /api/upload_img', hint: '检查设备连接和 UFI 登录状态。' };
+  const response = await request(`${KANO_baseURL}/upload_img`, { method: 'POST', headers: common_headers, body }, context);
   const result = await responseJSON(response, context) as { url?: unknown } | null;
-  if (!result || typeof result.url !== 'string'
-    || !/^\/?uploads\/[a-zA-Z0-9_.-]+$/.test(result.url)
-    || result.url.split('/').includes('..')) {
-    throw requestFailure(context, 'UFI 返回的文件路径无效');
-  }
-  const source = `/data/data/com.minikano.f50_sms/files/${result.url.replace(/^\//, '')}`;
-  const temporary = `${DIR}/${name}.upload`;
-  const cleanup = `rm -f ${quote(source)} ${quote(temporary)}`;
-  await shell(`set -e; umask 077; trap ${quote(cleanup)} EXIT; mkdir -p ${DIR}; chmod 700 ${DIR}; cp ${quote(source)} ${quote(temporary)}; chmod 600 ${quote(temporary)}; mv ${quote(temporary)} ${DIR}/${name}`, 30_000, `保存设备文件 ${name}`);
+  const name = typeof result?.url === 'string' ? result.url.replace(/^\/?uploads\//, '') : '';
+  if (!/^[a-fA-F0-9-]{36}\.bin$/.test(name)) throw requestFailure(context, '设备返回了无效的上传路径');
+  return name;
 }
+export async function sealRequest(publicKey: string, value: object) {
+  await sodium.ready;
+  const key = sodium.from_base64(publicKey, sodium.base64_variants.ORIGINAL);
+  if (key.length !== 32) throw new Error('设备公钥无效');
+  const bytes = sodium.crypto_box_seal(sodium.from_string(JSON.stringify(value)), key);
+  return { bytes, hash: bytesToHex(sha256(bytes)) };
+}
+export function taskID() { return Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join(''); }
 
-export async function readDownload() {
-  const name = `ufi-mihomo-${Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('')}.yaml`;
-  const path = `/data/data/com.minikano.f50_sms/files/uploads/${name}`;
-  let primaryError: Error | undefined;
-  try {
-    // UFI logs shell output. Transfer YAML as a file so credentials don't enter that log.
-    await shell(`set -e; cp ${DIR}/download.yaml ${quote(path)}; chmod 644 ${quote(path)}`);
-    const context = {
-      step: '读取订阅文件', target: 'F50 /api/uploads/[临时文件]', hint: '检查设备连接和文件读取权限；此步骤发生在订阅下载之后。',
-    };
-    const response = await request(`${KANO_baseURL}/uploads/${name}`, { cache: 'no-store' }, context);
-    try { return await response.text(); } catch (error) { throw transportFailure(context, error); }
-  } catch (error) {
-    primaryError = error instanceof Error ? error : new Error(String(error));
-    throw primaryError;
-  } finally {
-    try { await shell(`rm -f ${quote(path)}`, 30_000, '清理临时订阅文件'); }
-    catch (error) {
-      if (!primaryError) throw error;
-      primaryError.message += `\n临时文件清理也失败：${error instanceof Error ? error.message : String(error)}`;
-    }
+export async function submitTask(action: TaskAction, value = '') {
+  const state = await readDeviceState();
+  if (!state.agent || !state.publicKey) throw new Error('请先安装设备后端');
+  const id = taskID();
+  const sealed = await sealRequest(state.publicKey, { id, action, value });
+  const name = await uploadBytes(sealed.bytes);
+  try { return parseJob(await agent(['submit', name, sealed.hash])); }
+  catch (error) {
+    try { return parseJob(await agent(['job', id])); } catch {}
+    throw new Error(`任务提交结果未确认\n任务 ID：${id}\n${error instanceof Error ? error.message : String(error)}\n恢复连接后刷新状态，勿连续重复提交。`);
   }
+}
+export async function readJob(id: string) {
+  if (!/^[a-f0-9]{32}$/.test(id)) throw new Error('无效任务 ID');
+  return parseJob(await agent(['job', id]));
+}
+export async function jobLog(job: DeviceJob) {
+  if (job.action === 'bootstrap') return shell(`tail -n 35 ${BOOT}/jobs/${job.id}/log.txt`);
+  const result = await agent(['job-log', job.id]);
+  return typeof result === 'string' ? result : '';
+}
+export async function waitTask(initial: DeviceJob, progress: (job: DeviceJob) => void) {
+  let job = initial;
+  while (job.state === 'queued' || job.state === 'running') {
+    progress(job);
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    try { job = job.action === 'bootstrap' ? (await readBootstrap(job.id))! : await readJob(job.id); }
+    catch (error) { throw new Error(`设备任务状态暂不可读\n任务 ID：${job.id}\n${error instanceof Error ? error.message : String(error)}\n任务不会因页面断开而取消，恢复连接后刷新即可继续查看。`); }
+    if (!job) throw new Error('任务记录不可读');
+  }
+  progress(job);
+  if (job.state !== 'succeeded') {
+    const log = await jobLog(job).catch(() => '暂时无法读取任务日志');
+    throw new Error(`${phases[job.phase] || job.action}失败\n执行位置：F50\n任务 ID：${job.id}\n${job.error || '请查看任务日志'}\n${log}`);
+  }
+  return job.result || '任务已完成';
+}
+export async function deviceLogs(diagnose = false) {
+  const result = await agent([diagnose ? 'diagnose' : 'logs']);
+  return typeof result === 'string' ? result : '';
+}
+async function readBootstrap(id?: string): Promise<DeviceJob | null> {
+  if (id && !/^[a-f0-9]{32}$/.test(id)) throw new Error('无效任务 ID');
+  const output = await shell(`
+    [ ! -L ${BOOT} ] || exit 1
+    if [ ! -d ${BOOT} ]; then printf null; exit 0; fi
+    id=${id ? quote(id) : `"$(cat ${BOOT}/latest 2>/dev/null)"`}
+    case "$id" in ''|*[!a-f0-9]*) printf null; exit 0;; esac
+    [ "\${#id}" = 32 ] || exit 1
+    sh "${BOOT}/jobs/$id/bootstrap.sh" status "$id"
+  `);
+  return output === 'null' ? null : parseJob(JSON.parse(output));
+}
+export async function bootstrapAgent(mirror: string) {
+  await sodium.ready;
+  const id = taskID();
+  const data = sodium.from_string(bootstrapScript);
+  const hash = bytesToHex(sha256(data));
+  const name = await uploadBytes(data);
+  const source = '/data/data/com.minikano.f50_sms/files/uploads/' + name;
+  const folder = BOOT + '/jobs/' + id;
+  const asset64 = manifest.assets.arm64, asset7 = manifest.assets.armv7;
+  const result = await shell(`
+    set -e
+    umask 077
+    [ ! -L ${BOOT} ]
+    mkdir -p ${folder}
+    chmod 700 ${BOOT} ${BOOT}/jobs ${folder}
+    cp ${quote(source)} ${folder}/bootstrap.sh
+    chmod 600 ${folder}/bootstrap.sh
+    hash=$(sha256sum ${folder}/bootstrap.sh)
+    [ "\${hash%% *}" = ${quote(hash)} ] || { echo '安装脚本校验失败'; exit 1; }
+    rm -f ${quote(source)}
+    sh ${folder}/bootstrap.sh submit ${quote(id)} ${quote(mirror)} ${quote(asset64.url)} ${quote(asset64.sha256)} ${quote(asset7.url)} ${quote(asset7.sha256)}
+  `);
+  return parseJob(JSON.parse(result));
 }

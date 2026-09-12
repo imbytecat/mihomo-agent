@@ -142,7 +142,7 @@ func (a *Agent) stopRuntime() error {
 	if err := a.stopProcess("supervisor"); err != nil {
 		return err
 	}
-	if regularFile(a.runtime("network.sh")) {
+	if regularFile(a.runtime("network.owned")) {
 		if err := a.network(context.Background(), "stop"); err != nil {
 			return err
 		}
@@ -343,6 +343,18 @@ func (a *Agent) Logs() (string, error) {
 				data = data[len(data)-24*1024:]
 			}
 			result.WriteString(name + "\n" + sanitize(string(data)) + "\n")
+		}
+	}
+	return result.String(), nil
+}
+
+func (a *Agent) Diagnose() (string, error) {
+	var result strings.Builder
+	for _, args := range [][]string{{"-o", "-4", "addr", "show"}, {"-4", "rule", "show"}, {"-4", "route", "show", "table", "all"}, {"-6", "route", "show", "table", "all"}} {
+		output, err := a.run(context.Background(), "ip", args...)
+		fmt.Fprintf(&result, "ip %s\n%s\n", strings.Join(args, " "), sanitize(string(output)))
+		if err != nil {
+			fmt.Fprintf(&result, "失败：%v\n", err)
 		}
 	}
 	return result.String(), nil

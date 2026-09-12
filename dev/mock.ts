@@ -1,88 +1,113 @@
-// Shared by Vite development and the built-artifact browser harness. Never included in the plugin.
-import { emptyState, type DeviceState } from '../src/state';
-import { RELEASE_API } from '../src/release';
+// Development-only persistent task mock; never included in the plugin.
+import sodium from 'libsodium-wrappers';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+import { parse } from 'shell-quote';
+import { emptyState, type DeviceState, type DeviceJob, type TaskAction } from '../src/state';
 
-const ready = { ...emptyState, service: true, core: true, config: true, subscription: true };
+const ready = { ...emptyState, agent: true, service: true, core: true, config: true, subscription: true };
 const scenarios: Record<string, DeviceState> = {
-  'missing-service': emptyState,
-  'missing-core': { ...emptyState, service: true },
-  'missing-config': { ...emptyState, service: true, core: true },
-  ready,
+  'missing-service': emptyState, 'missing-core': { ...ready, core: false, config: false, subscription: false },
+  'missing-config': { ...ready, config: false, subscription: false }, ready,
   running: { ...ready, running: true, supervisor: true, listeners: true, network: true, capture: true },
-  locked: { ...ready, locked: true },
 };
-const state = { ...(scenarios[new URL(location.href).searchParams.get('state') || ''] || emptyState) };
-const commands: string[] = [];
-const uploads: { name: string; text: string }[] = [];
-const stored = { mirror: '', interfaces: 'auto' };
+const scenario = new URL(location.href).searchParams.get('state') || 'missing-service';
+const storageKey = 'ufi-mock-' + scenario;
+type Intent = { id: string; action: TaskAction | 'bootstrap'; value: string };
+type Pending = { intent: Intent; end: number; failure: string };
+const persisted = JSON.parse(sessionStorage.getItem(storageKey) || 'null');
+const state: DeviceState = persisted?.state || structuredClone(scenarios[scenario] || emptyState);
+let pending: Pending | null = persisted?.pending || null;
+const jobs: Record<string, DeviceJob> = persisted?.jobs || {};
+const commands: string[] = [], intents: Intent[] = [], requests: string[] = [];
+const uploads: { name: string; bytes: Uint8Array }[] = [];
+const keys = sodium.ready.then(() => sodium.crypto_box_keypair());
 const flags = globalThis as typeof globalThis & {
-  mockProbeError?: boolean; mockStopFailure?: boolean; mockUploadFailure?: boolean;
-  mockUploadDelayMs?: number; mockApplyFailure?: boolean;
-  mockReleaseFailure?: 'network' | 'timeout' | 'rate-limit' | 'bad-json';
-  mockDisconnectAfterReleaseFailure?: boolean;
+  mockProbeError?: boolean; mockUploadFailure?: boolean; mockUploadDelayMs?: number;
+  mockTaskDelayMs?: number; mockTaskFailure?: string;
 };
-
+const save = () => sessionStorage.setItem(storageKey, JSON.stringify({ state, pending, jobs }));
+function advance() {
+  if (!pending || Date.now() < pending.end) return;
+  const { intent, failure } = pending;
+  const job = jobs[intent.id]!;
+  job.state = failure ? 'failed' : 'succeeded'; job.error = failure; job.phase = failure ? 'download' : 'done';
+  job.updated = new Date().toISOString(); state.locked = false;
+  if (!failure) {
+    switch (intent.action) {
+      case 'bootstrap': case 'install': state.agent = state.service = true; state.settings.mirror = intent.value; job.result = '服务已安装'; break;
+      case 'save-mirror': state.settings.mirror = intent.value; job.result = '镜像已保存'; break;
+      case 'save-interfaces': state.settings.interfaces = intent.value === 'auto' ? [] : intent.value.split(' '); job.result = '接口已保存'; break;
+      case 'download': state.core = true; state.settings.mirror = intent.value; job.result = '核心 v9.8.7 已安装，校验通过'; break;
+      case 'update': state.config = state.subscription = true; job.result = '配置已更新'; break;
+      case 'boot-on': state.boot = true; job.result = '自启已开启'; break;
+      case 'boot-off': state.boot = false; job.result = '自启已关闭'; break;
+      case 'start': case 'restart': Object.assign(state, { running: true, supervisor: true, listeners: true, network: true, capture: true }); job.result = '代理已启动'; break;
+      case 'stop': Object.assign(state, { running: false, supervisor: false, listeners: false, network: false, capture: false }); job.result = '代理已停止'; break;
+      case 'uninstall': Object.assign(state, structuredClone(emptyState), { agent: true, publicKey: state.publicKey, task: job }); job.result = '代理服务已卸载，运行文件已备份'; break;
+    }
+  }
+  state.task = job; pending = null; save();
+}
+function submit(intent: Intent, hash = '') {
+  if (state.locked) throw new Error('设备任务进行中');
+  intents.push(intent);
+  const job: DeviceJob = { id: intent.id, action: intent.action, state: 'running', phase: 'download', hash, result: '', error: '', updated: new Date().toISOString() };
+  jobs[job.id] = job; state.task = job; state.locked = true;
+  pending = { intent, end: Date.now() + (flags.mockTaskDelayMs ?? 300), failure: flags.mockTaskFailure || '' };
+  save(); return job;
+}
 Object.assign(globalThis, {
-  KANO_baseURL: '/api', common_headers: {}, mockDeviceState: state, mockCommands: commands, mockUploads: uploads, mockStored: stored,
+  KANO_baseURL: '/api', common_headers: {}, mockDeviceState: state, mockCommands: commands, mockUploads: uploads, mockIntents: intents, mockRequests: requests,
   runShellWithRoot: async (command: string) => {
     commands.push(command);
     const marker = command.match(/UFI_EXIT_[a-zA-Z0-9_]+/)![0];
-    let content = '';
-    if (command.includes('inspect')) {
-      if (flags.mockProbeError) return { success: false, content: '模拟连接失败' };
-      content = JSON.stringify(state);
-    } else if (command.includes('cat /data/ufi-mihomo/core-mirror')) content = stored.mirror;
-    else if (command.includes('cat /data/ufi-mihomo/interfaces')) content = stored.interfaces;
-    else if (command.includes('core-mirror.upload')) stored.mirror = uploads.filter(file => file.name === 'core-mirror').slice(-1)[0]?.text.trim() ?? '';
-    else if (command.includes('interfaces.upload')) stored.interfaces = uploads.filter(file => file.name === 'interfaces').slice(-1)[0]?.text.trim() ?? 'auto';
-    else if (command.includes('getprop ro.product.cpu.abi')) content = 'arm64-v8a';
-    else if (command.includes('id -u')) content = '0';
-    else if (command.includes('service.sh.upload')) state.service = true;
-    else if (command.includes('subscription.curl.upload')) state.subscription = true;
-    else if (command.includes('install-official')) state.core = true;
-    else if (command.includes('uninstall')) {
-      if (flags.mockStopFailure) return { success: true, content: `停止失败，文件未移除\n${marker}1` };
-      Object.assign(state, emptyState);
-      content = '服务已卸载，文件备份：/data/ufi-mihomo.uninstalled-mock';
-    } else if (command.includes('ip -o')) content = 'wlan0 192.168.0.1/24';
-    else if (command.includes('apply')) {
-      if (flags.mockApplyFailure) return { success: true, content: `配置校验失败\n${marker}1` };
-      state.config = true; content = '配置已更新';
+    if (flags.mockProbeError) return { success: false, content: '模拟连接失败' };
+    advance();
+    state.publicKey = sodium.to_base64((await keys).publicKey, sodium.base64_variants.ORIGINAL);
+    let result: unknown = null;
+    try {
+      const inner = parse(command)[2] as string;
+      const args = parse(inner).filter((x): x is string => typeof x === 'string');
+      if (inner.includes(' inspect')) result = state.agent ? state : null;
+      else if (args[0] === '/data/ufi-mihomo/agent') {
+        switch (args[1]) {
+          case 'submit': {
+            const uploaded = uploads.find(x => x.name === args[2]);
+            if (!uploaded) throw new Error('上传不存在');
+            if (bytesToHex(sha256(uploaded.bytes)) !== args[3]) throw new Error('校验失败');
+            const key = await keys;
+            const intent = JSON.parse(sodium.to_string(sodium.crypto_box_seal_open(uploaded.bytes, key.publicKey, key.privateKey)));
+            result = submit(intent, args[3]); break;
+          }
+          case 'job': result = jobs[args[2]!]; break;
+          case 'job-log': result = 'F50 任务日志'; break;
+          case 'logs': result = 'core.log\n代理运行正常'; break;
+          case 'diagnose': result = 'wlan0 192.168.0.1/24'; break;
+          default: throw new Error('未知命令');
+        }
+      } else if (args.includes('submit')) {
+        const at = args.indexOf('submit');
+        result = submit({ id: args[at + 1]!, action: 'bootstrap', value: args[at + 2]! });
+      } else if (inner.includes('bootstrap.sh')) result = state.task?.action === 'bootstrap' ? state.task : null;
+      return { success: true, content: JSON.stringify(result) + '\n' + marker + '0' };
+    } catch (error) {
+      return { success: true, content: JSON.stringify({ error: String(error) }) + '\n' + marker + '1' };
     }
-    else if (command.includes('fetch')) content = '订阅下载完成';
-    else if (command.includes('boot-on')) state.boot = true;
-    else if (command.includes('boot-off')) state.boot = false;
-    else if (command.includes('stop')) Object.assign(state, { running: false, supervisor: false, listeners: false, network: false, capture: false });
-    else if (command.includes('start')) Object.assign(state, { running: true, supervisor: true, listeners: true, network: true, capture: true });
-    else if (command.includes('.result')) content = '0';
-    return { success: true, content: `${content}\n${marker}0` };
   },
 });
-
 const nativeFetch = globalThis.fetch.bind(globalThis);
 const mockFetch = async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  requests.push(url);
+  if (new URL(url, location.href).origin !== location.origin) throw new Error('浏览器不应请求外网：' + url);
   if (url === '/api/upload_img') {
     if (flags.mockUploadFailure) return Response.json({ error: '模拟上传失败' }, { status: 500 });
     const file = (init!.body as FormData).get('file') as File;
-    uploads.push({ name: file.name, text: await file.text() });
+    const name = crypto.randomUUID() + '.bin';
+    uploads.push({ name, bytes: new Uint8Array(await file.arrayBuffer()) });
     if (flags.mockUploadDelayMs) await new Promise(resolve => setTimeout(resolve, flags.mockUploadDelayMs));
-    return Response.json({ url: `/uploads/${crypto.randomUUID()}.txt` });
-  }
-  if (url.startsWith('/api/uploads/')) return new Response('proxies: []\nrules: ["MATCH,DIRECT"]\ndns: {nameserver: [223.5.5.5]}\n');
-  if (url === RELEASE_API) {
-    if (flags.mockReleaseFailure === 'network') {
-      if (flags.mockDisconnectAfterReleaseFailure) flags.mockProbeError = true;
-      throw new TypeError('Failed to fetch');
-    }
-    if (flags.mockReleaseFailure === 'timeout') throw new DOMException('The operation was aborted', 'AbortError');
-    if (flags.mockReleaseFailure === 'rate-limit') return Response.json({ message: 'rate limit exceeded' }, { status: 403, headers: { 'x-ratelimit-remaining': '0' } });
-    if (flags.mockReleaseFailure === 'bad-json') return new Response('<html>blocked</html>');
-    return Response.json({
-    tag_name: 'v9.8.7', draft: false, prerelease: false,
-    assets: [{ name: 'mihomo-android-arm64-v8-v9.8.7.gz', digest: `sha256:${'a'.repeat(64)}`,
-      browser_download_url: 'https://github.com/MetaCubeX/mihomo/releases/download/v9.8.7/mihomo-android-arm64-v8-v9.8.7.gz' }],
-    });
+    return Response.json({ url: '/uploads/' + name });
   }
   return nativeFetch(input, init);
 };

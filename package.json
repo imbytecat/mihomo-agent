@@ -10,20 +10,24 @@
     "test:ui": "bun run build && bun tests/ui-smoke.ts"
   },
   "dependencies": {
+    "@noble/hashes": "^2.4.0",
     "@radix-ui/react-dropdown-menu": "^2.1.24",
+    "libsodium-wrappers": "^0.8.4",
     "lucide-react": "^1.45.0",
     "p-queue": "^9.3.3",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-hook-form": "^7.88.0",
     "sonner": "^2.0.8",
-    "yaml": "^2.8.1"
+    "zod": "^4.6.2"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/shell-quote": "^1.7.5",
     "@vitejs/plugin-react": "^6.1.1",
+    "shell-quote": "^1.10.0",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.9.3",
     "vite": "^8.3.0"
