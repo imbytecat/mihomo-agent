@@ -45,5 +45,7 @@ export function downloadMirror(value: string): string {
   const url = new URL(value.trim());
   if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash
     || /[\r\n\x00]/.test(value)) throw new Error('下载镜像必须是无认证、无查询参数的 HTTPS 前缀');
+  if (['github.com', 'api.github.com', 'raw.githubusercontent.com'].includes(url.hostname)
+    || /\/https?:\/\//.test(url.pathname)) throw new Error('请填写下载代理前缀，不要填写完整 GitHub 下载地址；直连请留空');
   return url.href.replace(/\/+$/, '');
 }

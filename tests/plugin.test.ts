@@ -47,6 +47,9 @@ test('input validation and shell results preserve the trust boundary', async () 
   expect(downloadMirror('https://worker.example/')).toBe('https://worker.example');
   expect(() => downloadMirror('http://worker.example/')).toThrow();
   expect(() => downloadMirror('https://user:pass@worker.example/')).toThrow();
+  expect(downloadMirror('https://ghfast.top/')).toBe('https://ghfast.top');
+  expect(() => downloadMirror('https://github.com/MetaCubeX/mihomo/releases/download/v1/core.gz')).toThrow('前缀');
+  expect(() => downloadMirror('https://ghfast.top/https://github.com/MetaCubeX/mihomo/releases/download/v1/core.gz')).toThrow('前缀');
   const value = "a'b $(printf injected) `printf injected`\n中文";
   const proc = Bun.spawn(['sh', '-c', shellCommand(`printf '%s' ${quote(value)}`, 'TEST_')], { stdout: 'pipe' });
   expect(shellResult(await new Response(proc.stdout).text(), 'TEST_')).toBe(value);
@@ -326,7 +329,10 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
   expect(disabledReason('uninstall', installed, true)).not.toBe('');
   for (const action of ['start', 'restart', 'update', 'boot-on'] as const) expect(disabledReason(action, installed)).not.toBe('');
   expect(disabledReason('download', installed)).toBe('');
-  expect(disabledReason('save', installed)).toBe('');
+  expect(disabledReason('save', installed, false, 'https://example.com/sub')).toBe('');
+  expect(disabledReason('save', installed)).toContain('订阅链接');
+  expect(disabledReason('save-mirror', { ...installed, running: true })).toBe('');
+  expect(disabledReason('save-interfaces', { ...installed, running: true })).toContain('停止');
   expect(nextStep(installed)).toContain('核心');
   const ready = { ...installed, core: true, config: true, subscription: true };
   expect(disabledReason('start', ready)).toBe('');

@@ -14,7 +14,8 @@ const scenarios: Record<string, DeviceState> = {
 const state = { ...(scenarios[new URL(location.href).searchParams.get('state') || ''] || emptyState) };
 const commands: string[] = [];
 const uploads: { name: string; text: string }[] = [];
-const flags = globalThis as typeof globalThis & { mockProbeError?: boolean; mockStopFailure?: boolean };
+let storedMirror: string | null = null;
+const flags = globalThis as typeof globalThis & { mockProbeError?: boolean; mockStopFailure?: boolean; mockUploadFailure?: boolean };
 
 Object.assign(globalThis, {
   KANO_baseURL: '/api', common_headers: {}, mockDeviceState: state, mockCommands: commands, mockUploads: uploads,
@@ -25,7 +26,9 @@ Object.assign(globalThis, {
     if (command.includes('inspect')) {
       if (flags.mockProbeError) return { success: false, content: '模拟连接失败' };
       content = JSON.stringify(state);
-    } else if (command.includes('getprop ro.product.cpu.abi')) content = 'arm64-v8a';
+    } else if (command.includes('__UFI_MIRROR_UNSAVED__')) content = storedMirror ?? '__UFI_MIRROR_UNSAVED__';
+    else if (command.includes('core-mirror.upload')) storedMirror = uploads.filter(file => file.name === 'core-mirror').slice(-1)[0]?.text.trim() ?? '';
+    else if (command.includes('getprop ro.product.cpu.abi')) content = 'arm64-v8a';
     else if (command.includes('id -u')) content = '0';
     else if (command.includes('service.sh.upload')) state.service = true;
     else if (command.includes('subscription.curl.upload')) state.subscription = true;
@@ -50,6 +53,7 @@ const nativeFetch = globalThis.fetch.bind(globalThis);
 const mockFetch = async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   if (url === '/api/upload_img') {
+    if (flags.mockUploadFailure) return Response.json({ error: '模拟上传失败' }, { status: 500 });
     const file = (init!.body as FormData).get('file') as File;
     uploads.push({ name: file.name, text: await file.text() });
     return Response.json({ url: `/uploads/${crypto.randomUUID()}.txt` });

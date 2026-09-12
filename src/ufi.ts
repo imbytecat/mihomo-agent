@@ -70,9 +70,9 @@ export async function installOfficial(progress: (message: string) => void) {
     if (result !== 'pending') {
       await shell(`rm -f ${resultPath}`);
       if (result !== '0') throw new Error('官方核心安装失败，原核心保留。请查看日志');
-      return `官方核心 ${release.version} 已安装，SHA-256 校验通过`;
+      return `核心 ${release.version} 已安装，校验通过`;
     }
-    progress(`正在下载并校验官方核心 ${release.version}… ${Math.round((i + 1) * 1.5)} 秒。关闭网页后设备仍会继续安装。`);
+    progress(`下载核心 ${release.version} · ${Math.round((i + 1) * 1.5)} 秒`);
   }
   throw new Error('等待安装超时，请刷新状态并查看日志，勿重复安装');
 }
