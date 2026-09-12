@@ -1,15 +1,21 @@
 import { createHash } from 'node:crypto';
 import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 
-const version = process.argv[2] || 'v0.1.0';
+const version = process.argv[2] || (await Bun.file('backend-release.json').json()).version;
 if (!/^v\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid backend version');
+const buildEnv = { ...process.env, GOTOOLCHAIN: 'go1.26.7', GOENV: 'off', GOWORK: 'off', GOFLAGS: '', GOEXPERIMENT: '', GOFIPS140: 'off', CGO_ENABLED: '0' };
+const probe = Bun.spawn(['go', 'env', 'GOROOT'], { env: buildEnv, stdout: 'pipe', stderr: 'inherit' });
+const goroot = (await new Response(probe.stdout).text()).trim();
+if (await probe.exited !== 0) throw new Error('Cannot locate Go 1.26.7');
+// Nix patches stdlib paths even with the same version; those builds have different hashes.
+if (goroot.includes('/nix/store/')) throw new Error('发布需要官方 Go。请运行：mise exec go@1.26.7 -- bun run build:release');
 await mkdir('.release', { recursive: true });
 const assets: Record<string, { url: string; sha256: string }> = {};
 const sums: string[] = [];
 for (const [name, goarch, goarm] of [['arm64', 'arm64', ''], ['armv7', 'arm', '7']]) {
   const file = `ufi-agent-linux-${name}`;
   const child = Bun.spawn(['go', 'build', '-trimpath', '-buildvcs=false', '-ldflags', `-s -w -buildid= -X main.version=${version}`, '-o', `../.release/${file}`, '.'], {
-    cwd: 'backend', env: { ...process.env, GOTOOLCHAIN: 'go1.26.7', GOFLAGS: '', GOEXPERIMENT: '', CGO_ENABLED: '0', GOOS: 'linux', GOARCH: goarch!, GOARM: goarm!, GOARM64: 'v8.0' }, stdout: 'inherit', stderr: 'inherit',
+    cwd: 'backend', env: { ...buildEnv, GOOS: 'linux', GOARCH: goarch!, GOARM: goarm!, GOARM64: 'v8.0' }, stdout: 'inherit', stderr: 'inherit',
   });
   if (await child.exited !== 0) throw new Error(`Cannot build ${file}`);
   const sha256 = createHash('sha256').update(new Uint8Array(await Bun.file(`.release/${file}`).arrayBuffer())).digest('hex');

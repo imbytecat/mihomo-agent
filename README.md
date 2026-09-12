@@ -112,10 +112,11 @@ Vite 库模式输出一个 IIFE JS，React、样式、图标、加密库随插�
 ## 发布
 
 ```sh
-bun run build:release v0.1.0
+mise exec go@1.26.7 -- bun run build:release
+# 新版本：mise exec go@1.26.7 -- bun run build:release v0.1.2
 ```
 
-输出在 `.release/`，同时更新插件绑定的 `backend-release.json`。提交清单后推送对应 `agent-v*` 标签，GitHub Actions 重建并核对清单、执行测试，再发布二进制、插件和 SHA256SUMS。Go 编译器固定为 1.26.7，以保证 Linux / macOS 的交叉构建一致；更新后端须使用新的版本标签，不覆盖已发布资产。
+输出在 `.release/`，同时更新插件绑定的 `backend-release.json`。提交清单后推送对应 `agent-v*` 标签，GitHub Actions 重建并核对清单、执行测试，再发布二进制、插件和 SHA256SUMS。发布使用官方 Go 1.26.7，Nix 的同版本编译器会修改标准库路径，不能用于生成发行摘要；日常检查不受影响。更新后端须使用新的版本标签，不覆盖已发布资产。
 
 ## UFI 依据
 
