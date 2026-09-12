@@ -22,10 +22,20 @@ async function browser(...args: string[]) {
   return out.trim();
 }
 const check = async (expression: string) => assert.equal(await browser('eval', expression), 'true', expression);
-const idle = () => browser('wait', '--fn', '!document.querySelector("[data-gateway-body]").matches("[aria-busy=true]")');
+async function idle() {
+  await browser('wait', '--fn', '!document.querySelector("[data-gateway-body]").matches("[aria-busy=true]")');
+  // A user can dismiss transient notifications before scrolling to the next action.
+  // Fast CI clicks otherwise land underneath a still-visible fixed toast.
+  const close = '[data-sonner-toast][data-removed=false] [data-close-button]';
+  while (Number(await browser('get', 'count', close))) {
+    await browser('find', 'first', close, 'click');
+    await browser('wait', '--fn', '!document.querySelector("[data-sonner-toast][data-removed=true]")');
+  }
+}
 async function closeModal(name = '关闭详情') {
   await browser('find', 'role', 'button', 'click', '--name', name, '--exact');
   await browser('wait', '--fn', '!document.querySelector("[data-dialog]")');
+  await idle();
 }
 async function page(state: string) {
   await browser('open', `${base}?state=${state}`);
@@ -94,6 +104,7 @@ try {
   await idle();
   await browser('click', '[data-boot]');
   await browser('wait', '--fn', 'mockDeviceState.boot');
+  await idle();
   await browser('find', 'role', 'button', 'click', '--name', '更多操作', '--exact');
   await browser('find', 'role', 'menuitem', 'click', '--name', '运行日志', '--exact');
   await browser('wait', '[data-dialog=result][data-state=open]');
