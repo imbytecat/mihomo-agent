@@ -1,4 +1,4 @@
-package agent
+package app
 
 import (
 	"context"
@@ -106,7 +106,7 @@ func (a *Agent) testCore(ctx context.Context, core, config string) error {
 	output, err := a.run(ctx, core, "-t", "-d", a.runtime(), "-f", config)
 	if err != nil {
 		fmt.Println(sanitize(string(output)))
-		return errors.New("核心配置校验失败")
+		return errors.New("内核配置校验失败")
 	}
 	return nil
 }
@@ -164,7 +164,7 @@ func (a *Agent) startRuntime(ctx context.Context) error {
 		return errors.New("代理已运行")
 	}
 	if !regularFile(a.runtime("mihomo")) {
-		return errors.New("核心未安装")
+		return errors.New("内核未安装")
 	}
 	if id, err := a.activeGeneration(); err != nil || id == "" {
 		return errors.New("配置未就绪")
@@ -173,6 +173,9 @@ func (a *Agent) startRuntime(ctx context.Context) error {
 		return err
 	}
 	if err := a.stopRuntime(); err != nil {
+		return err
+	}
+	if err := atomicWrite(a.runtime("network.sh"), networkScript, 0700); err != nil {
 		return err
 	}
 	log, err := os.OpenFile(a.runtime("supervisor.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
@@ -336,7 +339,7 @@ func (a *Agent) bootLine() string {
 func (a *Agent) setBoot(enabled bool) error {
 	if enabled {
 		if !regularFile(a.runtime("mihomo")) {
-			return errors.New("核心未安装")
+			return errors.New("内核未安装")
 		}
 		if id, _ := a.activeGeneration(); id == "" {
 			return errors.New("配置未就绪")

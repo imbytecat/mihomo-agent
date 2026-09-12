@@ -1,4 +1,4 @@
-package agent
+package app
 
 import (
 	"archive/zip"
@@ -109,15 +109,7 @@ func (a *Agent) switchDashboard(target string) error {
 
 func (a *Agent) downloadDashboard(ctx context.Context, request Request, work string, phase func(string)) (string, error) {
 	phase("release")
-	metadata := filepath.Join(work, "dashboard.json")
-	if err := a.fetch(ctx, "https://api.github.com/repos/Zephyruso/zashboard/releases/latest", metadata, 4<<20); err != nil {
-		return "", err
-	}
-	data, err := os.ReadFile(metadata)
-	if err != nil {
-		return "", err
-	}
-	release, err := parseRelease(data)
+	release, err := a.latestRelease(ctx, "Zephyruso", "zashboard")
 	if err != nil {
 		return "", err
 	}
@@ -129,8 +121,8 @@ func (a *Agent) downloadDashboard(ctx context.Context, request Request, work str
 	if err != nil {
 		return "", err
 	}
-	if settings.Mirror != "" {
-		address = settings.Mirror + "/" + address
+	if settings.GitHubProxy != "" {
+		address = settings.GitHubProxy + "/" + address
 	}
 	phase("download")
 	archive := filepath.Join(work, "dashboard.zip")
@@ -138,7 +130,7 @@ func (a *Agent) downloadDashboard(ctx context.Context, request Request, work str
 		return "", err
 	}
 	phase("verify")
-	data, err = os.ReadFile(archive)
+	data, err := os.ReadFile(archive)
 	if err != nil {
 		return "", err
 	}

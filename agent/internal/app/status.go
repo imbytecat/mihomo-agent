@@ -1,4 +1,4 @@
-package agent
+package app
 
 import (
 	"context"
@@ -19,6 +19,7 @@ type Status struct {
 	PublicKey    string            `json:"publicKey"`
 	Service      bool              `json:"service"`
 	Core         bool              `json:"core"`
+	CoreVersion  string            `json:"coreVersion"`
 	Config       bool              `json:"config"`
 	Subscription bool              `json:"subscription"`
 	Running      bool              `json:"running"`
@@ -46,6 +47,9 @@ func (a *Agent) Inspect() (Status, error) {
 	}
 	status.Service = regularFile(a.runtime("installed.json"))
 	status.Core = regularFile(a.runtime("mihomo"))
+	if status.Core {
+		status.CoreVersion = a.coreVersion()
+	}
 	if id, e := a.activeGeneration(); e == nil {
 		status.Config = id != ""
 	}

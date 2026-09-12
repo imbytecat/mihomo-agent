@@ -6,16 +6,16 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/imbytecat/ufi-mihomo/backend/internal/agent"
+	"github.com/imbytecat/ufi-mihomo/agent/internal/app"
 )
 
 var version = "dev"
 
 func main() {
-	flags := flag.NewFlagSet("ufi-agent", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mihomo-agent", flag.ContinueOnError)
 	root := flags.String("root", "/data/ufi-mihomo", "device state directory")
 	uploads := flags.String("uploads", "/data/data/com.minikano.f50_sms/files/uploads", "UFI upload directory")
-	mirror := flags.String("mirror", "", "initial download mirror")
+	githubProxy := flags.String("github-proxy", "", "GitHub download proxy prefix")
 	if len(os.Args) < 2 {
 		fatal(fmt.Errorf("missing command"))
 	}
@@ -23,15 +23,15 @@ func main() {
 	if err := flags.Parse(os.Args[2:]); err != nil {
 		fatal(err)
 	}
-	a, err := agent.New(*root, *uploads, version)
+	a, err := app.New(*root, *uploads, version)
 	if err != nil {
 		fatal(err)
 	}
-	a.InitialMirror = *mirror
+	a.InitialGitHubProxy = *githubProxy
 	var result any
 	switch command {
 	case "version":
-		result = map[string]any{"version": version, "protocol": agent.Protocol}
+		result = map[string]any{"version": version, "protocol": app.Protocol}
 	case "install":
 		err = a.Install()
 		result = map[string]any{"ok": err == nil}

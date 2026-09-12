@@ -1,4 +1,4 @@
-package agent
+package app
 
 import (
 	"context"
@@ -165,6 +165,9 @@ func (a *Agent) Worker(id string) (err error) {
 		fmt.Println(time.Now().Format(time.RFC3339), value)
 	}
 	result, runErr := a.execute(ctx, request, phase)
+	if request.Action == "uninstall" && runErr == nil {
+		return nil // Never recreate a deleted installation to write a completion record.
+	}
 	if runErr != nil {
 		job.State = "failed"
 		job.Error = sanitize(runErr.Error())

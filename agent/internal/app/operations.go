@@ -1,36 +1,18 @@
-package agent
+package app
 
 import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strconv"
-	"strings"
-	"time"
 )
-
-const releaseAPI = "https://api.github.com/repos/MetaCubeX/mihomo/releases/latest"
-
-var versionPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
-
-type release struct {
-	Tag        string `json:"tag_name"`
-	Draft      *bool  `json:"draft"`
-	Prerelease *bool  `json:"prerelease"`
-	Assets     []struct {
-		Name, Digest string
-		URL          string `json:"browser_download_url"`
-	} `json:"assets"`
-}
 
 func (a *Agent) Install() error {
 	if err := a.initIdentity(); err != nil {
@@ -55,7 +37,11 @@ func (a *Agent) Install() error {
 	if err = atomicWrite(a.path("agent"), data, 0700); err != nil {
 		return err
 	}
-	return a.installRuntime()
+	if err := a.installRuntime(); err != nil {
+		return err
+	}
+	_ = os.Remove(a.path("latest-task"))
+	return nil
 }
 
 func (a *Agent) installRuntime() error {
@@ -65,31 +51,36 @@ func (a *Agent) installRuntime() error {
 	if err := atomicWrite(a.runtime("network.sh"), networkScript, 0700); err != nil {
 		return err
 	}
-	if !regularFile(a.runtime("settings.json")) {
-		mirror, err := validateURL(a.InitialMirror, true)
-		if err != nil {
-			return err
-		}
-		if err := writeJSON(a.runtime("settings.json"), Settings{Mirror: mirror, Interfaces: []string{}}); err != nil {
-			return err
-		}
+	settings, err := a.settings()
+	if err != nil {
+		return err
+	}
+	settings.GitHubProxy, err = validateURL(a.InitialGitHubProxy, true)
+	if err != nil {
+		return err
+	}
+	if err := writeJSON(a.runtime("settings.json"), settings); err != nil {
+		return err
 	}
 	if err := a.ensureController(); err != nil {
 		return err
 	}
-	return writeJSON(a.runtime("installed.json"), map[string]any{"protocol": Protocol, "version": a.Version})
+	return writeJSON(a.runtime("installed.json"), map[string]any{"protocol": Protocol})
 }
 
 func (a *Agent) execute(ctx context.Context, request Request, phase func(string)) (string, error) {
+	if request.Action == "uninstall" {
+		return "Mihomo 服务已卸载", a.uninstall(phase)
+	}
 	if request.Action == "install" {
 		if a.running() || regularFile(a.runtime("installed.json")) {
-			return "", errors.New("服务已安装，请刷新状态")
+			return "", errors.New("Mihomo 服务已安装，请刷新状态")
 		}
-		a.InitialMirror = request.Value
-		return "服务已安装", a.installRuntime()
+		a.InitialGitHubProxy = request.Value
+		return "Mihomo 服务已安装", a.installRuntime()
 	}
 	if !regularFile(a.runtime("installed.json")) {
-		return "", errors.New("服务未安装")
+		return "", errors.New("Mihomo 服务未安装")
 	}
 	resume, err := a.recoverConfiguration()
 	if err != nil {
@@ -106,7 +97,7 @@ func (a *Agent) execute(ctx context.Context, request Request, phase func(string)
 	}
 	defer os.RemoveAll(work)
 	switch request.Action {
-	case "save-mirror":
+	case "save-github-proxy":
 		phase("saving")
 		value, err := validateURL(request.Value, true)
 		if err != nil {
@@ -116,8 +107,8 @@ func (a *Agent) execute(ctx context.Context, request Request, phase func(string)
 		if err != nil {
 			return "", err
 		}
-		settings.Mirror = value
-		return "镜像已保存", writeJSON(a.runtime("settings.json"), settings)
+		settings.GitHubProxy = value
+		return "GitHub Proxy 已保存", writeJSON(a.runtime("settings.json"), settings)
 	case "save-interfaces":
 		phase("saving")
 		if a.running() {
@@ -137,7 +128,7 @@ func (a *Agent) execute(ctx context.Context, request Request, phase func(string)
 		if a.running() {
 			return "", errors.New("请先停止代理")
 		}
-		mirror, err := validateURL(request.Value, true)
+		githubProxy, err := validateURL(request.Value, true)
 		if err != nil {
 			return "", err
 		}
@@ -145,7 +136,7 @@ func (a *Agent) execute(ctx context.Context, request Request, phase func(string)
 		if err != nil {
 			return "", err
 		}
-		settings.Mirror = mirror
+		settings.GitHubProxy = githubProxy
 		if err = writeJSON(a.runtime("settings.json"), settings); err != nil {
 			return "", err
 		}
@@ -154,6 +145,8 @@ func (a *Agent) execute(ctx context.Context, request Request, phase func(string)
 		return a.updateConfig(ctx, request, work, phase)
 	case "save-controller":
 		return a.saveController(ctx, request, phase)
+	case "update-agent":
+		return a.updateAgent(ctx, work, phase)
 	case "download-dashboard":
 		return a.downloadDashboard(ctx, request, work, phase)
 	case "start":
@@ -187,59 +180,11 @@ func (a *Agent) execute(ctx context.Context, request Request, phase func(string)
 		phase("starting")
 		return "代理已重启", a.startRuntime(ctx)
 	case "boot-on":
-		return "自启已开启", a.setBoot(true)
+		return "开机启动已开启", a.setBoot(true)
 	case "boot-off":
-		return "自启已关闭", a.setBoot(false)
-	case "uninstall":
-		phase("stopping")
-		if err := a.stopRuntime(); err != nil {
-			return "", err
-		}
-		if err := a.setBoot(false); err != nil {
-			return "", err
-		}
-		backup := a.path("backups", "runtime-"+time.Now().UTC().Format("20060102-150405")+"-"+request.ID)
-		if err := os.MkdirAll(filepath.Dir(backup), 0700); err != nil {
-			return "", err
-		}
-		if err := os.Rename(a.runtime(), backup); err != nil {
-			return "", err
-		}
-		return "代理服务已卸载，运行文件已备份：" + backup, nil
+		return "开机启动已关闭", a.setBoot(false)
 	}
 	return "", errors.New("未知任务")
-}
-
-func parseRelease(data []byte) (release, error) {
-	var value release
-	if json.Unmarshal(data, &value) != nil || !versionPattern.MatchString(value.Tag) || value.Draft == nil || value.Prerelease == nil || *value.Draft || *value.Prerelease {
-		return value, errors.New("官方版本信息无效")
-	}
-	return value, nil
-}
-
-func selectAsset(data []byte, arch string) (string, string, string, error) {
-	value, err := parseRelease(data)
-	if err != nil {
-		return "", "", "", errors.New("官方版本信息无效")
-	}
-	return value.asset("MetaCubeX/mihomo", "mihomo-android-"+arch+"-"+value.Tag+".gz")
-}
-
-func (r release) asset(repo, name string) (string, string, string, error) {
-	expectedURL := "https://github.com/" + repo + "/releases/download/" + r.Tag + "/" + name
-	for _, asset := range r.Assets {
-		if asset.Name != name {
-			continue
-		}
-		digest := strings.TrimPrefix(asset.Digest, "sha256:")
-		decoded, err := hex.DecodeString(digest)
-		if asset.URL != expectedURL || !strings.HasPrefix(asset.Digest, "sha256:") || err != nil || len(decoded) != 32 {
-			return "", "", "", errors.New("官方资产缺少有效 SHA-256")
-		}
-		return r.Tag, expectedURL, strings.ToLower(digest), nil
-	}
-	return "", "", "", errors.New("官方版本缺少所需文件")
 }
 
 func (a *Agent) downloadCore(ctx context.Context, work string, phase func(string)) (string, error) {
@@ -256,15 +201,11 @@ func (a *Agent) downloadCore(ctx context.Context, work string, phase func(string
 		return "", errors.New("仅支持 ARM64 / ARMv7 设备")
 	}
 	phase("release")
-	metadata := filepath.Join(work, "release.json")
-	if err := a.fetch(ctx, releaseAPI, metadata, 4<<20); err != nil {
-		return "", err
-	}
-	data, err := os.ReadFile(metadata)
+	r, err := a.latestRelease(ctx, "MetaCubeX", "mihomo")
 	if err != nil {
 		return "", err
 	}
-	version, address, digest, err := selectAsset(data, arch)
+	version, address, digest, err := r.asset("MetaCubeX/mihomo", "mihomo-android-"+arch+"-"+r.GetTagName()+".gz")
 	if err != nil {
 		return "", err
 	}
@@ -272,8 +213,8 @@ func (a *Agent) downloadCore(ctx context.Context, work string, phase func(string
 	if err != nil {
 		return "", err
 	}
-	if settings.Mirror != "" {
-		address = settings.Mirror + "/" + address
+	if settings.GitHubProxy != "" {
+		address = settings.GitHubProxy + "/" + address
 	}
 	phase("download")
 	archive := filepath.Join(work, "core.gz")
@@ -284,7 +225,7 @@ func (a *Agent) downloadCore(ctx context.Context, work string, phase func(string
 	if err = a.installCore(ctx, archive, work, digest, phase); err != nil {
 		return "", err
 	}
-	return "核心 " + version + " 已安装，校验通过", nil
+	return "内核 " + version + " 已安装，校验通过", nil
 }
 
 func (a *Agent) installCore(ctx context.Context, archive, work, digest string, phase func(string)) error {
@@ -298,7 +239,7 @@ func (a *Agent) installCore(ctx context.Context, archive, work, digest string, p
 		return err
 	}
 	if hex.EncodeToString(hash.Sum(nil)) != digest {
-		return errors.New("核心 SHA-256 不匹配，拒绝安装")
+		return errors.New("内核 SHA-256 不匹配，拒绝安装")
 	}
 	if _, err = f.Seek(0, io.SeekStart); err != nil {
 		return err
@@ -317,10 +258,10 @@ func (a *Agent) installCore(ctx context.Context, archive, work, digest string, p
 	syncErr := out.Sync()
 	closeErr := out.Close()
 	if copyErr != nil || syncErr != nil || closeErr != nil || n > 128<<20 || n < 4 {
-		return errors.New("核心解压失败或大小无效")
+		return errors.New("内核解压失败或大小无效")
 	}
 	if _, err = a.run(ctx, candidate, "-v"); err != nil {
-		return errors.New("核心不能在本设备运行")
+		return errors.New("内核不能在本设备运行")
 	}
 	if id, _ := a.activeGeneration(); id != "" {
 		if err = a.testCore(ctx, candidate, a.runtime("current", "config.yaml")); err != nil {
@@ -333,7 +274,7 @@ func (a *Agent) installCore(ctx context.Context, archive, work, digest string, p
 
 func (a *Agent) updateConfig(ctx context.Context, request Request, work string, phase func(string)) (string, error) {
 	if !regularFile(a.runtime("mihomo")) {
-		return "", errors.New("请先下载核心")
+		return "", errors.New("请先安装 Mihomo 内核")
 	}
 	current, err := a.configuration()
 	if err != nil {

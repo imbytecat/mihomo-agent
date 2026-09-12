@@ -2,17 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import PQueue from 'p-queue';
 import { toast } from 'sonner';
-import { subscriptionURL, downloadMirror, interfaces } from './config';
-import { bootstrapAgent, deviceLogs, readDeviceState, submitTask, waitTask, describeTask, readJob, jobLog, readControllerSecret } from './ufi';
-import { disabledReason, type Action, type DeviceState, type DeviceJob } from './state';
+import { subscriptionURL, githubProxyURL, interfaces } from './config';
+import { bootstrapAgent, deviceLogs, readDeviceState, submitTask, waitTask, describeTask, readJob, jobLog, readControllerSecret, stopAgent } from './ufi';
+import { disabledReason, installationTask, type Action, type DeviceState, type DeviceJob } from './state';
 
-type Fields = { subscription: string; mirror: string; interfaces: string; controlEnabled: boolean; controlPort: string; controlSecret: string; resetSecret: boolean };
-export type Setting = 'mirror' | 'interfaces';
-export type Operation = Exclude<Action, 'save-mirror' | 'save-interfaces' | 'open-dashboard'>;
-const defaults: Fields = { subscription: '', mirror: '', interfaces: '', controlEnabled: true, controlPort: '9090', controlSecret: '', resetSecret: false };
-const normalize = { mirror: downloadMirror, interfaces };
-const settingAction = { mirror: 'save-mirror', interfaces: 'save-interfaces' } as const;
-const settingLabel = { mirror: '镜像', interfaces: '接口' };
+type Fields = { subscription: string; githubProxy: string; interfaces: string; controlEnabled: boolean; controlPort: string; controlSecret: string; resetSecret: boolean };
+export type Setting = 'githubProxy' | 'interfaces';
+export type Operation = Exclude<Action, 'save-github-proxy' | 'save-interfaces' | 'open-dashboard'>;
+const defaults: Fields = { subscription: '', githubProxy: '', interfaces: '', controlEnabled: true, controlPort: '9090', controlSecret: '', resetSecret: false };
+const normalize = { githubProxy: githubProxyURL, interfaces };
+const settingAction = { githubProxy: 'save-github-proxy', interfaces: 'save-interfaces' } as const;
+const settingLabel = { githubProxy: 'GitHub Proxy', interfaces: '接口' };
 const notification = { id: 'ufi-mihomo-operation', toasterId: 'ufi-mihomo' };
 
 export function useGateway() {
@@ -25,7 +25,7 @@ export function useGateway() {
   const busyRef = useRef(false);
   const pendingSaves = useRef(0);
   const [saving, setSaving] = useState<Setting | null>(null);
-  const [saved, setSaved] = useState<Record<Setting, string | null>>({ mirror: null, interfaces: null });
+  const [saved, setSaved] = useState<Record<Setting, string | null>>({ githubProxy: null, interfaces: null });
   const savedRef = useRef(saved);
   const loaded = useRef(false);
   const open = useRef(false);
@@ -47,7 +47,7 @@ export function useGateway() {
       const state = await readDeviceState();
       if (!state.service && loaded.current) {
         loaded.current = false;
-        savedRef.current = { mirror: null, interfaces: null }; setSaved({ ...savedRef.current });
+        savedRef.current = { githubProxy: null, interfaces: null }; setSaved({ ...savedRef.current });
       }
       deviceRef.current = state; setDevice(state);
       return state;
@@ -57,8 +57,8 @@ export function useGateway() {
     const state = await readState();
     if (state.service) {
       try {
-        for (const name of ['mirror', 'interfaces'] as const) {
-          const text = name === 'mirror' ? state.settings.mirror : state.settings.interfaces.join(' ');
+        for (const name of ['githubProxy', 'interfaces'] as const) {
+          const text = name === 'githubProxy' ? state.settings.githubProxy : state.settings.interfaces.join(' ');
           const value = normalize[name](text);
           let current: string | null = null;
           try { current = normalize[name](form.getValues(name)); } catch {}
@@ -135,20 +135,28 @@ export function useGateway() {
     detailRequest.current++;
     busyRef.current = true; setBusy(id); setError(false); setDetailTitle('操作详情');
     let failed = false;
-    if (!quiet) toast.loading('正在处理…', notification);
+    if (!quiet && !installationTask(id)) toast.loading('正在处理…', notification);
     try {
       await queue.add(async () => {
-        const state = await readState();
+        const state = await readState().catch(error => {
+          if (id === 'update-agent' || id === 'stop') return null;
+          throw error;
+        });
         const reason = disabledReason(id, state, false, snapshot.subscription);
         if (reason) throw new Error(reason);
         let result = '';
         switch (id) {
-          case 'install': case 'service-update':
-            result = await waitTask(id === 'service-update' || !state.agent
-              ? await bootstrapAgent(downloadMirror(snapshot.mirror)) : await submitTask('install', downloadMirror(snapshot.mirror)), observe);
-            result = id === 'install' ? '服务已安装' : '设备组件已更新'; break;
+          case 'install':
+            result = await waitTask(!state?.agent
+              ? await bootstrapAgent(githubProxyURL(snapshot.githubProxy)) : await submitTask('install', githubProxyURL(snapshot.githubProxy)), observe);
+            result = 'Mihomo 服务已安装'; break;
+          case 'update-agent':
+            if (state) await persist('githubProxy', snapshot.githubProxy);
+            result = await waitTask(!state ? await bootstrapAgent(githubProxyURL(snapshot.githubProxy)) : await submitTask('update-agent'), observe); break;
+          case 'stop':
+            result = await waitTask(state ? await submitTask('stop') : await stopAgent(), observe); break;
           case 'download':
-            result = await waitTask(await submitTask('download', downloadMirror(snapshot.mirror)), observe);
+            result = await waitTask(await submitTask('download', githubProxyURL(snapshot.githubProxy)), observe);
             loaded.current = false; break;
           case 'update':
             if (snapshot.subscription.trim()) {
@@ -171,14 +179,14 @@ export function useGateway() {
             setSecret(''); break;
           }
           case 'download-dashboard':
-            await persist('mirror', snapshot.mirror);
+            await persist('githubProxy', snapshot.githubProxy);
             result = await waitTask(await submitTask('download-dashboard'), observe); break;
           case 'view-secret':
             setSecret(await readControllerSecret()); result = '密钥已读取'; break;
           case 'uninstall':
             result = await waitTask(await submitTask('uninstall'), observe);
             loaded.current = false; form.reset(defaults);
-            savedRef.current = { mirror: null, interfaces: null }; setSaved({ ...savedRef.current });
+            savedRef.current = { githubProxy: null, interfaces: null }; setSaved({ ...savedRef.current });
             break;
           case 'diagnose':
             result = await deviceLogs(true); break;
@@ -190,7 +198,7 @@ export function useGateway() {
         }
         if (!quiet && id !== 'refresh') setDetail(result);
         if (id === 'logs' || id === 'diagnose') { setDetailTitle(id === 'logs' ? '运行日志' : '网络诊断'); setDetailOpen(true); }
-        if (!quiet) toast.success(id === 'logs' ? '日志已加载' : id === 'diagnose' ? '诊断完成' : result.split('\n')[0]!.slice(0, 180), notification);
+        if (!quiet && !installationTask(id)) toast.success(id === 'logs' ? '日志已加载' : id === 'diagnose' ? '诊断完成' : result.split('\n')[0]!.slice(0, 180), notification);
       });
     } catch (error) {
       failed = true;
@@ -223,7 +231,7 @@ export function useGateway() {
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (pendingSaves.current || form.getValues('subscription').trim()
         || (['controlEnabled', 'controlPort', 'controlSecret', 'resetSecret'] as const).some(name => form.getFieldState(name).isDirty)
-        || (['mirror', 'interfaces'] as const).some(name => form.getFieldState(name).isDirty && dirty(name))) {
+        || (['githubProxy', 'interfaces'] as const).some(name => form.getFieldState(name).isDirty && dirty(name))) {
         event.preventDefault(); event.returnValue = '';
       }
     };
@@ -244,7 +252,9 @@ export function useGateway() {
     if (form.formState.errors[name]) return form.formState.errors[name]!.message!;
     if (!device?.service) return '草稿';
     if (saved[name] === null) return '读取中';
-    return dirty(name) ? '未保存' : !form.getValues(name).trim() ? name === 'mirror' ? '直连' : '自动' : '已保存';
+    return dirty(name) ? '未保存' : !form.getValues(name).trim() ? name === 'githubProxy' ? '直连' : '自动' : '已保存';
   };
   return { device, busy, form, values, saving, saveStatus, validate, autosave, perform, open, detail, detailTitle, detailOpen, setDetailOpen, error, showTask, secret, setSecret };
 }
+
+export type GatewayModel = ReturnType<typeof useGateway>;

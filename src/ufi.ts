@@ -1,7 +1,7 @@
 import sodium from 'libsodium-wrappers';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import manifest from '../backend-release.json';
+import manifest from '../agent-bootstrap.json';
 import bootstrapScript from './bootstrap.sh?raw';
 import { emptyState, parseState, parseJob, type DeviceJob, type TaskAction } from './state';
 import { request, requestFailure, responseJSON, transportFailure } from './request';
@@ -41,11 +41,13 @@ async function agent(args: string[]) {
   const result = await shell([quote(AGENT), ...args.map(quote)].join(' '));
   return JSON.parse(result) as unknown;
 }
+export async function stopAgent() { return parseJob(await agent(['stop'])); }
 export const phases: Record<string, string> = {
   accepted: '任务已接收', preparing: '准备中', release: '查询官方版本', download: '下载中',
   verify: '校验文件', installing: '安装中', subscription: '下载订阅', validate: '校验配置',
   applying: '应用配置', rollback: '恢复上一配置', saving: '保存设置', starting: '启动代理',
   adapt: '适配配置',
+  removing: '删除设备文件',
   stopping: '停止代理', done: '已完成', interrupted: '任务已中断', failed: '任务失败',
 };
 export async function readDeviceState() {
@@ -87,12 +89,16 @@ export function taskID() { return Array.from(crypto.getRandomValues(new Uint8Arr
 
 export async function submitTask(action: TaskAction, value = '') {
   const state = await readDeviceState();
-  if (!state.agent || !state.publicKey) throw new Error('请先安装设备后端');
+  if (!state.agent || !state.publicKey) throw new Error('请先安装 Mihomo Agent');
   const id = taskID();
   const sealed = await sealRequest(state.publicKey, { id, action, value });
   const name = await uploadBytes(sealed.bytes);
   try { return parseJob(await agent(['submit', name, sealed.hash])); }
   catch (error) {
+    if (action === 'uninstall') {
+      const completed = await readUninstallJob({ id, action, state: 'running', phase: 'removing', updated: '', hash: sealed.hash, error: '', result: '' }).catch(() => null);
+      if (completed?.state === 'succeeded') return completed;
+    }
     try { return parseJob(await agent(['job', id])); } catch {}
     throw new Error(`任务提交结果未确认\n任务 ID：${id}\n${error instanceof Error ? error.message : String(error)}\n恢复连接后刷新状态，勿连续重复提交。`);
   }
@@ -101,6 +107,25 @@ export async function readJob(id: string) {
   if (!/^[a-f0-9]{32}$/.test(id)) throw new Error('无效任务 ID');
   return parseJob(await agent(['job', id]));
 }
+
+// Completion is the absence of both owned directories, not a surviving receipt.
+export async function readUninstallJob(initial: DeviceJob): Promise<DeviceJob | null> {
+  if (!/^[a-f0-9]{32}$/.test(initial.id)) throw new Error('无效任务 ID');
+  const state = await shell(`
+    # ufi-uninstall-status
+    [ ! -L ${DIR} ] && [ ! -L ${BOOT} ] || { echo '卸载目录异常'; exit 1; }
+    if [ ! -e ${DIR} ] && [ ! -L ${DIR} ] && [ ! -e ${BOOT} ] && [ ! -L ${BOOT} ]; then printf null
+    elif [ -x ${AGENT} ] && record=$(${AGENT} job ${initial.id} 2>/dev/null); then printf '%s' "$record"
+    elif record=$(cat ${DIR}/tasks/${initial.id}/state.json 2>/dev/null); then printf '%s' "$record"
+    else printf '{"removing":true}'; fi
+  `);
+  const value = JSON.parse(state);
+  if (value === null) return { ...initial, state: 'succeeded', phase: 'done', result: 'Mihomo 服务已卸载' };
+  if (value?.removing === true) return null;
+  const job = parseJob(value);
+  if (job.state === 'succeeded') return { ...job, state: 'failed', error: '卸载未完成，设备文件仍存在' };
+  return job;
+}
 export async function jobLog(job: DeviceJob) {
   if (job.action === 'bootstrap') return shell(`tail -n 35 ${BOOT}/jobs/${job.id}/log.txt`);
   const result = await agent(['job-log', job.id]);
@@ -108,10 +133,20 @@ export async function jobLog(job: DeviceJob) {
 }
 export async function waitTask(initial: DeviceJob, progress: (job: DeviceJob) => void) {
   let job = initial;
+  let deleting = 0;
   while (job.state === 'queued' || job.state === 'running') {
     progress(job);
     await new Promise(resolve => setTimeout(resolve, 1500));
-    try { job = job.action === 'bootstrap' ? (await readBootstrap(job.id))! : await readJob(job.id); }
+    try {
+      if (job.action === 'uninstall') {
+        const next = await readUninstallJob(job);
+        if (!next) {
+          if (++deleting > 40) throw new Error('卸载未完成，请检查设备上剩余的文件');
+          continue;
+        }
+        job = next;
+      } else job = job.action === 'bootstrap' ? (await readBootstrap(job.id))! : await readJob(job.id);
+    }
     catch (error) { throw new Error(`设备任务状态暂不可读\n任务 ID：${job.id}\n${error instanceof Error ? error.message : String(error)}\n任务不会因页面断开而取消，恢复连接后刷新即可继续查看。`); }
     if (!job) throw new Error('任务记录不可读');
   }
@@ -129,9 +164,10 @@ export async function deviceLogs(diagnose = false) {
 
 export function describeTask(job: DeviceJob) {
   const names: Record<DeviceJob['action'], string> = {
-    bootstrap: '安装设备组件', install: '安装服务', download: '下载核心', update: '更新订阅', start: '启动代理', stop: '停止代理', restart: '重启代理',
-    'boot-on': '开启自启', 'boot-off': '关闭自启', uninstall: '卸载服务', 'save-mirror': '保存镜像', 'save-interfaces': '保存接口',
-    'save-controller': '应用面板设置', 'download-dashboard': '安装面板',
+    'update-agent': '更新 Mihomo Agent',
+    bootstrap: '安装 Mihomo Agent', install: '安装 Mihomo 服务', download: '安装 / 更新 Mihomo 内核', update: '更新订阅', start: '启动代理', stop: '停止代理', restart: '重启代理',
+    'boot-on': '启用开机启动', 'boot-off': '关闭开机启动', uninstall: '卸载 Mihomo 服务', 'save-github-proxy': '保存 GitHub Proxy', 'save-interfaces': '保存接口',
+    'save-controller': '应用面板设置', 'download-dashboard': '安装 / 更新 Zashboard',
   };
   return [names[job.action], `执行阶段：${phases[job.phase] || job.phase}`, job.result, job.error, `任务 ID：${job.id}`].filter(Boolean).join('\n');
 }
@@ -167,7 +203,7 @@ async function readBootstrap(id?: string): Promise<DeviceJob | null> {
   `);
   return output === 'null' ? null : parseJob(JSON.parse(output));
 }
-export async function bootstrapAgent(mirror: string) {
+export async function bootstrapAgent(githubProxy: string) {
   await sodium.ready;
   const id = taskID();
   const data = sodium.from_string(bootstrapScript);
@@ -187,7 +223,7 @@ export async function bootstrapAgent(mirror: string) {
     hash=$(sha256sum ${folder}/bootstrap.sh)
     [ "\${hash%% *}" = ${quote(hash)} ] || { echo '安装脚本校验失败'; exit 1; }
     rm -f ${quote(source)}
-    sh ${folder}/bootstrap.sh submit ${quote(id)} ${quote(mirror)} ${quote(asset64.url)} ${quote(asset64.sha256)} ${quote(asset7.url)} ${quote(asset7.sha256)}
+    sh ${folder}/bootstrap.sh submit ${quote(id)} ${quote(githubProxy)} ${quote(asset64.url)} ${quote(asset64.sha256)} ${quote(asset7.url)} ${quote(asset7.sha256)}
   `);
   return parseJob(JSON.parse(result));
 }

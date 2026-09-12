@@ -1,4 +1,4 @@
-package agent
+package app
 
 import (
 	"bytes"
@@ -20,6 +20,43 @@ import (
 
 type HTTPClient interface {
 	Do(*http.Request) (*http.Response, error)
+}
+
+type requestTransport struct{ HTTPClient }
+
+func (t requestTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	return t.Do(request)
+}
+
+type fallbackTransport struct{ primary, fallback http.RoundTripper }
+
+func (t *fallbackTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	response, err := t.primary.RoundTrip(request)
+	if err == nil || request.Context().Err() != nil {
+		return response, err
+	}
+	response, fallbackErr := t.fallback.RoundTrip(request.Clone(request.Context()))
+	if fallbackErr != nil {
+		return nil, fmt.Errorf("系统连接：%v；DNS 回退：%v", requestCause(err), requestCause(fallbackErr))
+	}
+	return response, nil
+}
+func (t *fallbackTransport) CloseIdleConnections() {
+	for _, transport := range []http.RoundTripper{t.primary, t.fallback} {
+		if closer, ok := transport.(interface{ CloseIdleConnections() }); ok {
+			closer.CloseIdleConnections()
+		}
+	}
+}
+
+func (a *Agent) deviceClient() *http.Client {
+	if a.httpClient != nil {
+		return &http.Client{Transport: requestTransport{a.httpClient}}
+	}
+	dialer := &net.Dialer{Timeout: 8 * time.Second}
+	client := httpClient(dialer.DialContext)
+	client.Transport = &fallbackTransport{client.Transport, httpClient(dohDial).Transport}
+	return client
 }
 
 func trustedRoots() *x509.CertPool {
@@ -119,25 +156,10 @@ func (a *Agent) fetch(ctx context.Context, address, destination string, max int6
 	if err != nil {
 		return errors.New("下载地址无效")
 	}
-	request.Header.Set("User-Agent", "ufi-mihomo-agent/"+a.Version)
-	var response *http.Response
-	if a.httpClient != nil {
-		response, err = a.httpClient.Do(request)
-	} else {
-		dialer := &net.Dialer{Timeout: 8 * time.Second}
-		client := httpClient(dialer.DialContext)
-		defer client.CloseIdleConnections()
-		response, err = client.Do(request)
-		if err != nil && ctx.Err() == nil {
-			initial := requestCause(err)
-			fallback := httpClient(dohDial)
-			defer fallback.CloseIdleConnections()
-			response, err = fallback.Do(request.Clone(ctx))
-			if err != nil {
-				err = fmt.Errorf("系统连接：%v；DNS 回退：%v", initial, requestCause(err))
-			}
-		}
-	}
+	request.Header.Set("User-Agent", "mihomo-agent/"+a.Version)
+	client := a.deviceClient()
+	defer client.CloseIdleConnections()
+	response, err := client.Do(request)
 	if err != nil {
 		return fmt.Errorf("设备访问 %s 失败：%w", parsed.Hostname(), requestCause(err))
 	}

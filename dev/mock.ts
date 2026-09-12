@@ -5,9 +5,9 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import { parse } from 'shell-quote';
 import { emptyState, type DeviceState, type DeviceJob, type TaskAction } from '../src/state';
 
-const ready = { ...emptyState, agent: true, version: 'v0.2.0', service: true, core: true, config: true, subscription: true, controller: { enabled: true, port: 9090, applied: true } };
+const ready = { ...emptyState, agent: true, version: 'v0.3.0', service: true, core: true, coreVersion: 'v1.19.30', config: true, subscription: true, controller: { enabled: true, port: 9090, applied: true } };
 const scenarios: Record<string, DeviceState> = {
-  'missing-service': emptyState, 'missing-core': { ...ready, core: false, config: false, subscription: false },
+  'missing-service': emptyState, 'missing-core': { ...ready, core: false, coreVersion: '', config: false, subscription: false },
   'missing-config': { ...ready, config: false, subscription: false }, ready,
   running: { ...ready, running: true, supervisor: true, listeners: true, network: true, capture: true, dashboard: { installed: true, ready: true, version: 'v3.26.0' } },
 };
@@ -36,10 +36,11 @@ function advance() {
   job.updated = new Date().toISOString(); state.locked = false;
   if (!failure) {
     switch (intent.action) {
-      case 'bootstrap': case 'install': state.agent = state.service = true; state.version = 'v0.2.0'; state.controller = { enabled: true, port: 9090, applied: false }; state.settings.mirror = intent.value; job.result = '服务已安装'; break;
-      case 'save-mirror': state.settings.mirror = intent.value; job.result = '镜像已保存'; break;
+      case 'bootstrap': case 'install': state.agent = state.service = true; state.version = 'v0.3.0'; state.controller = { enabled: true, port: 9090, applied: false }; state.settings.githubProxy = intent.value; job.result = 'Mihomo 服务已安装'; break;
+      case 'update-agent': state.version = 'v0.3.0'; job.result = 'Mihomo Agent 已是最新版本'; break;
+      case 'save-github-proxy': state.settings.githubProxy = intent.value; job.result = 'GitHub Proxy已保存'; break;
       case 'save-interfaces': state.settings.interfaces = intent.value === 'auto' ? [] : intent.value.split(' '); job.result = '接口已保存'; break;
-      case 'download': state.core = true; state.settings.mirror = intent.value; job.result = '核心 v9.8.7 已安装，校验通过'; break;
+      case 'download': state.core = true; state.coreVersion = 'v9.8.7'; state.settings.githubProxy = intent.value; job.result = '内核 v9.8.7 已安装，校验通过'; break;
       case 'update': state.config = state.subscription = true; state.controller!.applied = true; state.dashboard.ready = state.dashboard.installed && state.controller!.enabled; job.result = '配置已更新'; break;
       case 'save-controller': {
         const value = JSON.parse(intent.value);
@@ -49,11 +50,14 @@ function advance() {
         job.result = '面板设置已应用'; break;
       }
       case 'download-dashboard': state.dashboard = { installed: true, ready: state.config && !!state.controller?.enabled, version: 'v3.26.0' }; job.result = 'Zashboard v3.26.0 已安装'; break;
-      case 'boot-on': state.boot = true; job.result = '自启已开启'; break;
-      case 'boot-off': state.boot = false; job.result = '自启已关闭'; break;
+      case 'boot-on': state.boot = true; job.result = '开机启动已开启'; break;
+      case 'boot-off': state.boot = false; job.result = '开机启动已关闭'; break;
       case 'start': case 'restart': Object.assign(state, { running: true, supervisor: true, listeners: true, network: true, capture: true }); job.result = '代理已启动'; break;
       case 'stop': Object.assign(state, { running: false, supervisor: false, listeners: false, network: false, capture: false }); job.result = '代理已停止'; break;
-      case 'uninstall': Object.assign(state, structuredClone(emptyState), { agent: true, publicKey: state.publicKey, task: job }); job.result = '代理服务已卸载，运行文件已备份'; break;
+      case 'uninstall':
+        Object.assign(state, structuredClone(emptyState));
+        for (const id of Object.keys(jobs)) delete jobs[id];
+        controllerSecret = ''; pending = null; sessionStorage.removeItem(storageKey); return;
     }
   }
   state.task = job; pending = null; save();
@@ -78,7 +82,8 @@ Object.assign(globalThis, {
     try {
       const inner = parse(command)[2] as string;
       const args = parse(inner).filter((x): x is string => typeof x === 'string');
-      if (inner.includes(' inspect')) result = state.agent ? state : null;
+      if (inner.includes('ufi-uninstall-status')) result = state.agent ? state.task : null;
+      else if (inner.includes(' inspect')) result = state.agent ? state : null;
       else if (args[0] === '/data/ufi-mihomo/agent') {
         switch (args[1]) {
           case 'submit': {
@@ -90,6 +95,7 @@ Object.assign(globalThis, {
             result = submit(intent, args[3]); break;
           }
           case 'job': result = jobs[args[2]!]; break;
+          case 'stop': result = submit({ id: crypto.randomUUID().replaceAll('-', ''), action: 'stop', value: '' }); break;
           case 'controller-secret': result = sodium.to_base64(sodium.crypto_box_seal(sodium.from_string(controllerSecret), sodium.from_base64(args[2]!, sodium.base64_variants.ORIGINAL)), sodium.base64_variants.ORIGINAL); break;
           case 'job-log': result = 'F50 任务日志'; break;
           case 'logs': result = 'core.log\n代理运行正常'; break;

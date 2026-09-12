@@ -4,15 +4,18 @@
 
 - 面向中兴 F50 / UFI-TOOLS 完整版，用一个完整 mihomo YAML 订阅提供随身网关。保留用户的代理策略，只做必要网关适配。
 - README 面向用户，只写安装、使用与必要提醒。开发约束维护在本文件；参数、依赖版本和目录细节以代码为准。
-- 界面文案简短。镜像与接口失焦保存，订阅明确保存并应用；安装/卸载共用一个按设备状态切换的按钮。
+- 界面文案简短。GitHub Proxy 与接口失焦保存，订阅明确保存并应用。程序行统一使用「安装 / 更新」；Mihomo 服务使用「安装 / 卸载」。
 - 使用现有库和平台能力；不添加旧插件兼容、旧核心复用或订阅转换。参考材料吸收为约束和测试后移除，不积累源码副本或调查流水账。
 
 ## 修改前定位
 
-- 修改 UI、表单或任务恢复：先读 `src/use-gateway.ts`、`src/state.ts`、`src/ufi.ts`。浏览器只与 UFI 通信；下载、版本查询、YAML 处理和配置应用归 Go 后端。
-- 修改设备任务或安装：先读 `backend/main.go`、`backend/internal/agent/jobs.go`、`operations.go` 与 `src/bootstrap.sh`。任务必须独立于浏览器存活；前端轮询只是观察，不负责串联设备执行步骤。
-- 修改配置或网络：先读 `backend/internal/agent/config.go`、`runtime.go`、`network.sh`，以及对应 Go 测试和 `tests/plugin.test.ts`。shell 仅桥接 Android 网络命令，代理数据流归 mihomo。
-- 修改控制面板：先读 `backend/internal/agent/controller.go`、`dashboard.go`。本机管理设置覆盖订阅中的控制 API/UI 字段；配置版本同时保存有效密钥和端口，保持失败回滚的一致性。密钥查看使用浏览器临时公钥加密响应；Dashboard 链接不携带密钥。
+统一术语：Mihomo Agent 是设备端管理程序；Mihomo 内核负责代理流量；Zashboard 是控制面板；Mihomo 服务是安装与运行整体，没有独立版本；GitHub Proxy 是下载代理，不是镜像。CLI 仅指调用方式，不能代替程序名。
+
+- 修改 UI：入口 `src/index.tsx` 只负责挂载；`src/App.tsx` 组合 `src/components/` 的功能分区。组件样式写 Tailwind className，CSS 只留宿主隔离与主题变量；弹窗和菜单挂到独立的作用域 portal，避免宿主裁切。
+- 修改表单或任务恢复：先读 `src/use-gateway.ts`、`src/state.ts`、`src/ufi.ts`。浏览器只与 UFI 通信；下载、版本查询、YAML 处理和配置应用归 Mihomo Agent。
+- 修改设备任务或安装：先读 `agent/main.go`、`agent/internal/app/jobs.go`、`operations.go` 与 `src/bootstrap.sh`。任务必须独立于浏览器存活；前端轮询只是观察，不负责串联设备执行步骤。
+- 修改配置或网络：先读 `agent/internal/app/config.go`、`runtime.go`、`network.sh`，以及对应 Go 测试和 `tests/plugin.test.ts`。shell 仅桥接 Android 网络命令，代理数据流归 mihomo。
+- 修改控制面板：先读 `agent/internal/app/controller.go`、`dashboard.go`。本机管理设置覆盖订阅中的控制 API/UI 字段；配置版本同时保存有效密钥和端口，保持失败回滚的一致性。密钥查看使用浏览器临时公钥加密响应；Dashboard 链接不携带密钥。
 - 修改 UFI 加载/通信协议时，核对下方官方接口来源，不根据其他插件的实现猜测。
 
 ## 必须保持的边界
@@ -25,8 +28,8 @@
 - 原始订阅、运行配置、订阅链接同属一个配置版本；校验成功后原子切换。失败保留旧版，未完成的事务由 journal 恢复。保留已有节点、规则、DNS 上游等策略。
 - 自动接管仅限识别到的共享入口，排除蜂窝及上游。启动核心前安装监听端口保护，等待 LAN 时仍保留保护；核心退出后才能撤掉保护。
 - 网络资源只操作本插件拥有的链、路由和 mark；不清空系统防火墙或改全局默认路由。进程操作核对出生时间，避免 PID 复用。
-- 卸载先停代理、清规则、关自启，成功后才备份运行目录。清理失败保留文件；管理程序、密钥、任务记录及卸载备份不随运行目录删除。
-- 配置清理保留当前和最近两个其他版本；保留防重放记录，卸载备份不自动清理。
+- 卸载先停代理、清规则、关自启，再删除整个安装目录和引导临时目录，包括 Agent、密钥、任务记录及旧备份。清理失败报错；成功后不得为写任务结果重新创建目录。前端以两个目录确实消失确认卸载完成。
+- 运行期间保留配置回滚版本和防重放记录；完整卸载时一并删除。不要增加自动卸载备份或旧命名别名。
 
 ## 验证
 
@@ -39,10 +42,10 @@ bun run build
 bun test
 ```
 
-后端修改，在 `backend/` 执行 `go test -race ./...` 与 `go vet ./...`。shell 修改额外执行：
+Agent 修改，在 `agent/` 执行 `go test -race ./...` 与 `go vet ./...`。shell 修改额外执行：
 
 ```sh
-shellcheck -x -s sh src/bootstrap.sh backend/internal/agent/network.sh
+shellcheck -x -s sh src/bootstrap.sh agent/internal/app/network.sh
 ```
 
 交互修改运行 `bun run test:ui`（需 agent-browser）；测试通过真实 DOMParser 加载生产 IIFE。开发预览 `bun run dev` 使用模拟 UFI；`tests/native.test.ts` 则把加密请求交给真实主机 Go 子进程。
@@ -53,10 +56,10 @@ shellcheck -x -s sh src/bootstrap.sh backend/internal/agent/network.sh
 
 ## 发布
 
-- 版本和命令以 `mise.toml`、`package.json`、`tools/build-backend.ts` 与 `.github/workflows/` 为准。
+- 版本和命令以 `mise.toml`、`package.json`、`tools/build-agent.ts` 与 `.github/workflows/` 为准。
 - 发布使用官方 Go 工具链，可通过 `mise exec -- bun run build:release` 复现当前版本。Nix 的同版本 Go 会修改标准库路径，产生不同摘要；不能用于发行构建。
-- 发布新版本时向 `build:release` 传入新的 semver。检查 `.release/` 产物并提交生成的 `backend-release.json`，随后推送匹配的 `agent-v*` 标签。不得覆盖已发布标签或资产。
-- 后端版本与前端协议绑定；mihomo 核心仍按需查询最新稳定版，两者不要混淆。
+- 发布新版本时向 `build:release` 传入新的 semver。检查 `.release/` 产物并提交生成的 `agent-bootstrap.json`，随后推送匹配的 `agent-v*` 标签。不得覆盖已发布标签或资产。
+- `agent-bootstrap.json` 是初次安装的信任锚，不用于运行时更新比较。GitHub API 使用 go-github，版本比较使用 semver，Agent 原子替换使用 go-selfupdate/update；保持 Android CA、DNS 回退、摘要校验及协议检查。代理给出的二进制不能仅凭同一代理提供的哈希被信任。
 - 交付发布版本前，确认 CI 测试及摘要一致性检查通过，再从公开地址下载并验证 SHA256SUMS。生产插件须保持单 JS，包含样式与加密资源，不产生额外 CDN/WASM 请求。
 
 ## UFI 接口来源

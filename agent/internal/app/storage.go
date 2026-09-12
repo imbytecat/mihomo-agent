@@ -1,4 +1,4 @@
-package agent
+package app
 
 import (
 	"context"
@@ -20,7 +20,7 @@ type Agent struct {
 	httpClient             HTTPClient
 	runCommand             func(context.Context, string, ...string) ([]byte, error)
 	BootPath               string
-	InitialMirror          string
+	InitialGitHubProxy     string
 }
 
 func New(root, uploads, version string) (*Agent, error) {
@@ -131,7 +131,7 @@ func (a *Agent) requireIdentity() error {
 		Protocol int `json:"protocol"`
 	}
 	if err := readJSON(a.path("identity.json"), &identity); err != nil || identity.Protocol != Protocol {
-		return fmt.Errorf("设备后端未初始化或协议不匹配")
+		return fmt.Errorf("Mihomo Agent 未初始化或协议不匹配")
 	}
 	return nil
 }

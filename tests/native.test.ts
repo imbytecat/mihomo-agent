@@ -18,7 +18,7 @@ test('sealed browser intents run in a detached native worker; failed updates pre
     return new Response(source);
   } });
   try {
-    const build = Bun.spawn(['go', 'build', '-o', binary, '.'], { cwd: 'backend', stderr: 'inherit' });
+    const build = Bun.spawn(['go', 'build', '-o', binary, '.'], { cwd: 'agent', stderr: 'inherit' });
     expect(await build.exited).toBe(0);
     async function cli(command: string, ...args: string[]) {
       const child = Bun.spawn([binary, command, '--root', root, '--uploads', uploads, ...args], { stdout: 'pipe', stderr: 'pipe' });
@@ -47,11 +47,12 @@ test('sealed browser intents run in a detached native worker; failed updates pre
       }
       throw new Error('Worker did not finish');
     };
-    expect((await submit('save-mirror', 'https://ghfast.top')).state).toBe('succeeded');
-    expect((await inspect()).settings.mirror).toBe('https://ghfast.top');
+    expect((await submit('save-github-proxy', 'https://ghfast.top')).state).toBe('succeeded');
+    expect((await inspect()).settings.githubProxy).toBe('https://ghfast.top');
     // Fake only mihomo validation; real Go performs HTTP, YAML, storage and job lifecycle.
-    await writeFile(join(root, 'runtime/mihomo'), '#!/bin/sh\nexit 0\n');
+    await writeFile(join(root, 'runtime/mihomo'), '#!/bin/sh\nif [ "$1" = -v ]; then echo "Mihomo Meta v1.19.30 android arm64 with go1.26.7"; fi\nexit 0\n');
     await chmod(join(root, 'runtime/mihomo'), 0o700);
+    expect((await inspect()).coreVersion).toBe('v1.19.30');
     const url = server.url.href + '?token=fixture-secret';
     const accepted = await submit('update', url);
     expect(accepted.state).toBe('succeeded');

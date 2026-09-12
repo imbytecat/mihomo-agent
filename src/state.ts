@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const jobSchema = z.object({
-  id: z.string().regex(/^[a-f0-9]{32}$/), action: z.enum(['bootstrap', 'install', 'download', 'update', 'start', 'stop', 'restart', 'boot-on', 'boot-off', 'uninstall', 'save-mirror', 'save-interfaces', 'save-controller', 'download-dashboard']),
+  id: z.string().regex(/^[a-f0-9]{32}$/), action: z.enum(['bootstrap', 'install', 'update-agent', 'download', 'update', 'start', 'stop', 'restart', 'boot-on', 'boot-off', 'uninstall', 'save-github-proxy', 'save-interfaces', 'save-controller', 'download-dashboard']),
   state: z.enum(['queued', 'running', 'succeeded', 'failed', 'interrupted']), phase: z.string(), updated: z.string(),
   result: z.string().optional().default(''), error: z.string().optional().default(''), hash: z.string(),
 });
@@ -10,25 +10,26 @@ export type TaskAction = Exclude<DeviceJob['action'], 'bootstrap'>;
 const stateSchema = z.object({
   protocol: z.literal(1), version: z.string(), publicKey: z.string(), service: z.boolean(), core: z.boolean(), config: z.boolean(), subscription: z.boolean(),
   running: z.boolean(), supervisor: z.boolean(), listeners: z.boolean(), network: z.boolean(), boot: z.boolean(), locked: z.boolean(), capture: z.boolean(),
-  settings: z.object({ mirror: z.string(), interfaces: z.array(z.string()) }), task: jobSchema.nullable(),
+  coreVersion: z.string().optional().default(''),
+  settings: z.object({ githubProxy: z.string(), interfaces: z.array(z.string()) }), task: jobSchema.nullable(),
   controller: z.object({ enabled: z.boolean(), port: z.number().int().min(1024).max(65535), applied: z.boolean() }).nullable().optional().default(null),
   dashboard: z.object({ installed: z.boolean(), ready: z.boolean(), version: z.string() }).optional().default({ installed: false, ready: false, version: '' }),
 });
 export type DeviceState = z.infer<typeof stateSchema> & { agent: boolean };
 export const emptyState: DeviceState = {
-  service: false, core: false, config: false, subscription: false,
+  service: false, core: false, coreVersion: '', config: false, subscription: false,
   running: false, supervisor: false, listeners: false, network: false,
   boot: false, locked: false, capture: false,
-  agent: false, protocol: 1, version: '', publicKey: '', settings: { mirror: '', interfaces: [] }, task: null,
+  agent: false, protocol: 1, version: '', publicKey: '', settings: { githubProxy: '', interfaces: [] }, task: null,
   controller: null, dashboard: { installed: false, ready: false, version: '' },
 };
-export type Action = 'install' | 'service-update' | 'download' | 'save-mirror' | 'save-interfaces' | 'update'
+export type Action = 'install' | 'update-agent' | 'download' | 'save-github-proxy' | 'save-interfaces' | 'update'
   | 'start' | 'stop' | 'restart' | 'boot-on' | 'boot-off' | 'logs' | 'refresh' | 'diagnose' | 'uninstall'
   | 'save-controller' | 'download-dashboard' | 'view-secret' | 'open-dashboard';
 
 export function parseState(text: string): DeviceState {
   const result = stateSchema.safeParse(JSON.parse(text));
-  if (!result.success) throw new Error('设备后端协议不匹配，请更新设备组件');
+  if (!result.success) throw new Error('Mihomo Agent 协议不匹配，请更新 Mihomo Agent');
   return { ...result.data, agent: true };
 }
 export function parseJob(value: unknown): DeviceJob {
@@ -38,18 +39,32 @@ export function parseJob(value: unknown): DeviceJob {
 }
 
 export function lifecycleAction(state: DeviceState | null): 'install' | 'uninstall' | null {
-  return state ? state.service ? 'uninstall' : 'install' : null;
+  return state ? state.agent || state.service ? 'uninstall' : 'install' : null;
+}
+
+export function componentVersion(installed: boolean | undefined, version?: string): string {
+  if (installed === undefined) return '状态未知';
+  return installed ? version?.trim() || '版本未知' : '未安装';
+}
+
+export function installationTask(action: string): boolean {
+  return ['bootstrap', 'install', 'update-agent', 'download', 'download-dashboard', 'uninstall'].includes(action);
+}
+
+export function topTask(job: DeviceJob | null | undefined): boolean {
+  return !!job && (['failed', 'interrupted'].includes(job.state) || (!installationTask(job.action) && job.state !== 'succeeded'));
 }
 
 export function disabledReason(action: Action, state: DeviceState | null, busy = false, draftUrl = ''): string {
   if (busy) return '正在执行操作，请稍候';
   if (action === 'refresh') return '';
-  if (!state) return '尚未确认设备状态，请刷新状态';
-  if (action === 'logs' || action === 'diagnose') return state.agent ? '' : '请先安装设备组件';
+  if (!state) return action === 'update-agent' || action === 'stop' ? '' : '尚未确认设备状态，请刷新状态';
+  if (action === 'logs' || action === 'diagnose') return state.agent ? '' : '请先安装 Mihomo Agent';
   if (state.locked) return '设备正在安装或更新，请等待完成后刷新';
-  if (action === 'install') return state.service ? '服务已安装，请刷新状态' : state.running ? '请先停止服务' : '';
-  if (!state.service) return '请先安装服务';
-  if (['save-controller', 'download-dashboard', 'view-secret', 'open-dashboard', 'update'].includes(action) && !state.controller) return '请先更新设备组件';
+  if (action === 'uninstall') return state.agent ? '' : 'Mihomo 服务未安装';
+  if (action === 'install') return state.service ? 'Mihomo 服务已安装，请刷新状态' : state.running ? '请先停止代理' : '';
+  if (!state.service) return '请先安装 Mihomo 服务';
+  if (['save-controller', 'download-dashboard', 'view-secret', 'open-dashboard', 'update'].includes(action) && !state.controller) return '请先更新 Mihomo Agent';
   if (action === 'save-controller' || action === 'download-dashboard' || action === 'view-secret') return '';
   if (action === 'open-dashboard') {
     if (!state.controller?.enabled) return '请先启用控制面板';
@@ -57,35 +72,34 @@ export function disabledReason(action: Action, state: DeviceState | null, busy =
     if (!state.controller.applied || !state.dashboard.ready) return '请先应用面板设置或更新订阅';
     return state.running && state.listeners ? '' : '请先启动代理';
   }
-  if (action === 'uninstall') return '';
-  if (action === 'stop') return state.running || state.capture ? '' : '服务已停止';
-  if (action === 'boot-off') return state.boot ? '' : '开机自启已关闭';
-  if (action === 'save-mirror') return '';
-  if (action === 'save-interfaces' || action === 'download' || action === 'service-update') {
-    if (state.running) return '请先停止服务';
+  if (action === 'stop') return state.running || state.capture ? '' : '代理已停止';
+  if (action === 'boot-off') return state.boot ? '' : '开机启动已关闭';
+  if (action === 'save-github-proxy') return '';
+  if (action === 'save-interfaces' || action === 'download' || action === 'update-agent') {
+    if (state.running) return '请先停止代理';
     return '';
   }
-  if (!state.core) return '请先安装核心';
+  if (!state.core) return '请先安装内核';
   if (action === 'update') {
     return state.subscription || draftUrl.trim() ? '' : '请输入订阅链接';
   }
   if (!state.config) return '请先更新订阅，生成可用配置';
-  if (action === 'start') return state.running ? '服务已运行，请使用重启' : '';
-  if (action === 'restart') return state.running ? '' : '服务未运行，请使用启动';
-  if (action === 'boot-on') return state.boot ? '开机自启已开启' : '';
+  if (action === 'start') return state.running ? '代理已运行，请使用重启' : '';
+  if (action === 'restart') return state.running ? '' : '代理未运行，请使用启动';
+  if (action === 'boot-on') return state.boot ? '开机启动已开启' : '';
   return '';
 }
 
 export function nextStep(state: DeviceState | null): string {
   if (!state) return '请检查连接后刷新';
   if (state.locked) return '设备操作中，请稍候';
-  if (!state.service) return '请先安装服务';
-  if (!state.core) return '请下载核心';
+  if (!state.service) return '请先安装 Mihomo 服务';
+  if (!state.core) return '请安装 Mihomo 内核';
   if (!state.subscription && !state.config) return '请保存订阅';
   if (!state.config) return '请更新订阅';
   if (!state.running) return '准备就绪，可以启动';
   if (!state.supervisor) return '守护进程异常，请重启';
-  if (!state.listeners) return '等待核心就绪';
+  if (!state.listeners) return '等待内核就绪';
   if (!state.network) return '等待共享网络';
   return '本地接管就绪';
 }

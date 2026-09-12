@@ -2,15 +2,15 @@ import { afterEach, expect, spyOn, test } from 'bun:test';
 import { mkdtemp, readFile, rm, writeFile, mkdir, symlink, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { subscriptionURL, downloadMirror, interfaces } from '../src/config';
+import { subscriptionURL, githubProxyURL, interfaces } from '../src/config';
 import { quote, shellCommand, shellResult, controllerURL } from '../src/ufi';
-import { disabledReason, emptyState, lifecycleAction, nextStep, parseState } from '../src/state';
+import { disabledReason, emptyState, lifecycleAction, nextStep, parseState, componentVersion, topTask, parseJob } from '../src/state';
 import { request, responseJSON } from '../src/request';
 
 const temporary: string[] = [];
 afterEach(async () => { for (const dir of temporary.splice(0)) await rm(dir, { recursive: true, force: true }); });
 async function networkFunctions() {
-  const source = await readFile('backend/internal/agent/network.sh', 'utf8');
+  const source = await readFile('agent/internal/app/network.sh', 'utf8');
   return 'PROTECTED_PORTS=7894,1053\n' + source.slice(source.indexOf('MARK='), source.indexOf('\nPROTECTED_PORTS='));
 }
 
@@ -22,13 +22,13 @@ test('input validation and shell results preserve the trust boundary', async () 
   expect(() => subscriptionURL('file:///etc/passwd')).toThrow();
   expect(() => subscriptionURL('https://example.com/\noutput=/bad')).toThrow();
   expect(subscriptionURL('https://example.com/?key=x')).toContain('key=x');
-  expect(downloadMirror('')).toBe('');
-  expect(downloadMirror('https://worker.example/')).toBe('https://worker.example');
-  expect(() => downloadMirror('http://worker.example/')).toThrow();
-  expect(() => downloadMirror('https://user:pass@worker.example/')).toThrow();
-  expect(downloadMirror('https://ghfast.top/')).toBe('https://ghfast.top');
-  expect(() => downloadMirror('https://github.com/MetaCubeX/mihomo/releases/download/v1/core.gz')).toThrow('前缀');
-  expect(() => downloadMirror('https://ghfast.top/https://github.com/MetaCubeX/mihomo/releases/download/v1/core.gz')).toThrow('前缀');
+  expect(githubProxyURL('')).toBe('');
+  expect(githubProxyURL('https://worker.example/')).toBe('https://worker.example');
+  expect(() => githubProxyURL('http://worker.example/')).toThrow();
+  expect(() => githubProxyURL('https://user:pass@worker.example/')).toThrow();
+  expect(githubProxyURL('https://ghfast.top/')).toBe('https://ghfast.top');
+  expect(() => githubProxyURL('https://github.com/MetaCubeX/mihomo/releases/download/v1/core.gz')).toThrow('前缀');
+  expect(() => githubProxyURL('https://ghfast.top/https://github.com/MetaCubeX/mihomo/releases/download/v1/core.gz')).toThrow('前缀');
   const value = "a'b $(printf injected) `printf injected`\n中文";
   const proc = Bun.spawn(['sh', '-c', shellCommand(`printf '%s' ${quote(value)}`, 'TEST_')], { stdout: 'pipe' });
   expect(shellResult(await new Response(proc.stdout).text(), 'TEST_')).toBe(value);
@@ -222,14 +222,14 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
   expect(lifecycleAction(emptyState)).toBe('install');
   expect(lifecycleAction(installed)).toBe('uninstall');
   expect(disabledReason('install', installed)).toContain('已安装');
-  expect(disabledReason('service-update', installed)).toBe('');
+  expect(disabledReason('update-agent', installed)).toBe('');
   expect(disabledReason('uninstall', null)).not.toBe('');
   expect(disabledReason('uninstall', installed, true)).not.toBe('');
   for (const action of ['start', 'restart', 'update', 'boot-on'] as const) expect(disabledReason(action, installed)).not.toBe('');
   expect(disabledReason('download', installed)).toBe('');
-  expect(disabledReason('save-mirror', { ...installed, running: true })).toBe('');
+  expect(disabledReason('save-github-proxy', { ...installed, running: true })).toBe('');
   expect(disabledReason('save-interfaces', { ...installed, running: true })).toContain('停止');
-  expect(nextStep(installed)).toContain('核心');
+  expect(nextStep(installed)).toContain('内核');
   const ready = { ...installed, core: true, config: true, subscription: true };
   expect(disabledReason('start', ready)).toBe('');
   expect(disabledReason('update', ready, false, 'https://new.example')).toBe('');
@@ -243,7 +243,11 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
   expect(disabledReason('logs', { ...ready, locked: true })).toBe('');
   expect(() => parseState('{"service":true}')).toThrow();
   expect(parseState(JSON.stringify(ready))).toEqual(ready);
-  expect(disabledReason('save-controller', { ...ready, controller: null })).toContain('更新设备组件');
+  expect(disabledReason('save-controller', { ...ready, controller: null })).toContain('更新 Mihomo Agent');
+  expect(disabledReason('update-agent', null)).toBe('');
+  expect(disabledReason('stop', null)).toBe('');
+  expect(lifecycleAction({ ...emptyState, agent: true })).toBe('uninstall');
+  expect(disabledReason('uninstall', { ...emptyState, agent: true })).toBe('');
   expect(disabledReason('open-dashboard', ready)).toContain('安装面板');
   const panel = { ...ready, controller: { enabled: true, port: 9090, applied: true }, dashboard: { installed: true, ready: true, version: 'v1.0.0' } };
   expect(disabledReason('open-dashboard', panel)).toContain('启动');
@@ -253,7 +257,7 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
 });
 
 test('request errors identify network, timeout, HTTP and malformed response stages', async () => {
-  const context = { step: '查询最新版本', target: '管理浏览器 GET https://api.github.com/releases/latest', hint: '下载镜像不代理版本查询' };
+  const context = { step: '查询最新版本', target: '管理浏览器 GET https://api.github.com/releases/latest', hint: 'GitHub Proxy不代理版本查询' };
   const fetch = spyOn(globalThis, 'fetch');
   try {
     fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
@@ -262,7 +266,7 @@ test('request errors identify network, timeout, HTTP and malformed response stag
     expect(error.message).toContain('查询最新版本失败');
     expect(error.message).toContain('api.github.com');
     expect(error.message).toContain('TypeError: Failed to fetch');
-    expect(error.message).toContain('下载镜像不代理版本查询');
+    expect(error.message).toContain('GitHub Proxy不代理版本查询');
     fetch.mockRejectedValueOnce(new DOMException('aborted', 'AbortError'));
     await expect(request('https://api.github.com/releases/latest', {}, context)).rejects.toThrow('请求超时');
     fetch.mockResolvedValueOnce(new Response('{}', { status: 403, headers: { 'x-ratelimit-remaining': '0' } }));
@@ -271,4 +275,19 @@ test('request errors identify network, timeout, HTTP and malformed response stag
     fetch.mockResolvedValueOnce(new Response('', { status: 401 }));
     await expect(request('/api/upload_img', {}, { step: '上传到 F50', target: 'F50 /api/upload_img', hint: '重新登录 UFI' })).rejects.toThrow('认证失败');
   } finally { fetch.mockRestore(); }
+});
+
+test('component versions and task placement stay consistent', () => {
+  expect(componentVersion(true, 'v1.19.30')).toBe('v1.19.30');
+  expect(componentVersion(true, '')).toBe('版本未知');
+  expect(componentVersion(false, 'v1.19.30')).toBe('未安装');
+  expect(componentVersion(undefined, '')).toBe('状态未知');
+  const job = parseJob({ id: 'a'.repeat(32), action: 'download', state: 'succeeded', phase: 'done', updated: '', hash: '' });
+  expect(topTask(job)).toBe(false);
+  expect(topTask({ ...job, state: 'running' })).toBe(false);
+  expect(topTask({ ...job, state: 'failed' })).toBe(true);
+  expect(topTask({ ...job, action: 'update', state: 'running' })).toBe(true);
+  expect(topTask({ ...job, action: 'update' })).toBe(false);
+  expect(lifecycleAction({ ...emptyState, agent: true })).toBe('uninstall');
+  expect(disabledReason('uninstall', { ...emptyState, agent: true })).toBe('');
 });

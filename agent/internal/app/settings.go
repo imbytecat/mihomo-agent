@@ -1,4 +1,4 @@
-package agent
+package app
 
 import (
 	"errors"
@@ -9,8 +9,8 @@ import (
 )
 
 type Settings struct {
-	Mirror     string   `json:"mirror"`
-	Interfaces []string `json:"interfaces"`
+	GitHubProxy string   `json:"githubProxy"`
+	Interfaces  []string `json:"interfaces"`
 }
 
 func (a *Agent) settings() (Settings, error) {
@@ -22,9 +22,9 @@ func (a *Agent) settings() (Settings, error) {
 	return settings, err
 }
 
-func validateURL(value string, mirror bool) (string, error) {
+func validateURL(value string, githubProxy bool) (string, error) {
 	value = strings.TrimSpace(value)
-	if value == "" && mirror {
+	if value == "" && githubProxy {
 		return "", nil
 	}
 	if len(value) > 8192 || strings.ContainsAny(value, "\r\n\x00") {
@@ -34,10 +34,10 @@ func validateURL(value string, mirror bool) (string, error) {
 	if err != nil || u.Hostname() == "" || u.User != nil || (u.Scheme != "https" && u.Scheme != "http") {
 		return "", errors.New("请输入有效的 HTTP(S) 地址")
 	}
-	if mirror {
+	if githubProxy {
 		host := strings.ToLower(u.Hostname())
 		if u.Scheme != "https" || u.RawQuery != "" || u.Fragment != "" || host == "github.com" || host == "api.github.com" || host == "raw.githubusercontent.com" || strings.Contains(u.Path, "/https://") || strings.Contains(u.Path, "/http://") {
-			return "", errors.New("请输入无认证、无参数的 HTTPS 镜像前缀")
+			return "", errors.New("请输入无认证、无参数的 HTTPS GitHub Proxy 前缀")
 		}
 		return strings.TrimRight(value, "/"), nil
 	}

@@ -1,4 +1,4 @@
-package agent
+package app
 
 import (
 	"bytes"
@@ -47,6 +47,7 @@ func TestMain(m *testing.M) {
 		if err != nil {
 			os.Exit(2)
 		}
+		a.BootPath = filepath.Join(filepath.Dir(*root), "boot.sh")
 		if address := os.Getenv("UFI_TEST_HTTP"); address != "" {
 			a.httpClient = localHTTP{address}
 		}
@@ -118,7 +119,7 @@ func waitJob(t *testing.T, a *Agent, id string) *Job {
 
 func TestEncryptedSubmissionAndDurableCompletion(t *testing.T) {
 	a := testAgent(t)
-	request := Request{ID: randomID(), Action: "save-mirror", Value: "https://mirror.example"}
+	request := Request{ID: randomID(), Action: "save-github-proxy", Value: "https://githubProxy.example"}
 	name, digest, data := sealRequest(t, a, request)
 	if bytes.Contains(data, []byte(request.Value)) {
 		t.Fatal("request is not encrypted")
@@ -135,7 +136,7 @@ func TestEncryptedSubmissionAndDurableCompletion(t *testing.T) {
 		t.Fatalf("%+v", finished)
 	}
 	settings, _ := a.settings()
-	if settings.Mirror != request.Value {
+	if settings.GitHubProxy != request.Value {
 		t.Fatal(settings)
 	}
 	if err = atomicWrite(filepath.Join(a.Uploads, name), data, 0600); err != nil {
@@ -188,7 +189,7 @@ func TestUnmanagedDataAndInvalidRequestsArePreserved(t *testing.T) {
 		t.Fatal("data changed")
 	}
 	a = testAgent(t)
-	name, _, _ := sealRequest(t, a, Request{ID: randomID(), Action: "save-mirror", Value: "https://example.com"})
+	name, _, _ := sealRequest(t, a, Request{ID: randomID(), Action: "save-github-proxy", Value: "https://example.com"})
 	if _, err := a.Submit(name, strings.Repeat("0", 64)); err == nil {
 		t.Fatal("accepted invalid digest")
 	}
@@ -347,22 +348,54 @@ func TestUninstallPreservesRuntimeOnCleanupFailure(t *testing.T) {
 	if _, err := a.execute(context.Background(), request, func(string) {}); err != nil {
 		t.Fatal(err)
 	}
-	entries, _ := os.ReadDir(a.path("backups"))
-	if len(entries) != 1 || !regularFile(a.path("backups", entries[0].Name(), "private-data")) || !regularFile(a.path("agent")) {
-		t.Fatal("backup or management agent missing")
+	if _, err := os.Stat(a.Root); !os.IsNotExist(err) {
+		t.Fatal("installation retained after uninstall")
 	}
 	if data, _ := os.ReadFile(a.BootPath); string(data) != "other-plugin start\n" {
 		t.Fatal("changed another plugin's boot entry")
 	}
-	request = Request{ID: randomID(), Action: "install", Value: "https://mirror.example"}
-	if _, err := a.execute(context.Background(), request, func(string) {}); err != nil {
+	a.InitialGitHubProxy = "https://githubProxy.example"
+	if err := a.Install(); err != nil {
 		t.Fatal(err)
 	}
-	if settings, _ := a.settings(); settings.Mirror != request.Value {
-		t.Fatal("reinstallation ignored initial mirror")
+	if settings, _ := a.settings(); settings.GitHubProxy != a.InitialGitHubProxy {
+		t.Fatal("reinstallation ignored initial githubProxy")
 	}
-	if _, err := a.execute(context.Background(), request, func(string) {}); err == nil {
+	if _, err := a.execute(context.Background(), Request{ID: randomID(), Action: "install"}, func(string) {}); err == nil {
 		t.Fatal("reinstalled an active installation")
+	}
+}
+
+func TestDetachedUninstallDeletesAllOwnedFiles(t *testing.T) {
+	a := testAgent(t)
+	_ = atomicWrite(a.path("backups", "old", "config.yaml"), []byte("old data"), 0600)
+	_ = atomicWrite(filepath.Join(a.Root+"-bootstrap", "jobs", "old", "agent"), []byte("staging"), 0600)
+	_ = atomicWrite(a.path("core-version.json"), []byte("cache"), 0600)
+	_ = atomicWrite(a.BootPath, []byte("other-plugin start\n"+a.bootLine()+"\n"), 0644)
+	other := filepath.Join(filepath.Dir(a.Root), "other-plugin")
+	_ = os.WriteFile(other, []byte("untouched"), 0600)
+	name, digest, _ := sealRequest(t, a, Request{ID: randomID(), Action: "uninstall"})
+	if _, err := a.Submit(name, digest); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 100; i++ {
+		if _, err := os.Stat(a.Root); os.IsNotExist(err) {
+			break
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	// Give the worker time to finalize; writing its old task record must not recreate the root.
+	time.Sleep(100 * time.Millisecond)
+	for _, path := range []string{a.Root, a.Root + "-bootstrap"} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatal("owned path remains", path)
+		}
+	}
+	if data, _ := os.ReadFile(a.BootPath); string(data) != "other-plugin start\n" {
+		t.Fatal("modified another boot entry")
+	}
+	if data, _ := os.ReadFile(other); string(data) != "untouched" {
+		t.Fatal("modified another plugin")
 	}
 }
 
@@ -394,4 +427,20 @@ func TestCleanupPreservesReplayRecordsAndActiveConfig(t *testing.T) {
 			t.Fatal("staging files retained")
 		}
 	}
+}
+
+func parseRelease(data []byte) (release, error) {
+	var value release
+	if err := json.Unmarshal(data, &value); err != nil {
+		return value, errors.New("官方版本信息无效")
+	}
+	return value, value.validate()
+}
+
+func selectAsset(data []byte, arch string) (string, string, string, error) {
+	value, err := parseRelease(data)
+	if err != nil {
+		return "", "", "", errors.New("官方版本信息无效")
+	}
+	return value.asset("MetaCubeX/mihomo", "mihomo-android-"+arch+"-"+value.GetTagName()+".gz")
 }

@@ -166,7 +166,7 @@ switch_slot() {
     case "$entries" in
       0) "$1" -t "$2" -A "$4" -j "${4}_$slot" || return 1;;
       1) "$1" -t "$2" -R "$4" 1 -j "${4}_$slot" || return 1;;
-      *) echo '入口链状态异常，请停止服务后重试' >&2; return 1;;
+      *) echo '入口链状态异常，请停止代理后重试' >&2; return 1;;
     esac
     "$1" -t "$2" -C "$3" -j "$4" >/dev/null 2>&1 || "$1" -t "$2" -I "$3" 1 -j "$4" || return 1
   done

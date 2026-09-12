@@ -52,15 +52,15 @@ cleanup() {
 trap cleanup EXIT
 trap '' HUP
 state running download
-mirror=$3
-case "$mirror" in '') ;; https://*) ;; *) echo '无效镜像'; exit 1;; esac
+githubProxy=$3
+case "$githubProxy" in '') ;; https://*) ;; *) echo '无效 GitHub Proxy'; exit 1;; esac
 case "$(getprop ro.product.cpu.abi)" in
   arm64-v8a) address=$4; digest=$5;;
   armeabi-v7a|armeabi) address=$6; digest=$7;;
   *) echo '不支持的设备架构'; exit 1;;
 esac
 [ -x "$CURL" ] || { echo 'UFI 缺少 curl，请更新 UFI'; exit 1; }
-[ -z "$mirror" ] || address="${mirror%/}/$address"
+[ -z "$githubProxy" ] || address="${githubProxy%/}/$address"
 # The app's curl may not know Android's CA location. Never disable TLS verification.
 for cert in /system/etc/security/cacerts/* /apex/com.android.conscrypt/cacerts/*; do
   if [ -f "$cert" ]; then cat "$cert"; printf '\n'; fi
@@ -70,8 +70,8 @@ set --
 "$CURL" -q -fL "$@" --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 300 --max-filesize 33554432 "$address" -o "$job/agent" || exit 1
 state running verify
 actual=$(sha256sum "$job/agent") || exit 1
-[ "${actual%% *}" = "$digest" ] || { echo '后端文件校验失败'; exit 1; }
+[ "${actual%% *}" = "$digest" ] || { echo 'Mihomo Agent 文件校验失败'; exit 1; }
 chmod 700 "$job/agent" || exit 1
 state running installing
-"$job/agent" install --mirror "$mirror" || exit 1
+"$job/agent" install --github-proxy "$githubProxy" || exit 1
 state succeeded "done"
