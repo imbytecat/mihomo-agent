@@ -65,6 +65,7 @@ export async function installOfficial(progress: (message: string) => void) {
 }
 
 export async function upload(name: string, data: string | File) {
+  if (!/^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/.test(name)) throw new Error('无效文件名');
   const body = new FormData();
   body.append('file', typeof data === 'string'
     ? new File([data], name, { type: 'application/octet-stream' }) : data);
@@ -77,9 +78,10 @@ export async function upload(name: string, data: string | File) {
     || result.url.split('/').includes('..')) {
     throw new Error('上传失败或 UFI 返回了无效路径');
   }
-  if (!/^[a-zA-Z0-9_.-]+$/.test(name)) throw new Error('无效文件名');
   const source = `/data/data/com.minikano.f50_sms/files/${result.url.replace(/^\//, '')}`;
-  await shell(`set -e; umask 077; mkdir -p ${DIR}; chmod 700 ${DIR}; cp ${quote(source)} ${DIR}/${name}; chmod 600 ${DIR}/${name}; rm -f ${quote(source)}`);
+  const temporary = `${DIR}/${name}.upload`;
+  const cleanup = `rm -f ${quote(source)} ${quote(temporary)}`;
+  await shell(`set -e; umask 077; trap ${quote(cleanup)} EXIT; mkdir -p ${DIR}; chmod 700 ${DIR}; cp ${quote(source)} ${quote(temporary)}; chmod 600 ${quote(temporary)}; mv ${quote(temporary)} ${DIR}/${name}`);
 }
 
 export async function readDownload() {

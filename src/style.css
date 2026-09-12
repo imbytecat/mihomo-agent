@@ -1,0 +1,59 @@
+@tailwind utilities;
+
+/* Scoped baseline: UFI owns the rest of the page. No Tailwind preflight. */
+#ufi-mihomo {
+  --mh-text: var(--dark-text-color, #e2e8f0);
+  color: var(--mh-text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  border: 1px solid #64748b40;
+  border-radius: 18px;
+  background: var(--dark-bg-color, #0f172a);
+  box-shadow: 0 6px 24px #00000018;
+  overflow: hidden;
+  margin: 14px 0;
+}
+#ufi-mihomo *, #ufi-mihomo *::before, #ufi-mihomo *::after { box-sizing: border-box; }
+#ufi-mihomo summary { cursor: pointer; list-style: none; }
+#ufi-mihomo summary::-webkit-details-marker { display: none; }
+#ufi-mihomo summary::after { content: '+'; margin-left: auto; opacity: .6; font-size: 18px; }
+#ufi-mihomo details[open] > summary::after, #ufi-mihomo[open] > summary::after { content: '−'; }
+#ufi-mihomo button {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid #64748b50;
+  border-radius: 10px;
+  color: inherit;
+  background: #64748b18;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+  min-height: 42px;
+  transition: background .15s, opacity .15s;
+}
+#ufi-mihomo button:hover { background: #64748b35; }
+#ufi-mihomo button[data-primary] { background: #0d9488; color: white; border-color: #0d9488; }
+#ufi-mihomo button[data-primary]:hover { background: #0f766e; }
+#ufi-mihomo button:disabled, #ufi-mihomo input:disabled { opacity: .45; cursor: wait; }
+#ufi-mihomo input:not([type=file]) {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid #64748b50;
+  border-radius: 10px;
+  background: #64748b10;
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  min-width: 0;
+}
+#ufi-mihomo :is(button, input, summary):focus-visible { outline: 2px solid #2dd4bf; outline-offset: 3px; }
+#ufi-mihomo [data-output][data-error=true] { color: #fb7185; }
+#ufi-mihomo [data-dot] { background: #94a3b8; }
+#ufi-mihomo [data-dot][data-state=running] { background: #2dd4bf; }
+#ufi-mihomo [data-dot][data-state=waiting] { background: #fbbf24; }
+#ufi-mihomo [data-output]:empty { display: none; }
+#ufi-mihomo p, #ufi-mihomo pre { margin: 0; }

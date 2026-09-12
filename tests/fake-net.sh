@@ -1,0 +1,39 @@
+# Stateful iptables/ip stand-in. Used only by tests; never runs host network commands.
+fake_iptables() {
+  family=$1; shift
+  table=filter
+  if [ "$1" = -t ]; then table=$2; shift 2; fi
+  operation=$1; chain=$2; shift 2
+  file="$DIR/fw-$family-$table-$chain"
+  printf '%s %s %s %s %s\n' "$family" "$table" "$operation" "$chain" "$*" >> "$DIR/network.calls"
+  if [ -f "$DIR/fail-switch" ] && [ "$operation $chain $*" = '-R UFI_MH_DNS 1 -j UFI_MH_DNS_B' ]; then
+    rm "$DIR/fail-switch"
+    return 1
+  fi
+  case "$operation" in
+    -S) [ -f "$file" ] || return 1; printf '%s\n' "-N $chain"; sed "s/^/-A $chain /" "$file";;
+    -N) [ ! -f "$file" ] || return 1; : > "$file";;
+    -F) [ -f "$file" ] || return 1; : > "$file";;
+    -X) [ -f "$file" ] || return 1; rm "$file";;
+    -C) [ -f "$file" ] && grep -qxF -- "$*" "$file";;
+    -A) [ -f "$file" ] || return 1; printf '%s\n' "$*" >> "$file";;
+    -R) [ -s "$file" ] || return 1; shift; printf '%s\n' "$*" > "$file";;
+    -I) [ -f "$file" ] || return 1; shift; { printf '%s\n' "$*"; cat "$file"; } > "$file.next"; mv "$file.next" "$file";;
+    -D) [ -f "$file" ] || return 1; grep -vxF -- "$*" "$file" > "$file.next"; mv "$file.next" "$file";;
+    *) return 1;;
+  esac
+}
+ipt() { fake_iptables 4 "$@"; }
+ip6t() { fake_iptables 6 "$@"; }
+ip() {
+  case "$*" in
+    '-4 route show table 2026') cat "$DIR/routes";;
+    '-4 rule show') cat "$DIR/rules";;
+    '-4 route add local 0.0.0.0/0 dev lo table 2026') echo 'local default dev lo scope host' > "$DIR/routes";;
+    '-4 rule add priority 9000 fwmark 0x40000000/0x40000000 table 2026') echo '9000: from all fwmark 0x40000000/0x40000000 lookup 2026' > "$DIR/rules";;
+    '-4 rule del priority 9000 fwmark 0x40000000/0x40000000 table 2026') [ -s "$DIR/rules" ] || return 1; : > "$DIR/rules";;
+    '-4 route del local 0.0.0.0/0 dev lo table 2026') : > "$DIR/routes";;
+    *) return 1;;
+  esac
+}
+listeners_ready() { [ -f "$DIR/ready" ]; }

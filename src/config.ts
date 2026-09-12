@@ -25,6 +25,7 @@ export function adaptConfig(source: string): string {
 }
 
 export function interfaces(value: string): string {
+  if (!value.trim() || value.trim() === 'auto') return 'auto';
   const names = [...new Set(value.trim().split(/[\s,]+/).filter(Boolean))];
   if (!names.length || names.some(name => !/^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,14}$/.test(name)
     || /^(lo|rmnet|ccmni|pdp|wwan)/.test(name))) {

@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { mkdtemp, readFile, rm, writeFile, chmod } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile, chmod, mkdir, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from 'yaml';
@@ -36,7 +36,9 @@ test('adaptation preserves subscription policy and DNS choices', () => {
 
 test('input validation and shell results preserve the trust boundary', async () => {
   expect(interfaces('wlan0, rndis0 wlan0')).toBe('wlan0 rndis0');
-  for (const name of ['lo', 'rmnet_data0', 'wlan0;reboot', '-i', '']) expect(() => interfaces(name)).toThrow();
+  expect(interfaces('')).toBe('auto');
+  expect(interfaces(' auto ')).toBe('auto');
+  for (const name of ['lo', 'rmnet_data0', 'wlan0;reboot', '-i']) expect(() => interfaces(name)).toThrow();
   expect(() => curlConfig('file:///etc/passwd')).toThrow();
   expect(() => curlConfig('https://example.com/\noutput=/bad')).toThrow();
   expect(curlConfig('https://example.com/?key="x"')).toContain('\\"x\\"');
@@ -92,34 +94,45 @@ test('network setup refuses foreign table and scopes interception to LAN', async
   const dir = await mkdtemp(join(tmpdir(), 'ufi-mihomo-network-'));
   temporary.push(dir);
   await writeFile(join(dir, 'interfaces'), 'wlan0 rndis0\n');
+  for (const name of ['routes', 'rules', 'ready', 'fw-4-mangle-PREROUTING', 'fw-4-nat-PREROUTING', 'fw-4-filter-INPUT', 'fw-6-filter-FORWARD']) {
+    await writeFile(join(dir, name), '');
+  }
   const network = await readFile('scripts/network.sh', 'utf8');
-  const run = async (collision: boolean) => {
+  const harness = await readFile('tests/fake-net.sh', 'utf8');
+  const run = async () => {
     const script = `DIR=${quote(dir)}
 ${network}
-ipt() { printf 'iptables %s\\n' "$*"; case " $* " in *' -S '*|*' -C '*) return 1;; esac; }
-ip6t() { printf 'ip6tables %s\\n' "$*"; case " $* " in *' -S '*|*' -C '*) return 1;; esac; }
-ip() {
-  case "$*" in
-    '-4 route show table 2026') ${collision ? "echo 'foreign route'" : ':'};;
-    '-4 rule show') :;;
-    *'rule del'*) return 1;;
-    *) printf 'ip %s\\n' "$*";;
-  esac
-}
+${harness}
 network_start`;
     const proc = Bun.spawn(['sh', '-c', script], { stdout: 'pipe', stderr: 'pipe' });
     return { output: await new Response(proc.stdout).text(), code: await proc.exited };
   };
-  const collision = await run(true);
+  await writeFile(join(dir, 'routes'), 'foreign route');
+  const collision = await run();
   expect(collision.code).toBe(1);
-  expect(collision.output).not.toContain('iptables');
-  const ok = await run(false);
+  expect(await Bun.file(join(dir, 'network.calls')).exists()).toBe(false);
+  await writeFile(join(dir, 'routes'), '');
+  const ok = await run();
   expect(ok.code).toBe(0);
-  expect(ok.output).toContain('-i wlan0 -p tcp ! --dport 53 -j TPROXY');
-  expect(ok.output).toContain('-i rndis0 -p udp --dport 53 -j REDIRECT');
-  expect(ok.output).toContain('-i wlan0 -j REJECT --reject-with icmp6-adm-prohibited');
-  expect(ok.output).not.toContain('OUTPUT');
-  expect(ok.output).not.toContain(' -F ');
+  const calls = await readFile(join(dir, 'network.calls'), 'utf8');
+  expect(calls).toContain('-i wlan0 -p tcp ! --dport 53 -j TPROXY');
+  expect(calls).toContain('-i rndis0 -p udp --dport 53 -j REDIRECT');
+  expect(calls).toContain('-i wlan0 -j REJECT --reject-with icmp6-adm-prohibited');
+  expect(calls).not.toContain('OUTPUT');
+  expect(calls).not.toContain(' -F ');
+  expect(await readFile(join(dir, 'network.active'), 'utf8')).toBe('A\nwlan0 rndis0\n');
+  await writeFile(join(dir, 'interfaces'), 'wlan0 rndis0 usb0\n');
+  await writeFile(join(dir, 'fail-switch'), '');
+  expect((await run()).code).toBe(1);
+  expect(await readFile(join(dir, 'network.active'), 'utf8')).toBe('A\nwlan0 rndis0\n');
+  for (const name of ['fw-4-filter-UFI_MH_IN', 'fw-6-filter-UFI_MH6', 'fw-4-nat-UFI_MH_DNS', 'fw-4-mangle-UFI_MH']) {
+    expect(await readFile(join(dir, name), 'utf8')).toMatch(/_A\n$/);
+  }
+  expect(await Bun.file(join(dir, 'network.pending')).exists()).toBe(false);
+  expect((await run()).code).toBe(0);
+  expect(await readFile(join(dir, 'network.active'), 'utf8')).toBe('B\nwlan0 rndis0 usb0\n');
+  await rm(join(dir, 'ready'));
+  expect((await run()).code).toBe(1);
 });
 
 test('built plugin is one classic script with HTML-safe boundaries', async () => {
@@ -172,4 +185,124 @@ test('latest stable selection follows release metadata and matches architecture/
   release.assets[0]!.digest = `sha256:${'a'.repeat(64)}`;
   release.assets[0]!.browser_download_url = 'https://untrusted.example/core.gz';
   expect(() => selectRelease(release, 'arm64-v8a')).toThrow();
+});
+
+test('auto LAN selection excludes cellular, VPN, upstream Wi-Fi and inactive links', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ufi-mihomo-auto-'));
+  temporary.push(dir);
+  const source = await readFile('scripts/network.sh', 'utf8');
+  const addresses = `1: lo inet 127.0.0.1/8 scope host lo
+2: rmnet_data0 inet 10.20.30.40/24 scope global rmnet_data0
+3: wlan0 inet 192.168.0.1/24 scope global wlan0
+4: rndis0 inet 192.168.42.1/24 scope global rndis0
+5: wlan1 inet 192.168.1.8/24 scope global wlan1
+6: tun0 inet 10.0.0.1/24 scope global tun0
+7: br-lan@eth0 inet 172.16.0.1/24 scope global br-lan
+8: ap1 inet 203.0.113.1/24 scope global ap1`;
+  const run = async (routes: string, addr = addresses, failure = false) => {
+    const script = `DIR=${quote(dir)}\n${source}
+ip() {
+  case "$*" in
+    '-4 route show table all') ${failure ? 'return 1' : `printf '%s\\n' ${quote(routes)}`};;
+    '-6 route show table all') echo 'default via fe80::1 dev wlan1 table 1010';;
+    '-o -4 addr show up scope global') printf '%s\\n' ${quote(addr)};;
+    *) return 1;;
+  esac
+}
+resolve_interfaces`;
+    const proc = Bun.spawn(['sh', '-c', script], { stdout: 'pipe', stderr: 'pipe' });
+    const error = await new Response(proc.stderr).text();
+    expect(error).toBe('');
+    return { value: (await new Response(proc.stdout).text()).trim(), code: await proc.exited };
+  };
+  expect((await run('default dev rmnet_data0 table 1009')).value).toBe('br-lan rndis0 wlan0');
+  expect((await run('default dev wlan0 table 1011')).value).toBe('br-lan rndis0');
+  expect((await run('', '')).value).toBe('');
+  expect((await run('', addresses, true)).code).toBe(1);
+  await writeFile(join(dir, 'interfaces'), 'custom0\n');
+  expect((await run('')).value).toBe('custom0');
+});
+
+test('network refresh tracks LAN changes and waits without restarting core', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ufi-mihomo-sync-'));
+  temporary.push(dir);
+  const source = await readFile('scripts/network.sh', 'utf8');
+  const script = `DIR=${quote(dir)}\n${source}
+resolve_interfaces() { printf '%s' "$desired"; }
+listeners_ready() { return 0; }
+active_interfaces() { cat "$DIR/interfaces.active" 2>/dev/null; }
+network_ok() { return 0; }
+network_stop() { echo stop; rm -f "$DIR/interfaces.active"; }
+network_start() { echo "start:$desired"; printf '%s' "$desired" > "$DIR/interfaces.active"; }
+desired=wlan0; network_sync
+network_sync
+desired='rndis0 wlan0'; network_sync
+desired=''; network_sync
+desired=wlan0; network_sync`;
+  const proc = Bun.spawn(['sh', '-c', script], { stdout: 'pipe' });
+  expect(await new Response(proc.stdout).text()).toBe('start:wlan0\nstart:rndis0 wlan0\nstop\nstart:wlan0\n');
+  expect(await proc.exited).toBe(0);
+});
+
+test('listener readiness requires all four core-owned sockets, not foreign listeners', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ufi-mihomo-listeners-'));
+  temporary.push(dir);
+  const procdir = join(dir, 'proc');
+  await mkdir(join(procdir, '123/fd'), { recursive: true });
+  await mkdir(join(procdir, 'net'));
+  await writeFile(join(dir, 'core.pid'), '123');
+  for (const inode of [11, 12, 13, 14]) await symlink(`socket:[${inode}]`, join(procdir, `123/fd/${inode}`));
+  const row = (port: string, state: string, inode: number) => `0: 00000000:${port} 00000000:0000 ${state} 0 0 0 0 0 ${inode}\n`;
+  await writeFile(join(procdir, 'net/tcp'), row('1ED6', '0A', 11) + row('041D', '0A', 12));
+  await writeFile(join(procdir, 'net/udp'), row('1ED6', '07', 13) + row('041D', '07', 14));
+  await writeFile(join(procdir, 'net/tcp6'), '');
+  await writeFile(join(procdir, 'net/udp6'), '');
+  const source = (await readFile('scripts/network.sh', 'utf8')).replaceAll('/proc/', `${procdir}/`);
+  const run = async () => {
+    const proc = Bun.spawn(['sh', '-c', `DIR=${quote(dir)}\n${source}\nalive() { return 0; }\nlisteners_ready`]);
+    return proc.exited;
+  };
+  expect(await run()).toBe(0);
+  await writeFile(join(procdir, 'net/udp'), row('1ED6', '07', 13) + row('041D', '07', 999));
+  expect(await run()).toBe(1);
+  await writeFile(join(procdir, 'net/udp'), row('1ED6', '07', 13));
+  expect(await run()).toBe(1);
+});
+
+test('logs redact URLs and credentials before the UFI root-shell response', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ufi-mihomo-log-'));
+  temporary.push(dir);
+  const source = (await readFile('scripts/service.sh', 'utf8')).replace('DIR=/data/ufi-mihomo', `DIR=${quote(dir)}`);
+  await writeFile(join(dir, 'service.sh'), source);
+  await writeFile(join(dir, 'network.sh'), '');
+  await writeFile(join(dir, 'core.log'), 'download https://example.com/private?token=abc\nsecret: sensitive\nPASSWORD=hidden\nordinary error\n');
+  const proc = Bun.spawn(['sh', join(dir, 'service.sh'), 'logs'], { stdout: 'pipe' });
+  const output = await new Response(proc.stdout).text();
+  expect(output).toContain('ordinary error');
+  expect(output).toContain('[URL hidden]');
+  expect(output).not.toContain('example.com');
+  expect(output).not.toContain('secret:');
+  expect(output).not.toContain('PASSWORD=');
+  expect(await proc.exited).toBe(0);
+});
+
+test('recycled core PID is not considered owned', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ufi-mihomo-pid-'));
+  temporary.push(dir);
+  await mkdir(join(dir, 'proc/123'), { recursive: true });
+  await writeFile(join(dir, 'core.pid'), '123');
+  await writeFile(join(dir, 'network.sh'), '');
+  const original = await readFile('scripts/service.sh', 'utf8');
+  const functions = original.slice(0, original.indexOf('case "${1:-status}" in'))
+    .replace('DIR=/data/ufi-mihomo', `DIR=${quote(dir)}`)
+    .replaceAll('/proc/', `${dir}/proc/`);
+  const run = async () => {
+    const proc = Bun.spawn(['sh', '-c', `${functions}\nkill() { return 0; }\nalive core`]);
+    return proc.exited;
+  };
+  await symlink('/system/bin/unrelated', join(dir, 'proc/123/exe'));
+  expect(await run()).toBe(1);
+  await rm(join(dir, 'proc/123/exe'));
+  await symlink(`${dir}/mihomo`, join(dir, 'proc/123/exe'));
+  expect(await run()).toBe(0);
 });

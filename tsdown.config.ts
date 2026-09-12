@@ -17,6 +17,7 @@ export default defineConfig({
     sanitizeFileName: true,
   },
   define: {
+    __STYLE__: JSON.stringify(readFileSync('.build/plugin.css', 'utf8')),
     __SERVICE__: JSON.stringify(readFileSync('scripts/service.sh', 'utf8')),
     __NETWORK__: JSON.stringify(readFileSync('scripts/network.sh', 'utf8')),
   },

@@ -12,8 +12,15 @@ alive() {
   [ -f "$DIR/$1.pid" ] || return 1
   pid=$(cat "$DIR/$1.pid")
   case "$pid" in ''|*[!0-9]*) return 1;; esac
-  [ "$pid" -gt 1 ] && kill -0 "$pid" 2>/dev/null &&
-    tr '\000' ' ' < "/proc/$pid/cmdline" | grep -q "$DIR/"
+  [ "$pid" -gt 1 ] && kill -0 "$pid" 2>/dev/null || return 1
+  case "$1" in
+    core) [ "$(readlink "/proc/$pid/exe")" = "$DIR/mihomo" ];;
+    supervisor)
+      cmdline=$(tr '\000' ' ' < "/proc/$pid/cmdline")
+      case "$cmdline" in "sh $DIR/service.sh supervise "|"/system/bin/sh $DIR/service.sh supervise ") return 0;; *) return 1;; esac
+      ;;
+    *) return 1;;
+  esac
 }
 kill_owned() {
   if alive "$1"; then
@@ -26,33 +33,39 @@ kill_owned() {
 }
 stop_service() {
   kill_owned supervisor
-  network_stop
+  network_stop || { echo '清理网络规则失败，保留核心供现有连接使用' >&2; return 1; }
   kill_owned core
 }
 start_service() {
   alive supervisor && return 0
-  [ -x "$DIR/mihomo" ] && [ -s "$DIR/config.yaml" ] && [ -s "$DIR/interfaces" ] || return 1
-  # This file is data, never source it as shell code.
-  # shellcheck disable=SC2013
-  for iface in $(cat "$DIR/interfaces"); do
-    case "$iface" in lo|rmnet*|ccmni*|pdp*|wwan*|*[!a-zA-Z0-9_.-]*|''|[-.]*) echo '无效 LAN 接口' >&2; return 1;; esac
-    [ "${#iface}" -le 15 ] || return 1
-  done
+  [ -x "$DIR/mihomo" ] && [ -s "$DIR/config.yaml" ] || return 1
+  resolve_interfaces >/dev/null || { echo '无法识别共享网络，请查看诊断信息' >&2; return 1; }
   if pgrep -f '/data/clash/.*(Clash|clash)' >/dev/null 2>&1; then
     echo '旧猫猫服务仍在运行，请先在旧插件停止并关闭自启' >&2
     return 1
   fi
   timeout 30 "$DIR/mihomo" -t -d "$DIR" -f "$DIR/config.yaml" >> "$DIR/service.log" 2>&1 || return 1
   # A SIGKILL of the supervisor may have left an orphaned core.
-  network_stop
+  network_stop || return 1
   kill_owned core
   nohup sh "$DIR/service.sh" supervise </dev/null >> "$DIR/service.log" 2>&1 &
   echo $! > "$DIR/supervisor.pid"
-  n=0
+  n=0; healthy=0; last_pid=''
   while [ "$n" -lt 15 ]; do
     sleep 1
     alive supervisor || return 1
-    if alive core && network_ok; then return 0; fi
+    if listeners_ready && detected=$(resolve_interfaces) && { [ -z "$detected" ] || network_ok; }; then
+      current_pid=$(cat "$DIR/core.pid")
+      [ "$current_pid" = "$last_pid" ] || healthy=0
+      last_pid=$current_pid
+      healthy=$((healthy + 1))
+      if [ "$healthy" -ge 5 ]; then
+        [ -n "$detected" ] || echo '核心已启动，等待热点或 USB 共享网络'
+        return 0
+      fi
+    else
+      healthy=0
+    fi
     n=$((n + 1))
   done
   stop_service
@@ -61,7 +74,7 @@ start_service() {
 
 case "${1:-status}" in
   supervise)
-    trap 'network_stop; kill_owned core; exit 0' TERM INT
+    trap 'network_stop && kill_owned core; exit 0' TERM INT
     trap '' HUP
     delay=2
     while :; do
@@ -70,12 +83,12 @@ case "${1:-status}" in
       "$DIR/mihomo" -d "$DIR" -f "$DIR/config.yaml" >> "$DIR/core.log" 2>&1 &
       echo $! > "$DIR/core.pid"
       sleep 2
-      if alive core && network_start; then
+      if alive core; then
         ticks=0
         while alive core; do
+          network_sync || echo '网络接管失败，将重试'
           sleep 10
           ticks=$((ticks + 1))
-          if ! network_ok; then network_start || break; fi
           if [ "$(wc -c < "$DIR/core.log")" -gt 1048576 ]; then : > "$DIR/core.log"; fi
           if [ "$(wc -c < "$DIR/service.log")" -gt 262144 ]; then : > "$DIR/service.log"; fi
           [ "$ticks" -lt 6 ] || delay=2
@@ -89,13 +102,33 @@ case "${1:-status}" in
     ;;
   status)
     if alive supervisor; then
-      if alive core && network_ok; then echo '运行中'; else echo '恢复中 / 网络接管未就绪'; fi
+      if ! alive core; then
+        echo '恢复中 · 核心进程未运行'
+      elif ! listeners_ready; then
+        echo '恢复中 · DNS / TProxy 监听未就绪'
+      elif network_ok; then
+        echo "运行中 · 共享入口：$(active_interfaces)"
+        echo '进程、监听和规则就绪；外网连通性未检测'
+      elif detected=$(resolve_interfaces) && [ -z "$detected" ]; then
+        echo '核心运行中，等待热点 / USB 共享网络'
+      else echo '恢复中 / 网络接管未就绪'; fi
+    elif alive core; then
+      echo '异常 · 核心仍运行，但守护进程已退出，请停止或重启'
+    elif [ ! -x "$DIR/mihomo" ]; then echo '已停止 · 尚未安装核心'
+    elif [ ! -s "$DIR/config.yaml" ]; then echo '已停止 · 尚未导入配置'
     else echo '已停止'; fi
     if grep -qxF "sh $DIR/service.sh start # ufi-mihomo" "$BOOT" 2>/dev/null; then echo '开机自启：开启'; else echo '开机自启：关闭'; fi
     [ ! -x "$DIR/mihomo" ] || "$DIR/mihomo" -v
     exit 0
     ;;
-  logs) tail -n 60 "$DIR/install.log" "$DIR/service.log" "$DIR/core.log" 2>/dev/null; exit 0;;
+  logs)
+    # Redact before returning through UFI, whose root-shell endpoint also logs output.
+    tail -n 60 "$DIR/install.log" "$DIR/service.log" "$DIR/core.log" 2>/dev/null | awk '
+      { gsub(/https?:\/\/[^[:space:]"<>]+/, "[URL hidden]")
+        if (tolower($0) ~ /(password|secret|token|authorization)[[:space:]"=:]/) print "[sensitive log line hidden]"
+        else print
+      }'
+    exit 0;;
   *)
     # Serialize mutations, including boot versus button clicks. PID permits recovery after a crash.
     if ! mkdir "$DIR/lock" 2>/dev/null; then
@@ -113,7 +146,7 @@ esac
 case "$1" in
   start) start_service || fail '启动失败，请查看日志';;
   stop) stop_service;;
-  restart) stop_service; start_service || fail '重启失败，请查看日志';;
+  restart) stop_service || fail '停止失败，未重启'; start_service || fail '重启失败，请查看日志';;
   fetch)
     [ -s "$DIR/subscription.curl" ] || fail '请先保存订阅'
     "$CURL" -q -fsSL --proto '=http,https' --proto-redir '=http,https' --connect-timeout 15 --max-time 90 --max-filesize 4194304 -A 'mihomo' --config "$DIR/subscription.curl" -o "$DIR/download.yaml" 2> "$DIR/download-error.log" || fail '订阅下载失败，当前配置未更改'
@@ -127,11 +160,11 @@ case "$1" in
     was_running=0; alive supervisor && was_running=1
     [ ! -f "$DIR/config.yaml" ] || cp "$DIR/config.yaml" "$DIR/config.previous.yaml" || exit 1
     [ ! -f "$DIR/download.yaml" ] || cp "$DIR/download.yaml" "$DIR/subscription.yaml" || exit 1
-    stop_service
+    stop_service || fail '停止失败，当前配置未更改'
     mv "$DIR/candidate.yaml" "$DIR/config.yaml" || exit 1
     if [ "$was_running" = 1 ]; then
       if ! start_service; then
-        stop_service
+        stop_service || fail '新实例停止失败，无法安全回滚，请查看日志'
         if [ -f "$DIR/config.previous.yaml" ]; then
           cp "$DIR/config.previous.yaml" "$DIR/config.yaml" || exit 1
           start_service || fail '新配置失败，旧配置恢复后仍启动失败，请查看日志'

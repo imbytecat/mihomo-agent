@@ -15,7 +15,7 @@ bun test
 2. UFI 开启高级功能，在插件管理导入 `dist/ufi-mihomo.js`，提交保存并刷新页面。
 3. 展开「Mihomo 网关」，点击「安装 / 更新服务」。安装不会自动接管网络。
 4. 点击「安装最新官方核心」：查询 MetaCubeX/mihomo 最新稳定版，按设备 ABI 下载 Android ARM64/ARMv7 核心，验证该版本 SHA-256 后解压、检查版本再安装。版本查询完成并启动后台下载后，关闭网页不会中断安装；失败保留原核心。其他架构请手动导入对应 ELF。
-5. 「检测接口」，将热点、USB 的实际 LAN 接口填入输入框，例如 `wlan0 rndis0`。这只是示例，不会自动把蜂窝出口当作 LAN。
+5. 默认自动识别热点 / USB 共享入口，无需找接口名。旧版本已保存的手动接口会保留；想切回自动，可在「高级设置」清空共享入口并保存。
 6. 填写返回完整 mihomo YAML 的订阅链接，「保存设置」→「更新订阅」→「启动」。服务运行中更新订阅会重启；停止状态更新只保存。
 7. 实测 Wi-Fi / USB 客户端 DNS、TCP、UDP 正常后，点击「开启自启」。关闭网页不影响运行。
 
@@ -67,9 +67,19 @@ geox-url:
 
 ## F50 网络与恢复
 
+自动模式结合启用接口的私有 IPv4 地址、常见 F50 Wi-Fi/USB/网桥名称与所有路由表中的 IPv4/IPv6 默认出口识别入口，排除蜂窝、VPN 与已知上游 Wi-Fi。每 10 秒重新检测；热点/USB 消失时撤销规则并保持核心等待，重新出现后恢复接管，不因没有热点而反复重启核心。
+
+这是针对 F50 常见命名的识别策略，不是通用 Android tethering API。未知固件命名、特殊网段、没有默认路由的 Wi-Fi 上游等情况仍需实机核对；识别不出时显示等待，不扩大到所有接口。「高级设置」保留手动覆盖与网络诊断。
+
 只接管指定 LAN 入口的 IPv4 TCP/UDP，以及 TCP/UDP 53 DNS；回避本机和保留地址。不接管 F50 自身发起的请求。通过独立 iptables 链、路由表 `2026`、优先级 `9000`、mark 位 `0x40000000` 实现 TProxy；不清空系统防火墙、不改 Android 默认路由。已存在同名链或目标路由表/优先级会拒绝首次接管。
 
 指定 LAN 的 IPv6 转发会被拒绝，使客户端回落 IPv4，不改蜂窝接口 IPv6。核心退出后撤掉接管规则，以 2–60 秒退避重启；运行中每 10 秒检查接管入口和策略路由是否仍在，丢失则尝试重建。恢复期间及停止后由原系统网络直连，不是断网保护模式；客户端缓存的 fake-IP 可能需要重新解析。
+
+接管前检查 DNS 1053、TProxy 7894 的 TCP/UDP 监听，并通过核心文件描述符关联 socket inode，避免把其他进程占用端口当作就绪。启动要求同一核心连续 5 秒监听正常；有共享入口时还要求接管规则存在。PID 操作核对核心可执行路径和守护进程命令，避免误杀复用 PID 的其他程序。
+
+规则更新先构建未使用的 A/B 链，再切换四个入口链的跳转；任一步失败会切回旧入口。每个跳转替换是原子的，但 IPv4/IPv6 和多个表之间不是一个内核原子事务。旧入口消失或成为上游时先撤掉旧接管；启动失败或无旧规则可恢复时清理本插件规则。只保留本插件的活动状态与切换标记，不快照/覆盖整个系统防火墙。
+
+界面区分缺核心/配置、核心退出、监听未就绪、等待共享网络、规则未就绪及本地运行就绪。未检测控制 API 与外网可用性，不把本地就绪描述成完整链路健康。查看日志时先在设备侧隐藏 HTTP(S) 地址及常见密钥字段，再返回 UFI，避免敏感内容进入 UFI Root Shell 的响应日志；原始设备日志仍应视为私密文件。
 
 核心日志约 1 MiB、服务日志约 256 KiB 时清空，仅保留短窗口。进程与规则就绪检查不等于实际代理链路健康。尚未验证 F50 实机内核能力、Android 策略路由冲突、rp_filter 及共享流量硬件卸载；热点/USB/蜂窝切换需要实测，不能仅凭「运行中」认定网关可用。没有自动改全局硬件卸载或系统网络参数。
 
@@ -97,6 +107,22 @@ sh /data/ufi-mihomo/service.sh stop
 
 ## 验证
 
-`bun run check`、`bun run build`、`bun test`；Shell 静态检查：`shellcheck -x -s sh scripts/service.sh scripts/network.sh`。测试覆盖配置保留、命令注入边界、失败回滚、路由冲突、核心摘要拒绝与产物包装。
+`bun run check`、`bun run build`、`bun test`；Shell 静态检查：`shellcheck -x -s sh scripts/service.sh scripts/network.sh`。测试覆盖配置保留、命令注入边界、配置和规则切换回滚、路由冲突、监听 socket 归属、PID 复用、日志脱敏、自动接口识别、核心摘要拒绝与产物包装。
 
 `bun tests/preview.ts` 在 `127.0.0.1:3007` 启动模拟 UFI 页面，用真实 DOMParser 加载构建产物，所有设备命令均为模拟，不执行本机 Shell。可用于浏览器检查导入、设置与更新流程，不能替代 F50 联网验收。
+
+## 界面与运行层
+
+使用 Tailwind CSS 3 构建手机卡片界面；关闭 preflight，类名加 `ufi-` 前缀，并将选择器限定在 `#ufi-mihomo`。生成的 CSS 随 JS 一起嵌入，不运行时加载 CDN 样式。日常操作、安装更新、高级选项分组；当前使用原生 DOM，没有 React 运行时。React 可以打进同一产物，出现复杂组件交互时再引入。
+
+设备侧的启停、下载、保活和网络规则由 Shell 实现，不依赖 clashctl。Go 更适合复杂状态管理、多固件适配和网络事件监听；目前单设备需求沿用 Shell。两者均只管理核心，不承担代理数据流，改用 Go 本身不会提升 mihomo 吞吐。TUN 的 `auto-detect-interface` 主要识别出口，不等于替插件判断 TProxy 应接管哪些共享入口；TProxy 与 TUN 的实际性能需在设备上测量。
+
+## 原插件 clashctl 来源调查
+
+对用户提供的 ZIP 仅静态读取，未执行二进制：
+
+- ARM64 / ARMv7 均为 Go 1.25.5 编译的 Linux ELF，模块 `clashgo`，入口 `clashgo/cmd/clashctl`，依赖 mihomo `v1.19.29`。
+- 构建提交 `6fd320c8186b78c10d97a01531eb5af3bf2dbcb8`，时间 `2026-07-26T12:02:51Z`，`vcs.modified=true`，意味着构建包含未提交修改。
+- 普通符号表已剥离，Go 运行时仍保留 `installTProxy`、`localIPv4`、`configure`、`superviseCore` 等函数名，以及 `internal/app/firewall.go`、`network.go`、`supervisor.go` 等路径。函数名不能单独证明具体接口识别算法。
+- 未在公开 GitHub 检索中定位到对应提交。`nelvko/clash-for-linux-install` 的 clashctl 是 Shell 实现；同名 `liuguangzhong/clashgo` 的目录和依赖也不匹配。grep.app 查询受到限流。
+- 结论为「尚未定位到对应公开源码」，不是「已证明闭源」。引用 mihomo 开源依赖不等于整个 clashctl 的源码已公开。
