@@ -71,6 +71,7 @@ func dohDial(ctx context.Context, network, address string) (net.Conn, error) {
 		client := httpClient(func(ctx context.Context, network, _ string) (net.Conn, error) {
 			return dialer.DialContext(ctx, network, net.JoinHostPort(provider.ip, "443"))
 		})
+		defer client.CloseIdleConnections()
 		for _, kind := range []dnsmessage.Type{dnsmessage.TypeA, dnsmessage.TypeAAAA} {
 			query := dnsmessage.Message{Header: dnsmessage.Header{RecursionDesired: true}, Questions: []dnsmessage.Question{{Name: name, Type: kind, Class: dnsmessage.ClassINET}}}
 			wire, _ := query.Pack()
@@ -104,7 +105,6 @@ func dohDial(ctx context.Context, network, address string) (net.Conn, error) {
 				}
 			}
 		}
-		client.CloseIdleConnections()
 	}
 	return nil, fmt.Errorf("无法解析或连接 %s", host)
 }
@@ -129,17 +129,17 @@ func (a *Agent) fetch(ctx context.Context, address, destination string, max int6
 		defer client.CloseIdleConnections()
 		response, err = client.Do(request)
 		if err != nil && ctx.Err() == nil {
+			initial := requestCause(err)
 			fallback := httpClient(dohDial)
 			defer fallback.CloseIdleConnections()
 			response, err = fallback.Do(request.Clone(ctx))
+			if err != nil {
+				err = fmt.Errorf("系统连接：%v；DNS 回退：%v", initial, requestCause(err))
+			}
 		}
 	}
 	if err != nil {
-		var requestError *url.Error
-		if errors.As(err, &requestError) {
-			err = requestError.Err
-		}
-		return fmt.Errorf("设备访问 %s 失败：%w", parsed.Hostname(), err)
+		return fmt.Errorf("设备访问 %s 失败：%w", parsed.Hostname(), requestCause(err))
 	}
 	defer response.Body.Close()
 	if response.StatusCode != 200 {
@@ -161,4 +161,12 @@ func (a *Agent) fetch(ctx context.Context, address, destination string, max int6
 		return errors.New("下载文件为空或超过大小限制")
 	}
 	return f.Sync()
+}
+
+func requestCause(err error) error {
+	var requestError *url.Error
+	if errors.As(err, &requestError) {
+		return requestError.Err
+	}
+	return err
 }

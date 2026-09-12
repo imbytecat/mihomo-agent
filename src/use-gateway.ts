@@ -37,7 +37,6 @@ export function useGateway() {
     setDevice(current => current && ({ ...current, task, locked: ['queued', 'running'].includes(task.state) }));
     const label = phases[task.phase] || task.phase;
     setDetail([label, task.result, task.error, `任务 ID：${task.id}`].filter(Boolean).join('\n'));
-    if (busyRef.current) toast.loading(label, notification);
   };
 
   const readState = async () => {
@@ -60,13 +59,16 @@ export function useGateway() {
   };
   const refresh = async () => {
     const state = await readState();
-    if (state.service && !loaded.current) {
+    if (state.service) {
       try {
         for (const name of ['mirror', 'interfaces'] as const) {
           const text = name === 'mirror' ? state.settings.mirror : state.settings.interfaces.join(' ');
           const value = normalize[name](text);
+          let current: string | null = null;
+          try { current = normalize[name](form.getValues(name)); } catch {}
+          const replace = !form.getFieldState(name).isDirty || current === savedRef.current[name] || current === value;
           savedRef.current[name] = value;
-          if (!form.getFieldState(name).isDirty) form.resetField(name, { defaultValue: value === 'auto' ? '' : value });
+          if (replace) form.resetField(name, { defaultValue: value === 'auto' ? '' : value });
         }
         setSaved({ ...savedRef.current }); loaded.current = true;
       } catch (error) { deviceRef.current = null; setDevice(null); throw error; }
@@ -130,7 +132,7 @@ export function useGateway() {
         switch (id) {
           case 'install': case 'service-update':
             result = await waitTask(id === 'service-update' || !state.agent
-              ? await bootstrapAgent(downloadMirror(snapshot.mirror)) : await submitTask('install'), observe);
+              ? await bootstrapAgent(downloadMirror(snapshot.mirror)) : await submitTask('install', downloadMirror(snapshot.mirror)), observe);
             result = id === 'install' ? '服务已安装' : '设备组件已更新'; break;
           case 'download':
             result = await waitTask(await submitTask('download', downloadMirror(snapshot.mirror)), observe);

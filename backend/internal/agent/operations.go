@@ -78,6 +78,10 @@ func (a *Agent) installRuntime() error {
 
 func (a *Agent) execute(ctx context.Context, request Request, phase func(string)) (string, error) {
 	if request.Action == "install" {
+		if a.running() || regularFile(a.runtime("installed.json")) {
+			return "", errors.New("服务已安装，请刷新状态")
+		}
+		a.InitialMirror = request.Value
 		return "服务已安装", a.installRuntime()
 	}
 	if !regularFile(a.runtime("installed.json")) {
@@ -126,6 +130,9 @@ func (a *Agent) execute(ctx context.Context, request Request, phase func(string)
 		settings.Interfaces = value
 		return "接口已保存", writeJSON(a.runtime("settings.json"), settings)
 	case "download":
+		if a.running() {
+			return "", errors.New("请先停止代理")
+		}
 		mirror, err := validateURL(request.Value, true)
 		if err != nil {
 			return "", err
@@ -255,50 +262,54 @@ func (a *Agent) downloadCore(ctx context.Context, work string, phase func(string
 		return "", err
 	}
 	phase("verify")
+	if err = a.installCore(ctx, archive, work, digest, phase); err != nil {
+		return "", err
+	}
+	return "核心 " + version + " 已安装，校验通过", nil
+}
+
+func (a *Agent) installCore(ctx context.Context, archive, work, digest string, phase func(string)) error {
 	f, err := os.Open(archive)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer f.Close()
 	hash := sha256.New()
 	if _, err = io.Copy(hash, f); err != nil {
-		return "", err
+		return err
 	}
 	if hex.EncodeToString(hash.Sum(nil)) != digest {
-		return "", errors.New("核心 SHA-256 不匹配，拒绝安装")
+		return errors.New("核心 SHA-256 不匹配，拒绝安装")
 	}
 	if _, err = f.Seek(0, io.SeekStart); err != nil {
-		return "", err
+		return err
 	}
 	gz, err := gzip.NewReader(f)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer gz.Close()
 	candidate := filepath.Join(work, "mihomo")
 	out, err := os.OpenFile(candidate, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0700)
 	if err != nil {
-		return "", err
+		return err
 	}
 	n, copyErr := io.Copy(out, io.LimitReader(gz, (128<<20)+1))
 	syncErr := out.Sync()
 	closeErr := out.Close()
 	if copyErr != nil || syncErr != nil || closeErr != nil || n > 128<<20 || n < 4 {
-		return "", errors.New("核心解压失败或大小无效")
+		return errors.New("核心解压失败或大小无效")
 	}
 	if _, err = a.run(ctx, candidate, "-v"); err != nil {
-		return "", errors.New("核心不能在本设备运行")
+		return errors.New("核心不能在本设备运行")
 	}
 	if id, _ := a.activeGeneration(); id != "" {
 		if err = a.testCore(ctx, candidate, a.runtime("current", "config.yaml")); err != nil {
-			return "", err
+			return err
 		}
 	}
 	phase("installing")
-	if err := os.Rename(candidate, a.runtime("mihomo")); err != nil {
-		return "", err
-	}
-	return "核心 " + version + " 已安装，校验通过", nil
+	return os.Rename(candidate, a.runtime("mihomo"))
 }
 
 func (a *Agent) updateConfig(ctx context.Context, request Request, work string, phase func(string)) (string, error) {

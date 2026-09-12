@@ -39,6 +39,8 @@ func main() {
 		result, err = a.Inspect()
 	case "boot":
 		result, err = a.Boot()
+	case "stop", "boot-off":
+		result, err = a.LocalTask(command)
 	case "submit":
 		if len(flags.Args()) != 2 {
 			fatal(fmt.Errorf("submit requires upload name and SHA-256"))

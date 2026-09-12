@@ -31,11 +31,12 @@ func validateURL(value string, mirror bool) (string, error) {
 		return "", errors.New("地址包含无效字符或过长")
 	}
 	u, err := url.Parse(value)
-	if err != nil || u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") {
+	if err != nil || u.Hostname() == "" || u.User != nil || (u.Scheme != "https" && u.Scheme != "http") {
 		return "", errors.New("请输入有效的 HTTP(S) 地址")
 	}
 	if mirror {
-		if u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Hostname() == "github.com" || u.Hostname() == "api.github.com" || strings.Contains(u.Path, "/https://") {
+		host := strings.ToLower(u.Hostname())
+		if u.Scheme != "https" || u.RawQuery != "" || u.Fragment != "" || host == "github.com" || host == "api.github.com" || host == "raw.githubusercontent.com" || strings.Contains(u.Path, "/https://") || strings.Contains(u.Path, "/http://") {
 			return "", errors.New("请输入无认证、无参数的 HTTPS 镜像前缀")
 		}
 		return strings.TrimRight(value, "/"), nil

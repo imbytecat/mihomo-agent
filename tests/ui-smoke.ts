@@ -73,6 +73,7 @@ try {
   await browser('find', 'role', 'button', 'click', '--name', '保存并更新', '--exact');
   await browser('wait', '--text', '配置已更新');
   await check('mockDeviceState.config && document.querySelector("[data-url]").value === ""');
+  await check('mockCommands.every(c => !c.includes("https://example.com/subscription")) && mockUploads.every(u => !new TextDecoder().decode(u.bytes).includes("https://example.com/subscription"))');
   await browser('find', 'role', 'button', 'click', '--name', '启动代理', '--exact');
   await browser('wait', '--fn', 'mockDeviceState.running');
   await idle();
@@ -103,7 +104,16 @@ try {
   await browser('wait', '[data-result][open]');
   await check('document.querySelector("[data-output]").textContent.includes("F50 TLS")');
   await check('mockIntents.length === 0 && mockRequests.every(u => new URL(u, location.href).origin === location.origin)');
-  console.log('UI checks passed: autosave ordering, newer edits, retry, setup, subscription, controls, and uninstall.');
+  await browser('find', 'role', 'button', 'click', '--name', '关闭详情', '--exact');
+  await browser('eval', 'window.mockTaskFailure = ""; window.mockTaskDelayMs = 8000');
+  await browser('find', 'role', 'button', 'click', '--name', '下载核心', '--exact');
+  await browser('wait', '--fn', 'mockDeviceState.locked');
+  await browser('reload');
+  await browser('wait', '#ufi-mihomo > summary');
+  await browser('click', '#ufi-mihomo > summary');
+  await browser('wait', '--fn', 'mockDeviceState.core && mockDeviceState.task?.state === "succeeded"');
+  await check('mockIntents.length === 0 && document.querySelector("[data-task]").textContent.includes("校验通过")');
+  console.log('UI checks passed: autosave, setup, encrypted intents, lifecycle, failure/success recovery after reload; browser uses UFI only.');
 } catch (error) {
   console.error(await browser('snapshot'));
   console.error(await browser('eval', 'JSON.stringify({state: mockDeviceState, intents: mockIntents, detail: document.querySelector("[data-output]")?.textContent})'));

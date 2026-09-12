@@ -87,6 +87,11 @@ func (a *Agent) Inspect() (Status, error) {
 
 // Boot uses the same persistent job mechanism as browser commands.
 func (a *Agent) Boot() (*Job, error) {
+	return a.LocalTask("start")
+}
+
+// Root-shell recovery uses the same durable worker, not a second lifecycle path.
+func (a *Agent) LocalTask(action string) (*Job, error) {
 	if err := a.requireIdentity(); err != nil {
 		return nil, err
 	}
@@ -95,7 +100,7 @@ func (a *Agent) Boot() (*Job, error) {
 		return nil, err
 	}
 	id := randomID()
-	plain, _ := json.Marshal(Request{ID: id, Action: "start"})
+	plain, _ := json.Marshal(Request{ID: id, Action: action})
 	sealed, err := box.SealAnonymous(nil, plain, &key.Public, rand.Reader)
 	if err != nil {
 		return nil, err

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -153,7 +154,8 @@ func TestTaskRetainsLockAfterSubmitterReturns(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(entered); <-release; _, _ = w.Write([]byte(`{}`)) }))
 	defer server.Close()
 	t.Setenv("UFI_TEST_HTTP", server.URL)
-	name, digest, _ := sealRequest(t, a, Request{ID: randomID(), Action: "download"})
+	_ = atomicWrite(a.runtime("mihomo"), []byte("fixture"), 0700)
+	name, digest, _ := sealRequest(t, a, Request{ID: randomID(), Action: "update", Value: server.URL})
 	job, err := a.Submit(name, digest)
 	if err != nil {
 		t.Fatal(err)
@@ -169,7 +171,7 @@ func TestTaskRetainsLockAfterSubmitterReturns(t *testing.T) {
 	}
 	close(release)
 	finished := waitJob(t, a, job.ID)
-	if finished.State != "failed" || finished.Phase != "release" {
+	if finished.State != "failed" || finished.Phase != "subscription" {
 		t.Fatalf("%+v", finished)
 	}
 }
@@ -280,5 +282,116 @@ func TestInterruptedJobAndSecretRedaction(t *testing.T) {
 	text := sanitize("https://host/private?token=secret\npassword: abc\nuuid=abc\nordinary message")
 	if strings.Contains(text, "secret") || strings.Contains(text, "abc") || !strings.Contains(text, "ordinary message") {
 		t.Fatal(text)
+	}
+}
+
+func TestOfficialAssetAndCoreIntegrity(t *testing.T) {
+	for _, arch := range []string{"arm64-v8", "armv7"} {
+		address := "https://github.com/MetaCubeX/mihomo/releases/download/v9.8.7/mihomo-android-" + arch + "-v9.8.7.gz"
+		metadata := map[string]any{"tag_name": "v9.8.7", "draft": false, "prerelease": false, "assets": []map[string]any{{
+			"name": "mihomo-android-" + arch + "-v9.8.7.gz", "browser_download_url": address, "digest": "sha256:" + strings.Repeat("a", 64),
+		}}}
+		data, _ := json.Marshal(metadata)
+		if version, url, _, err := selectAsset(data, arch); err != nil || version != "v9.8.7" || url != address {
+			t.Fatal(version, url, err)
+		}
+		metadata["prerelease"] = true
+		data, _ = json.Marshal(metadata)
+		if _, _, _, err := selectAsset(data, arch); err == nil {
+			t.Fatal("accepted prerelease")
+		}
+		metadata["prerelease"] = false
+		metadata["assets"].([]map[string]any)[0]["digest"] = ""
+		data, _ = json.Marshal(metadata)
+		if _, _, _, err := selectAsset(data, arch); err == nil {
+			t.Fatal("accepted absent digest")
+		}
+	}
+	a := testAgent(t)
+	work := t.TempDir()
+	var compressed bytes.Buffer
+	gz := gzip.NewWriter(&compressed)
+	_, _ = gz.Write([]byte("verified fixture binary"))
+	_ = gz.Close()
+	archive := filepath.Join(work, "core.gz")
+	_ = os.WriteFile(archive, compressed.Bytes(), 0600)
+	_ = atomicWrite(a.runtime("mihomo"), []byte("previous core"), 0700)
+	executed := false
+	a.runCommand = func(context.Context, string, ...string) ([]byte, error) { executed = true; return nil, nil }
+	if err := a.installCore(context.Background(), archive, work, strings.Repeat("0", 64), func(string) {}); err == nil || executed {
+		t.Fatal("executed an unverified core")
+	}
+	if data, _ := os.ReadFile(a.runtime("mihomo")); string(data) != "previous core" {
+		t.Fatal("replaced previous core")
+	}
+	digest := sha256.Sum256(compressed.Bytes())
+	if err := a.installCore(context.Background(), archive, work, hex.EncodeToString(digest[:]), func(string) {}); err != nil || !executed {
+		t.Fatal(err)
+	}
+}
+
+func TestUninstallPreservesRuntimeOnCleanupFailure(t *testing.T) {
+	a := testAgent(t)
+	_ = atomicWrite(a.runtime("network.owned"), nil, 0600)
+	_ = atomicWrite(a.runtime("private-data"), []byte("keep me"), 0600)
+	_ = atomicWrite(a.BootPath, []byte("other-plugin start\n"+a.bootLine()+"\n"), 0644)
+	a.runCommand = func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("network failure") }
+	request := Request{ID: randomID(), Action: "uninstall"}
+	if _, err := a.execute(context.Background(), request, func(string) {}); err == nil {
+		t.Fatal("ignored failed cleanup")
+	}
+	if !regularFile(a.runtime("private-data")) {
+		t.Fatal("removed files before cleanup")
+	}
+	a.runCommand = func(context.Context, string, ...string) ([]byte, error) { return nil, nil }
+	if _, err := a.execute(context.Background(), request, func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := os.ReadDir(a.path("backups"))
+	if len(entries) != 1 || !regularFile(a.path("backups", entries[0].Name(), "private-data")) || !regularFile(a.path("agent")) {
+		t.Fatal("backup or management agent missing")
+	}
+	if data, _ := os.ReadFile(a.BootPath); string(data) != "other-plugin start\n" {
+		t.Fatal("changed another plugin's boot entry")
+	}
+	request = Request{ID: randomID(), Action: "install", Value: "https://mirror.example"}
+	if _, err := a.execute(context.Background(), request, func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	if settings, _ := a.settings(); settings.Mirror != request.Value {
+		t.Fatal("reinstallation ignored initial mirror")
+	}
+	if _, err := a.execute(context.Background(), request, func(string) {}); err == nil {
+		t.Fatal("reinstalled an active installation")
+	}
+}
+
+func TestCleanupPreservesReplayRecordsAndActiveConfig(t *testing.T) {
+	a := testAgent(t)
+	active := randomID()
+	_ = a.activate(active)
+	for i := 0; i < 6; i++ {
+		id := randomID()
+		if i == 0 {
+			id = active
+		}
+		_ = atomicWrite(a.runtime("configurations", id, "source.yaml"), []byte("fixture"), 0600)
+		_ = atomicWrite(a.taskPath(id, "state.json"), []byte("{}"), 0600)
+		_ = atomicWrite(a.taskPath(id, "request.bin"), []byte("fixture"), 0600)
+		_ = atomicWrite(a.taskPath(id, "work/core.gz"), []byte("fixture"), 0600)
+	}
+	a.pruneTaskFiles()
+	entries, _ := os.ReadDir(a.runtime("configurations"))
+	if len(entries) != 3 || !regularFile(a.runtime("configurations", active, "source.yaml")) {
+		t.Fatal("configuration retention failed")
+	}
+	entries, _ = os.ReadDir(a.path("tasks"))
+	if len(entries) != 6 {
+		t.Fatal("removed replay records")
+	}
+	for _, entry := range entries {
+		if regularFile(a.taskPath(entry.Name(), "request.bin")) || regularFile(a.taskPath(entry.Name(), "work/core.gz")) {
+			t.Fatal("staging files retained")
+		}
 	}
 }

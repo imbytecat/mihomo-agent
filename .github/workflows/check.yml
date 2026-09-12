@@ -1,0 +1,32 @@
+name: Check
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.7
+          cache-dependency-path: backend/go.sum
+      - run: bun install --frozen-lockfile
+      - run: bun run check && bun run build && bun test
+      - run: go test -race ./... && go vet ./...
+        working-directory: backend
+      - run: shellcheck -x -s sh src/bootstrap.sh backend/internal/agent/network.sh
+      - run: npm install --global agent-browser@0.37.1
+      - run: agent-browser install --with-deps
+      - run: bun tests/ui-smoke.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ufi-mihomo-plugin
+          path: dist/ufi-mihomo.js

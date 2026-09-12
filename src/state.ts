@@ -39,12 +39,13 @@ export function lifecycleAction(state: DeviceState | null): 'install' | 'uninsta
 
 export function disabledReason(action: Action, state: DeviceState | null, busy = false, draftUrl = ''): string {
   if (busy) return '正在执行操作，请稍候';
-  if (action === 'refresh' || action === 'diagnose') return '';
+  if (action === 'refresh') return '';
   if (!state) return '尚未确认设备状态，请刷新状态';
-  if (state.locked && action !== 'logs') return '设备正在安装或更新，请等待完成后刷新';
+  if (action === 'logs' || action === 'diagnose') return state.agent ? '' : '请先安装设备组件';
+  if (state.locked) return '设备正在安装或更新，请等待完成后刷新';
   if (action === 'install') return state.service ? '服务已安装，请刷新状态' : state.running ? '请先停止服务' : '';
   if (!state.service) return '请先安装服务';
-  if (action === 'uninstall' || action === 'logs') return '';
+  if (action === 'uninstall') return '';
   if (action === 'stop') return state.running || state.capture ? '' : '服务已停止';
   if (action === 'boot-off') return state.boot ? '' : '开机自启已关闭';
   if (action === 'save-mirror') return '';

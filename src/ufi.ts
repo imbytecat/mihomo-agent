@@ -117,7 +117,7 @@ export async function waitTask(initial: DeviceJob, progress: (job: DeviceJob) =>
   progress(job);
   if (job.state !== 'succeeded') {
     const log = await jobLog(job).catch(() => '暂时无法读取任务日志');
-    throw new Error(`${phases[job.phase] || job.action}失败\n执行位置：F50\n任务 ID：${job.id}\n${job.error || '请查看任务日志'}\n${log}`);
+    throw new Error(`设备任务失败\n执行阶段：${phases[job.phase] || job.phase}\n执行位置：F50\n任务 ID：${job.id}\n${job.error || '请查看任务日志'}\n${log}`);
   }
   return job.result || '任务已完成';
 }

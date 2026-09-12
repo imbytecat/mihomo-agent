@@ -21,11 +21,15 @@ Layout:
 ```text
 /data/ufi-mihomo/
   agent, identity.json, control.lock
-  tasks/<id>/{request.bin,state.json,log.txt}
+  tasks/<id>/{state.json,log.txt}  # encrypted request/staging removed after completion
   runtime/{mihomo,settings.json,network.sh,current,configurations/...}
   backups/runtime-<timestamp>-<id>/
 ```
 
 Uninstall removes the proxy runtime by moving it to a backup. The management agent, key and task records remain so completion can still be queried. Initialization refuses nonempty unmanaged directories; this is not a migration layer for older plugins.
 
-Host tests cover sealed requests, OS-lock handoff, detached workers, interrupted tasks, URL validation, configuration preservation and rollback. ARM builds and F50 networking require separate integration checks.
+Host tests cover sealed requests, OS-lock handoff, detached workers, interrupted tasks, URL validation, configuration preservation, rollback, download integrity and uninstall safety. The browser tests also send libsodium requests to a real host-native worker. ARM64/ARMv7 builds are reproduced in the release workflow; F50 networking still requires hardware validation.
+
+Before starting a core, the network bridge installs default-deny INPUT guards on configured listener ports. Missing LAN interfaces retain those guards without capturing traffic. Fatal network errors stop the core, and stop removes guards only after the core exits.
+
+`stop` and `boot-off` CLI commands submit normal persistent jobs for root-shell recovery. Wait for `job <id>` to complete before submitting the next command. Completed jobs retain their state for replay protection; staging files are removed and configurations are bounded to current plus two previous candidates. Uninstall backups are never automatically pruned.

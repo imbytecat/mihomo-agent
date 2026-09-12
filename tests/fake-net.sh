@@ -28,6 +28,7 @@ ip6t() { fake_iptables 6 "$@"; }
 ip() {
   case "$*" in
     '-4 route show table 2026') cat "$DIR/routes";;
+    '-4 route show table all') sed 's/$/ table 2026/' "$DIR/routes";;
     '-4 rule show') cat "$DIR/rules";;
     '-4 route add local 0.0.0.0/0 dev lo table 2026') echo 'local default dev lo scope host' > "$DIR/routes";;
     '-4 rule add priority 9000 fwmark 0x40000000/0x40000000 table 2026') echo '9000: from all fwmark 0x40000000/0x40000000 lookup 2026' > "$DIR/rules";;
@@ -37,3 +38,4 @@ ip() {
   esac
 }
 listeners_ready() { [ -f "$DIR/ready" ]; }
+network_tools() { return 0; }

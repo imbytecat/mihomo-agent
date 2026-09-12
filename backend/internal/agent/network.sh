@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# Sourced by service.sh. Only these chains, mark bit and table belong to us.
+# Called by the native agent. Only these chains, mark bit and table belong to us.
 DIR=$1
 ACTION=$2
 alive() {
@@ -45,16 +45,12 @@ resolve_interfaces() {
 }
 
 network_sync() {
-  selected=$(resolve_interfaces) || { network_stop; return 1; }
-  if [ -z "$selected" ]; then
-    network_stop
-    return 0
-  fi
-  listeners_ready || { network_stop; return 1; }
+  selected=$(resolve_interfaces) || { pause_capture; return 1; }
+  listeners_ready || { pause_capture; return $?; }
   # An old downstream may have become an upstream. Do not keep capturing it on rollback.
   previous_interfaces=$(active_interfaces)
   for previous_iface in $previous_interfaces; do
-    case " $selected " in *" $previous_iface "*) ;; *) network_stop || return 1; break;; esac
+    case " $selected " in *" $previous_iface "*) ;; *) pause_capture || return 1; break;; esac
   done
   if [ "$selected" != "$(active_interfaces)" ] || ! network_ok; then
     network_start || return 1
@@ -63,6 +59,17 @@ network_sync() {
 
 active_slot() { sed -n '1p' "$DIR/network.active" 2>/dev/null; }
 active_interfaces() { sed -n '2p' "$DIR/network.active" 2>/dev/null; }
+
+# Detach traffic before changing a former LAN into an upstream. Keep INPUT guards.
+pause_capture() {
+  for group in 'ipt mangle PREROUTING UFI_MH' 'ipt nat PREROUTING UFI_MH_DNS'; do
+    # shellcheck disable=SC2086
+    set -- $group
+    while "$1" -t "$2" -C "$3" -j "$4" >/dev/null 2>&1; do
+      "$1" -t "$2" -D "$3" -j "$4" || return 1
+    done
+  done
+}
 
 # The file descriptors prove these sockets belong to our core, not another process.
 listeners_ready() {
@@ -85,6 +92,7 @@ listeners_ready() {
 
 network_stop() {
   [ -f "$DIR/network.owned" ] || return 0
+  network_tools || return 1
   for group in 'ipt mangle PREROUTING UFI_MH' 'ipt nat PREROUTING UFI_MH_DNS' 'ip6t filter FORWARD UFI_MH6' 'ipt filter INPUT UFI_MH_IN' 'ip6t filter INPUT UFI_MH_IN6'; do
     # Fixed tuples, not user input.
     # shellcheck disable=SC2086
@@ -101,6 +109,13 @@ network_stop() {
   done
   while ip -4 rule del priority "$PRIORITY" fwmark "$MARK/$MARK" table "$TABLE" >/dev/null 2>&1; do :; done
   ip -4 route del local 0.0.0.0/0 dev lo table "$TABLE" >/dev/null 2>&1
+  rules=$(ip -4 rule show) || return 1
+  routes=$(ip -4 route show table all) || return 1
+  if printf '%s\n' "$rules" | grep -Eq "^$PRIORITY:.*fwmark 0x40000000/0x40000000.*lookup $TABLE( |$)" ||
+    printf '%s\n' "$routes" | grep -Eq "^local (default|0.0.0.0/0).*dev lo.*table $TABLE( |$)"; then
+    echo '网络规则未完全清理，保留运行文件' >&2
+    return 1
+  fi
   rm -f "$DIR/network.active" "$DIR/network.pending"
   return 0
 }
@@ -174,8 +189,13 @@ network_ok() {
 }
 
 network_start() {
-  selected=$(resolve_interfaces) || return 1
-  [ -n "$selected" ] && listeners_ready || return 1
+  network_tools || return 1
+  if [ "${ACTION:-sync}" = prepare ]; then
+    selected=''
+  else
+    selected=$(resolve_interfaces) || return 1
+    listeners_ready || return 1
+  fi
   old=$(active_slot)
   case "$old" in A) next=B;; B) next=A;; '') next=A;; *) return 1;; esac
   if [ -f "$DIR/network.pending" ]; then
@@ -220,16 +240,27 @@ network_start() {
   return 1
 }
 
+network_tools() {
+  for tool in ip iptables ip6tables; do
+    command -v "$tool" >/dev/null 2>&1 || { echo "缺少系统命令：$tool" >&2; return 1; }
+  done
+  if ! ipt -t mangle -S >/dev/null 2>&1 || ! ipt -t nat -S >/dev/null 2>&1 ||
+    ! ipt -t filter -S >/dev/null 2>&1 || ! ip6t -t filter -S >/dev/null 2>&1; then
+    echo '无法读取系统防火墙，请检查 root 和内核支持' >&2; return 1
+  fi
+}
+
 PROTECTED_PORTS=$(cat "$DIR/current/ports" 2>/dev/null)
 case "$PROTECTED_PORTS" in ''|*[!0-9,]*) PROTECTED_PORTS=7894,1053;; esac
 case "$ACTION" in
+  prepare) network_start;;
   sync) network_sync;;
   stop) network_stop;;
-  ready) listeners_ready && selected=$(resolve_interfaces) && { [ -z "$selected" ] || network_ok; };;
+  ready) listeners_ready && network_ok;;
   inspect)
     listening=false; captured=false
     listeners_ready && listening=true
-    network_ok && captured=true
+    if [ -n "$(active_interfaces)" ] && network_ok; then captured=true; fi
     printf '{"listeners":%s,"network":%s}\n' "$listening" "$captured"
     ;;
   *) exit 1;;

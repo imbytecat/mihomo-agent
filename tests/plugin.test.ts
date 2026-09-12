@@ -82,6 +82,35 @@ network_start`;
   expect((await run()).code).toBe(1);
 });
 
+test('startup and missing-LAN states keep listener guards without capturing traffic', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ufi-mihomo-guards-'));
+  temporary.push(dir);
+  for (const name of ['routes', 'rules', 'fw-4-mangle-PREROUTING', 'fw-4-nat-PREROUTING', 'fw-4-filter-INPUT', 'fw-6-filter-INPUT', 'fw-6-filter-FORWARD']) {
+    await writeFile(join(dir, name), '');
+  }
+  const network = await networkFunctions();
+  const harness = await readFile('tests/fake-net.sh', 'utf8');
+  const run = async (action: string) => {
+    const proc = Bun.spawn(['sh', '-c', `DIR=${quote(dir)}\n${network}\n${harness}\n${action}`], { stdout: 'pipe', stderr: 'pipe' });
+    const error = await new Response(proc.stderr).text();
+    expect(await proc.exited).toBe(0);
+    expect(error).toBe('');
+  };
+  await run('ACTION=prepare network_start');
+  expect(await readFile(join(dir, 'fw-4-filter-UFI_MH_IN_A'), 'utf8')).toContain('--dports 7894,1053 -j REJECT');
+  expect(await readFile(join(dir, 'fw-6-filter-UFI_MH_IN6_A'), 'utf8')).toContain('--dports 7894,1053 -j REJECT');
+  expect(await readFile(join(dir, 'fw-4-mangle-UFI_MH_A'), 'utf8')).not.toContain('TPROXY');
+  await writeFile(join(dir, 'ready'), '');
+  await writeFile(join(dir, 'interfaces'), 'wlan0');
+  await run('network_sync');
+  await run('resolve_interfaces() { echo; }; network_sync');
+  const slot = (await readFile(join(dir, 'network.active'), 'utf8')).trim();
+  const guard = await readFile(join(dir, `fw-4-filter-UFI_MH_IN_${slot}`), 'utf8');
+  expect(guard).toContain('-j REJECT');
+  expect(guard).not.toContain('-i wlan0');
+  expect(await readFile(join(dir, `fw-4-mangle-UFI_MH_${slot}`), 'utf8')).not.toContain('TPROXY');
+});
+
 test('built plugin is one classic script with HTML-safe boundaries', async () => {
   const output = await readFile('dist/ufi-mihomo.js', 'utf8');
   expect(output.startsWith('//<script>')).toBe(true);
@@ -140,6 +169,7 @@ listeners_ready() { return 0; }
 active_interfaces() { cat "$DIR/interfaces.active" 2>/dev/null; }
 network_ok() { return 0; }
 network_stop() { echo stop; rm -f "$DIR/interfaces.active"; }
+pause_capture() { echo pause; }
 network_start() { echo "start:$desired"; printf '%s' "$desired" > "$DIR/interfaces.active"; }
 desired=wlan0; network_sync
 network_sync
@@ -147,7 +177,7 @@ desired='rndis0 wlan0'; network_sync
 desired=''; network_sync
 desired=wlan0; network_sync`;
   const proc = Bun.spawn(['sh', '-c', script], { stdout: 'pipe' });
-  expect(await new Response(proc.stdout).text()).toBe('start:wlan0\nstart:rndis0 wlan0\nstop\nstart:wlan0\n');
+  expect(await new Response(proc.stdout).text()).toBe('start:wlan0\nstart:rndis0 wlan0\npause\nstart:\nstart:wlan0\n');
   expect(await proc.exited).toBe(0);
 });
 

@@ -33,7 +33,7 @@ func processStart(pid int) string {
 		return ""
 	}
 	fields := strings.Fields(string(data[end+1:]))
-	if len(fields) < 20 {
+	if len(fields) < 20 || fields[0] == "Z" {
 		return ""
 	}
 	return fields[19]
@@ -135,11 +135,20 @@ func (a *Agent) stopProcess(name string) error {
 	if err := p.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
 		return err
 	}
-	return nil
+	for i := 0; i < 50; i++ {
+		if !a.alive(name) {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return errors.New("进程未退出，保留网络保护")
 }
 
 func (a *Agent) stopRuntime() error {
 	if err := a.stopProcess("supervisor"); err != nil {
+		return err
+	}
+	if err := a.stopProcess("core"); err != nil {
 		return err
 	}
 	if regularFile(a.runtime("network.owned")) {
@@ -147,7 +156,7 @@ func (a *Agent) stopRuntime() error {
 			return err
 		}
 	}
-	return a.stopProcess("core")
+	return nil
 }
 
 func (a *Agent) startRuntime(ctx context.Context) error {
@@ -220,6 +229,10 @@ func (a *Agent) Supervise() error {
 	defer cancel()
 	delay := time.Second
 	for ctx.Err() == nil {
+		// Protect listeners even before the hotspot exists; no core starts unguarded.
+		if err := a.network(ctx, "prepare"); err != nil {
+			return err
+		}
 		log, err := os.OpenFile(a.runtime("core.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 		if err != nil {
 			return err
@@ -232,8 +245,16 @@ func (a *Agent) Supervise() error {
 			log.Close()
 			return err
 		}
-		_ = writeJSON(a.runtime("core.json"), processRecord{cmd.Process.Pid, processStart(cmd.Process.Pid)})
-		_ = atomicWrite(a.runtime("core.pid"), []byte(strconv.Itoa(cmd.Process.Pid)), 0600)
+		err = writeJSON(a.runtime("core.json"), processRecord{cmd.Process.Pid, processStart(cmd.Process.Pid)})
+		if err == nil {
+			err = atomicWrite(a.runtime("core.pid"), []byte(strconv.Itoa(cmd.Process.Pid)), 0600)
+		}
+		if err != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			log.Close()
+			return err
+		}
 		done := make(chan error, 1)
 		go func() { done <- cmd.Wait() }()
 		ticker := time.NewTicker(5 * time.Second)
@@ -242,13 +263,13 @@ func (a *Agent) Supervise() error {
 		for alive {
 			select {
 			case <-ctx.Done():
+				_ = a.stopProcess("core")
+				<-done
 				if err := a.network(context.Background(), "stop"); err != nil {
 					ticker.Stop()
 					log.Close()
 					return err
 				}
-				_ = a.stopProcess("core")
-				<-done
 				alive = false
 			case err := <-done:
 				fmt.Println("core exited:", err)
@@ -263,9 +284,14 @@ func (a *Agent) Supervise() error {
 				}
 				if e != nil {
 					fmt.Println(e)
+					// Unknown guard state must not leave a public proxy listening.
+					_ = cmd.Process.Kill()
 				}
 				if info, e := log.Stat(); e == nil && info.Size() > 1<<20 {
 					_ = log.Truncate(0)
+				}
+				if info, e := os.Stat(a.runtime("supervisor.log")); e == nil && info.Size() > 256<<10 {
+					_ = os.Truncate(a.runtime("supervisor.log"), 0)
 				}
 			}
 		}

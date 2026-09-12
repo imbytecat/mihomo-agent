@@ -109,7 +109,7 @@ func (a *Agent) Job(id string) (*Job, error) {
 	return &job, nil
 }
 
-func (a *Agent) Worker(id string) error {
+func (a *Agent) Worker(id string) (err error) {
 	if !validID(id) {
 		return errors.New("invalid task id")
 	}
@@ -133,6 +133,13 @@ func (a *Agent) Worker(id string) error {
 	if job.State != "queued" {
 		return errors.New("任务不能重复执行")
 	}
+	defer func() {
+		if err != nil {
+			job.State = "failed"
+			job.Error = sanitize(err.Error())
+			_ = a.writeJob(&job)
+		}
+	}()
 	sealed, err := os.ReadFile(a.taskPath(id, "request.bin"))
 	if err != nil {
 		return err
@@ -167,6 +174,7 @@ func (a *Agent) Worker(id string) error {
 		job.Result = result
 		job.Phase = "done"
 	}
+	a.pruneTaskFiles()
 	return a.writeJob(&job)
 }
 

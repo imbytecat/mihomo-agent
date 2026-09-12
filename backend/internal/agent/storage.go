@@ -53,7 +53,12 @@ func atomicWrite(path string, data []byte, mode os.FileMode) error {
 		return err
 	}
 	defer os.Remove(f.Name())
-	if err = f.Chmod(mode); err == nil {
+	err = f.Chmod(mode)
+	// Android shared storage fixes permissions; only the public boot file uses 0644.
+	if mode == 0644 && (errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EOPNOTSUPP)) {
+		err = nil
+	}
+	if err == nil {
 		_, err = f.Write(data)
 	}
 	if err == nil {
