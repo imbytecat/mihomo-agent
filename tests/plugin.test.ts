@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test';
+import { afterEach, expect, spyOn, test } from 'bun:test';
 import { mkdtemp, readFile, rm, writeFile, chmod, mkdir, symlink, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +7,7 @@ import { adaptConfig, curlConfig, downloadMirror, interfaces } from '../src/conf
 import { quote, shellCommand, shellResult } from '../src/ufi';
 import { selectRelease } from '../src/release';
 import { disabledReason, emptyState, lifecycleAction, nextStep, parseState } from '../src/state';
+import { request, responseJSON } from '../src/request';
 
 const temporary: string[] = [];
 afterEach(async () => { for (const dir of temporary.splice(0)) await rm(dir, { recursive: true, force: true }); });
@@ -405,4 +406,25 @@ test('device inspection reports installation prerequisites as booleans', async (
   await writeFile(join(dir, 'config.yaml'), 'rules: []');
   await writeFile(join(dir, 'subscription.curl'), 'url = "https://example.com"');
   expect(await run()).toMatchObject({ core: true, config: true, subscription: true, listeners: false, network: false });
+});
+
+test('request errors identify network, timeout, HTTP and malformed response stages', async () => {
+  const context = { step: '查询最新版本', target: '管理浏览器 GET https://api.github.com/releases/latest', hint: '下载镜像不代理版本查询' };
+  const fetch = spyOn(globalThis, 'fetch');
+  try {
+    fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const error = await request('https://api.github.com/releases/latest', {}, context).catch(error => error as Error);
+    if (!(error instanceof Error)) throw new Error('Expected a request failure');
+    expect(error.message).toContain('查询最新版本失败');
+    expect(error.message).toContain('api.github.com');
+    expect(error.message).toContain('TypeError: Failed to fetch');
+    expect(error.message).toContain('下载镜像不代理版本查询');
+    fetch.mockRejectedValueOnce(new DOMException('aborted', 'AbortError'));
+    await expect(request('https://api.github.com/releases/latest', {}, context)).rejects.toThrow('请求超时');
+    fetch.mockResolvedValueOnce(new Response('{}', { status: 403, headers: { 'x-ratelimit-remaining': '0' } }));
+    await expect(request('https://api.github.com/releases/latest', {}, context)).rejects.toThrow('HTTP 403（请求已被限流');
+    await expect(responseJSON(new Response('<html>login</html>'), context)).rejects.toThrow('响应不是有效 JSON');
+    fetch.mockResolvedValueOnce(new Response('', { status: 401 }));
+    await expect(request('/api/upload_img', {}, { step: '上传到 F50', target: 'F50 /api/upload_img', hint: '重新登录 UFI' })).rejects.toThrow('认证失败');
+  } finally { fetch.mockRestore(); }
 });

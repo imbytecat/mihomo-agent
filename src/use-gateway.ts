@@ -96,7 +96,8 @@ export function useGateway() {
       if (form.getFieldState(name).error?.type !== 'validate') {
         form.setError(name, { type: 'server', message: '保存失败，点此重试' });
         toast.error(`${settingLabel[name]}保存失败`, {
-          id: `ufi-mihomo-${name}`, toasterId: 'ufi-mihomo', description: error instanceof Error ? error.message : String(error),
+          id: `ufi-mihomo-${name}`, toasterId: 'ufi-mihomo', description: (error instanceof Error ? error.message : String(error)).split('\n')[0],
+          action: { label: '详情', onClick: () => { setDetail(error instanceof Error ? error.message : String(error)); setDetailOpen(true); } },
         });
       }
     }).finally(() => { pendingSaves.current--; });
@@ -106,6 +107,7 @@ export function useGateway() {
     const snapshot = form.getValues();
     if (busyRef.current || disabledReason(id, deviceRef.current, false, snapshot.subscription)) return;
     busyRef.current = true; setBusy(id); setError(false);
+    let failed = false;
     if (!quiet) toast.loading('正在处理…', notification);
     try {
       await queue.add(async () => {
@@ -152,13 +154,14 @@ export function useGateway() {
         if (!quiet) toast.success(id === 'logs' ? '日志已加载' : id === 'diagnose' ? '诊断完成' : result.split('\n')[0]!.slice(0, 180), notification);
       });
     } catch (error) {
+      failed = true;
       const text = error instanceof Error ? error.message : String(error);
       setError(true); setDetail(text);
-      if (!quiet) toast.error(text.slice(0, 220), { ...notification, duration: 10000, action: { label: '详情', onClick: () => setDetailOpen(true) } });
+      if (!quiet) toast.error(text.split('\n')[0]!.slice(0, 160), { ...notification, duration: 10000, action: { label: '详情', onClick: () => setDetailOpen(true) } });
     } finally {
-      try { await refresh(); } catch {
-        setError(true); setDetail(value => value + '\n状态刷新失败');
-        if (!quiet) toast.error('无法刷新状态', notification);
+      try { await refresh(); } catch (error) {
+        setError(true); setDetail(value => value + '\n\n状态刷新失败：\n' + (error instanceof Error ? error.message : String(error)));
+        if (!quiet && !failed) toast.error('无法刷新状态', { ...notification, action: { label: '详情', onClick: () => setDetailOpen(true) } });
       }
       busyRef.current = false; setBusy(null);
     }

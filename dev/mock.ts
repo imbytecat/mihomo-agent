@@ -18,6 +18,8 @@ const stored = { mirror: '', interfaces: 'auto' };
 const flags = globalThis as typeof globalThis & {
   mockProbeError?: boolean; mockStopFailure?: boolean; mockUploadFailure?: boolean;
   mockUploadDelayMs?: number; mockApplyFailure?: boolean;
+  mockReleaseFailure?: 'network' | 'timeout' | 'rate-limit' | 'bad-json';
+  mockDisconnectAfterReleaseFailure?: boolean;
 };
 
 Object.assign(globalThis, {
@@ -68,11 +70,20 @@ const mockFetch = async (input: Parameters<typeof fetch>[0], init?: Parameters<t
     return Response.json({ url: `/uploads/${crypto.randomUUID()}.txt` });
   }
   if (url.startsWith('/api/uploads/')) return new Response('proxies: []\nrules: ["MATCH,DIRECT"]\ndns: {nameserver: [223.5.5.5]}\n');
-  if (url === RELEASE_API) return Response.json({
+  if (url === RELEASE_API) {
+    if (flags.mockReleaseFailure === 'network') {
+      if (flags.mockDisconnectAfterReleaseFailure) flags.mockProbeError = true;
+      throw new TypeError('Failed to fetch');
+    }
+    if (flags.mockReleaseFailure === 'timeout') throw new DOMException('The operation was aborted', 'AbortError');
+    if (flags.mockReleaseFailure === 'rate-limit') return Response.json({ message: 'rate limit exceeded' }, { status: 403, headers: { 'x-ratelimit-remaining': '0' } });
+    if (flags.mockReleaseFailure === 'bad-json') return new Response('<html>blocked</html>');
+    return Response.json({
     tag_name: 'v9.8.7', draft: false, prerelease: false,
     assets: [{ name: 'mihomo-android-arm64-v8-v9.8.7.gz', digest: `sha256:${'a'.repeat(64)}`,
       browser_download_url: 'https://github.com/MetaCubeX/mihomo/releases/download/v9.8.7/mihomo-android-arm64-v8-v9.8.7.gz' }],
-  });
+    });
+  }
   return nativeFetch(input, init);
 };
 globalThis.fetch = Object.assign(mockFetch, { preconnect: globalThis.fetch.preconnect });

@@ -91,6 +91,14 @@ try {
   await idle();
   await check('!mockDeviceState.running && !mockDeviceState.boot');
   assert.equal(await browser('errors'), '');
+  await page('missing-core');
+  await browser('eval', 'window.mockReleaseFailure = "network"; window.mockDisconnectAfterReleaseFailure = true');
+  await browser('find', 'role', 'button', 'click', '--name', '下载核心', '--exact');
+  await browser('wait', '--text', '查询最新版本失败');
+  await browser('find', 'role', 'button', 'click', '--name', '详情', '--exact');
+  await browser('wait', '[data-result][open]');
+  await check('document.querySelector("[data-output]").textContent.includes("api.github.com") && document.querySelector("[data-output]").textContent.includes("Failed to fetch")');
+  await check('document.querySelector("[data-output]").textContent.includes("状态刷新失败") && !mockCommands.some(c => c.includes("install-official"))');
   console.log('UI checks passed: autosave ordering, newer edits, retry, setup, subscription, controls, and uninstall.');
 } finally {
   await browser('close').catch(() => {});
