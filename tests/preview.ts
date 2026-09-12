@@ -3,7 +3,7 @@ export {};
 const mock = await Bun.build({ entrypoints: ['dev/mock.ts'], target: 'browser' });
 if (!mock.success) throw new Error('Cannot build browser mock');
 const server = Bun.serve({
-  hostname: '127.0.0.1', port: 3007,
+  hostname: '127.0.0.1', port: Number(process.env.UFI_PREVIEW_PORT ?? 3007),
   fetch(request) {
     const path = new URL(request.url).pathname;
     if (path === '/plugin.js') return new Response(Bun.file('dist/ufi-mihomo.js'));

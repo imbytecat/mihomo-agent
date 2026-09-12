@@ -1,244 +1,186 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
-import { Toaster, toast } from 'sonner';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { Toaster } from 'sonner';
 import {
-  ChevronDown, Download, FileText, LoaderCircle, Play, Power,
-  RefreshCw, Save, Settings2, ShieldCheck, Square, Stethoscope, Trash2, type LucideIcon,
+  Check, ChevronDown, Download, FileText, LoaderCircle, MoreHorizontal, Play, Power,
+  RefreshCw, Settings2, ShieldCheck, Square, Stethoscope, Trash2, X, type LucideIcon,
 } from 'lucide-react';
-import { adaptConfig, curlConfig, downloadMirror, interfaces } from './config';
-import { DIR, installOfficial, readDeviceState, readDownload, service, shell, upload } from './ufi';
-import { disabledReason, lifecycleAction, nextStep, type Action, type DeviceState } from './state';
-import serviceScript from '../scripts/service.sh?raw';
-import networkScript from '../scripts/network.sh?raw';
+import { useGateway, type Operation, type Setting } from './use-gateway';
+import { disabledReason, lifecycleAction } from './state';
 import styleText from './style.css?inline';
 
-const notification = { id: 'ufi-mihomo-operation', toasterId: 'ufi-mihomo' };
-
 export default function Gateway() {
-  const [device, setDevice] = useState<DeviceState | null>(null);
-  const [busy, setBusy] = useState<Action | null>(null);
-  const [message, setMessage] = useState('正在检测设备状态…');
-  const [error, setError] = useState(false);
-  const [url, setUrl] = useState('');
-  const [lan, setLan] = useState('');
-  const [mirror, setMirror] = useState('');
-  const [savedMirror, setSavedMirror] = useState<string | null>(null);
-  const [resultOpen, setResultOpen] = useState(false);
-  const [setupOpen, setSetupOpen] = useState(false);
-  const busyRef = useRef(false);
-  const settingsLoaded = useRef(false);
-  const dialog = useRef<HTMLDialogElement>(null);
+  const model = useGateway();
+  const { device, busy, form, values, perform } = model;
+  const { errors } = form.formState;
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settings = useRef<HTMLDetailsElement>(null);
+  const subscription = useRef<HTMLDivElement>(null);
+  const uninstall = useRef<HTMLDialogElement>(null);
+  const details = useRef<HTMLDialogElement>(null);
+  const stage = !device ? 'unknown' : !device.service ? 'service' : !device.core ? 'core' : !device.config ? 'subscription' : 'ready';
+  const healthy = !!(device?.running && device.supervisor && device.listeners && device.network);
+  const lifecycle = lifecycleAction(device);
+  const runAction = device?.running || device?.capture ? 'stop' : 'start';
+  const title = !device ? busy ? '正在连接' : '连接失败' : device.locked ? '正在处理'
+    : device.running ? healthy ? '运行中' : !device.supervisor ? '需要恢复' : !device.listeners ? '正在启动' : '等待网络' : stage === 'ready' ? '已停止' : '尚未就绪';
+  const subtitle = !device ? '检查 UFI 登录与高级功能'
+    : device.locked ? '后台任务进行中' : !device.service ? '先安装服务' : !device.core ? '下载官方核心'
+    : !device.config ? '添加订阅，完成设置' : healthy ? '设备侧已就绪'
+    : device.running ? '可在更多菜单中查看日志' : '随时可以连接';
 
-  let mirrorPrefix = '', mirrorError = '';
-  try { mirrorPrefix = downloadMirror(mirror); } catch (error) { mirrorError = error instanceof Error ? error.message : String(error); }
-  const mirrorDirty = savedMirror === null || !!mirrorError || mirrorPrefix !== savedMirror;
+  useEffect(() => {
+    if (device && (!device.service || !device.core)) setSettingsOpen(true);
+  }, [device?.service, device?.core]);
+  useEffect(() => {
+    if (model.detailOpen) { if (!details.current?.open) details.current?.showModal(); }
+    else details.current?.close();
+  }, [model.detailOpen]);
 
-  async function refresh() {
-    try {
-      const state = await readDeviceState();
-      setDevice(state);
-      if (!state.service || !state.core) setSetupOpen(true);
-      if (!settingsLoaded.current && state.service) {
-        const saved = await shell(`[ ! -f ${DIR}/interfaces ] || cat ${DIR}/interfaces`);
-        setLan(saved === 'auto' ? '' : saved);
-        const mirrorValue = await shell(`if [ -f ${DIR}/core-mirror ]; then cat ${DIR}/core-mirror; else echo __UFI_MIRROR_UNSAVED__; fi`);
-        const prefix = mirrorValue === '__UFI_MIRROR_UNSAVED__' ? null : mirrorValue;
-        setSavedMirror(prefix);
-        setMirror(current => current || prefix || '');
-        settingsLoaded.current = true;
-      }
-    } catch (error) { setDevice(null); throw error; }
-  }
-
-  async function run(id: Action, action: () => Promise<unknown>, quiet = false) {
-    if (busyRef.current || disabledReason(id, device, false, url)) return;
-    busyRef.current = true;
-    setBusy(id); setError(false); setMessage('执行中…');
-    if (!quiet) toast.loading('正在执行…', notification);
-    try {
-      if (id !== 'refresh' && id !== 'diagnose') {
-        const state = await readDeviceState();
-        setDevice(state);
-        const reason = disabledReason(id, state, false, url);
-        if (reason) throw new Error(reason);
-      }
-      const result = String(await action() || '完成');
-      setMessage(result);
-      if (id === 'logs' || id === 'diagnose') setResultOpen(true);
-      if (!quiet) toast.success(id === 'logs' ? '日志已加载'
-        : id === 'diagnose' ? '诊断完成' : result.split('\n')[0]!.slice(0, 180), notification);
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      setError(true); setMessage(detail);
-      setResultOpen(true);
-      if (!quiet) toast.error(detail.slice(0, 220), { ...notification, duration: 10000 });
-    } finally {
-      try { await refresh(); } catch (error) {
-        setError(true);
-        setMessage(value => `${value}\n刷新状态失败：${error instanceof Error ? error.message : String(error)}`);
-        if (!quiet) toast.error('状态刷新失败，请检查连接', { ...notification, duration: 10000 });
-      }
-      busyRef.current = false; setBusy(null);
-    }
-  }
-
-  useEffect(() => { void run('refresh', async () => '状态已刷新', true); }, []);
-
-  function button(id: Action, label: string, Icon: LucideIcon, onClick: () => void, extraReason = '') {
-    const reason = disabledReason(id, device, !!busy, url) || extraReason;
-    return <button key={id} type="button" data-action={id} disabled={!!reason} title={reason}
-      aria-describedby="ufi-mihomo-next" onClick={onClick}
-      data-primary={id === 'start' ? '' : undefined} data-danger={id === 'uninstall' ? '' : undefined}
-      className="ufi-flex ufi-items-center ufi-justify-center ufi-gap-2">
-      {busy === id ? <LoaderCircle size={16} className="ufi-animate-spin motion-reduce:ufi-animate-none" aria-hidden /> : <Icon size={16} aria-hidden />}
-      <span>{label}</span>
+  function action(id: Operation, label: string, Icon: LucideIcon, onClick = () => void perform(id), primary = false) {
+    const reason = disabledReason(id, device, !!busy, values.subscription);
+    return <button type="button" data-action={id} disabled={!!reason} title={reason}
+      className={primary ? 'mh-button mh-primary' : 'mh-button'}
+      data-danger={id === 'uninstall' ? '' : undefined} onClick={onClick}>
+      {busy === id ? <LoaderCircle size={17} className="mh-spin" aria-hidden /> : <Icon size={17} aria-hidden />}
+      {label}
     </button>;
   }
-  const commandButton = (id: Action, label: string, Icon: LucideIcon) =>
-    button(id, label, Icon, () => void run(id, () => service(id, 95_000)));
-  const installService = async () => {
-    await shell(`[ ! -f ${DIR}/service.sh ] || sh ${DIR}/service.sh stop`, 95_000);
-    await upload('network.sh', networkScript); await upload('service.sh', serviceScript);
-    return '服务文件已就绪';
-  };
-  const saveMirror = async () => {
-    const prefix = downloadMirror(mirror);
-    await upload('core-mirror', prefix + '\n');
-    setSavedMirror(prefix); setMirror(prefix);
-    return prefix;
-  };
-  const downloadProgress = (text: string) => {
-    setMessage(text);
-    toast.loading(text, notification);
-  };
-  const lifecycle = lifecycleAction(device);
+  function menuItem(id: Operation, label: string, Icon: LucideIcon) {
+    const reason = disabledReason(id, device, !!busy, values.subscription);
+    return <DropdownMenu.Item className="mh-menu-item" disabled={!!reason} title={reason}
+      onSelect={() => void perform(id)}><Icon size={16} aria-hidden />{label}</DropdownMenu.Item>;
+  }
+  function settingField(name: Setting, label: string, placeholder: string) {
+    const input = form.register(name, { validate: value => model.validate(name, value) });
+    const status = model.saveStatus(name);
+    const blocked = !!busy || (name === 'interfaces' && !!device?.running);
+    const reason = disabledReason(name === 'mirror' ? 'save-mirror' : 'save-interfaces', device, !!busy);
+    return <div className="mh-field">
+      <div className="mh-field-heading">
+        <label htmlFor={`ufi-${name}`}>{label}</label>
+        {errors[name]?.type === 'server'
+          ? <button type="button" className="mh-retry" disabled={!!reason} onClick={() => model.autosave(name)}>重试保存</button>
+          : <span data-save-status={name} className={errors[name] ? 'mh-field-error' : 'mh-save-state'}>
+            {model.saving === name && <LoaderCircle size={12} className="mh-spin" aria-hidden />}
+            {errors[name] ? '格式不正确' : status}
+          </span>}
+      </div>
+      <input {...input} id={`ufi-${name}`} data-setting={name} type={name === 'mirror' ? 'url' : 'text'}
+        placeholder={placeholder} disabled={blocked} autoCapitalize="none" autoComplete="off" spellCheck={false}
+        enterKeyHint="done" onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }}
+        aria-invalid={!!errors[name]} aria-describedby={`ufi-${name}-help`}
+        onBlur={event => { void input.onBlur(event); model.autosave(name); }} />
+      <p id={`ufi-${name}-help`} className={errors[name] ? 'mh-field-error' : 'mh-hint'}>
+        {errors[name]?.message || (name === 'mirror' ? '留空直连 · 离开输入框自动保存' : device?.running ? '停止代理后可修改' : '留空自动识别 · 离开输入框自动保存')}
+      </p>
+    </div>;
+  }
 
-  const title = !device ? busy === 'refresh' ? '正在检测设备状态…' : '无法确认设备状态' : !device.service ? '尚未安装服务'
-    : device.locked ? '设备操作进行中' : !device.core ? '服务已安装 · 尚未安装核心'
-    : !device.config ? '核心已安装 · 尚未导入配置' : !device.running ? '已停止'
-    : device.supervisor && device.listeners && device.network ? '运行中 · 本地接管就绪' : '正在启动 / 恢复中';
-  const dot = device?.running ? device.listeners && device.network ? 'running' : 'waiting' : 'stopped';
+  return <>
+    {createPortal(<Toaster id="ufi-mihomo" position="top-center" theme="dark" richColors closeButton
+      containerAriaLabel="操作通知" toastOptions={{ closeButtonAriaLabel: '关闭提示' }} />, document.body)}
+    <details id="ufi-mihomo" onToggle={event => {
+      if (event.target === event.currentTarget) model.open.current = event.currentTarget.open;
+    }}>
+      <summary className="mh-header">
+        <ShieldCheck size={22} aria-hidden /><strong>Mihomo</strong>
+        <span className="mh-header-status" data-health={healthy ? 'ready' : 'idle'}>{title}</span>
+        <ChevronDown size={17} data-chevron aria-hidden />
+      </summary>
+      <div className="mh-body" aria-busy={!!busy}>
+        <div className="mh-hero">
+          <div className="mh-hero-heading">
+            <span className="mh-status-symbol" data-health={healthy ? 'ready' : 'idle'}><ShieldCheck size={30} aria-hidden /></span>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild><button type="button" className="mh-icon-button" aria-label="更多操作"><MoreHorizontal size={22} aria-hidden /></button></DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content className="mh-menu" data-ufi-menu sideOffset={8} collisionPadding={12} align="end">
+                  {menuItem('refresh', '刷新状态', RefreshCw)}
+                  {menuItem('logs', '查看日志', FileText)}
+                  {menuItem('diagnose', '网络诊断', Stethoscope)}
+                  <DropdownMenu.Separator className="mh-menu-separator" />
+                  {menuItem('restart', '重启代理', RefreshCw)}
+                  {menuItem('service-update', '更新服务文件', Download)}
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+          </div>
+          <h2 data-status>{title}</h2><p className="mh-subtitle">{subtitle}</p>
+          {stage === 'unknown' ? action('refresh', '重新检测', RefreshCw, undefined, true)
+            : stage === 'ready' || device?.running || device?.capture
+              ? action(runAction, runAction === 'stop' ? '停止代理' : '启动代理', runAction === 'stop' ? Square : Play, undefined, true)
+              : <button type="button" className="mh-button mh-primary" disabled={!!busy || device?.locked}
+                onClick={() => {
+                  if (stage === 'subscription') { subscription.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }); form.setFocus('subscription'); }
+                  else { setSettingsOpen(true); settings.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+                }}>继续设置</button>}
+          {stage !== 'ready' && device && <div className="mh-steps" aria-label="安装进度">
+            {[['服务', device.service], ['核心', device.core], ['配置', device.config]].map(([label, done]) =>
+              <span key={String(label)} data-done={!!done}>{done ? <Check size={13} aria-hidden /> : <span className="mh-step-dot" />}{label}</span>)}
+          </div>}
+        </div>
 
-  return <>{createPortal(<Toaster id="ufi-mihomo" position="top-center" theme="dark" richColors closeButton
-    containerAriaLabel="操作通知" toastOptions={{ closeButtonAriaLabel: '关闭提示' }} />, document.body)}<details id="ufi-mihomo" aria-busy={!!busy} onToggle={event => {
-    if (event.target === event.currentTarget && event.currentTarget.open && !busyRef.current) void run('refresh', async () => '状态已刷新', true);
-  }}>
-    <summary className="ufi-flex ufi-items-center ufi-gap-3 ufi-p-5">
-      <span className="ufi-flex ufi-h-10 ufi-w-10 ufi-items-center ufi-justify-center ufi-rounded-xl ufi-bg-teal-500/15 ufi-text-teal-400"><ShieldCheck size={24} aria-hidden /></span>
-      <span className="ufi-flex ufi-flex-col ufi-gap-0.5"><strong className="ufi-text-base ufi-font-semibold">Mihomo 网关</strong><span className="ufi-text-xs ufi-opacity-60">随身连接，安静代理</span></span>
-      <span data-dot data-state={dot} className="ufi-ml-2 ufi-h-2 ufi-w-2 ufi-rounded-full" aria-hidden />
-      <ChevronDown data-chevron size={18} className="ufi-ml-auto ufi-opacity-60" aria-hidden />
-    </summary>
-    <div className="ufi-space-y-5 ufi-px-5 ufi-pb-5">
-      <div className="ufi-rounded-xl ufi-bg-slate-500/10 ufi-p-3">
-        <p data-status role="status" className="ufi-text-xs ufi-leading-relaxed ufi-opacity-80">{title}</p>
-        {device && <p data-resources className="ufi-mt-2 ufi-text-xs ufi-opacity-60">核心 {device.core ? '已安装' : '未安装'} · 配置 {device.config ? '已就绪' : '未就绪'}</p>}
-      </div>
-      <p id="ufi-mihomo-next" data-next className="ufi-text-sm ufi-leading-relaxed ufi-text-teal-400" role="status">{!device && busy === 'refresh' ? '正在检查服务、核心和配置…' : nextStep(device)}</p>
-      <div data-lifecycle className="ufi-flex ufi-items-center ufi-justify-between ufi-gap-3 ufi-rounded-xl ufi-border ufi-border-solid ufi-border-slate-500/20 ufi-p-3">
-        <span className="ufi-text-sm ufi-font-medium">服务管理</span>
-        {button(lifecycle ?? 'install', !device ? busy === 'refresh' ? '检测中…' : '状态未知'
-          : lifecycle === 'uninstall' ? '卸载服务' : '安装服务', lifecycle === 'uninstall' ? Trash2 : Download, () => {
-          if (lifecycle === 'uninstall') dialog.current?.showModal();
-          else if (lifecycle === 'install') void run('install', installService);
-        })}
-      </div>
-      <label className="ufi-block ufi-text-sm ufi-font-medium">配置订阅
-        <input data-url type="password" autoComplete="off" placeholder={device?.subscription ? '已保存，填写新链接以替换' : '订阅链接'} value={url}
-          onChange={event => setUrl(event.target.value)} disabled={!!busy} />
-      </label>
-      <div className="ufi-grid ufi-grid-cols-2 ufi-gap-2 sm:ufi-grid-cols-3">
-        {button('save', '保存订阅', Save, () => void run('save', async () => {
-          await upload('subscription.curl', curlConfig(url.trim())); setUrl('');
-          return '订阅已保存';
-        }))}
-        {button('update', '更新订阅', RefreshCw, () => void run('update', async () => {
-          await service('fetch', 95_000);
-          await upload('candidate.yaml', adaptConfig(await readDownload()));
-          return service('apply', 95_000);
-        }))}
-        {commandButton('start', '启动', Play)}
-        {commandButton('stop', '停止', Square)}
-        {commandButton('logs', '日志', FileText)}
-        {button('refresh', '刷新状态', RefreshCw, () => void run('refresh', async () => '状态已刷新'))}
-      </div>
-      <label className="ufi-flex ufi-items-center ufi-justify-between ufi-gap-3 ufi-rounded-xl ufi-bg-slate-500/10 ufi-p-3">
-        <span className="ufi-flex ufi-items-center ufi-gap-2 ufi-text-sm"><Power size={16} aria-hidden />开机自启
-          <span className="ufi-text-xs ufi-opacity-60">{device?.boot ? '已开启' : '已关闭'}</span>
-        </span>
-        <input type="checkbox" role="switch" data-boot checked={device?.boot ?? false}
-          disabled={!!disabledReason(device?.boot ? 'boot-off' : 'boot-on', device, !!busy)}
-          title={disabledReason(device?.boot ? 'boot-off' : 'boot-on', device, !!busy)}
-          aria-describedby="ufi-mihomo-next" onChange={event => {
-            const action = event.target.checked ? 'boot-on' : 'boot-off';
-            void run(action, async () => { await service(action); return action === 'boot-on' ? '开机自启已开启' : '开机自启已关闭'; });
-          }} />
-      </label>
-      <details data-setup open={setupOpen} onToggle={event => { if (event.target === event.currentTarget) setSetupOpen(event.currentTarget.open); }} className="ufi-rounded-xl ufi-border ufi-border-solid ufi-border-slate-500/20">
-        <summary className="ufi-flex ufi-items-center ufi-gap-2 ufi-p-3 ufi-text-sm ufi-font-medium"><Download size={16} aria-hidden />核心下载<ChevronDown data-chevron size={16} className="ufi-ml-auto" aria-hidden /></summary>
-        <div className="ufi-space-y-3 ufi-px-3 ufi-pb-3">
-          <label className="ufi-block ufi-text-xs">下载镜像
-            <input data-mirror type="url" placeholder="https://ghfast.top" value={mirror}
-              aria-invalid={!!mirrorError} aria-describedby="ufi-mirror-help ufi-mirror-state"
-              onChange={event => setMirror(event.target.value)} disabled={!!busy} />
-          </label>
-          <p id="ufi-mirror-help" className="ufi-text-xs ufi-opacity-60">填写代理前缀，留空直连。</p>
-          <p id="ufi-mirror-state" data-mirror-state className={`ufi-text-xs ${mirrorError ? 'ufi-text-rose-400' : 'ufi-text-teal-400'}`}>
-            {mirrorError || (mirrorDirty ? '未保存' : '已保存')}
-          </p>
-          <div className="ufi-grid ufi-grid-cols-1 ufi-gap-2 sm:ufi-grid-cols-2">
-            {button('save-mirror', '保存', Save, () => void run('save-mirror', async () => {
-              await saveMirror(); return '镜像已保存';
-            }), mirrorError || (!mirrorDirty ? '镜像已保存，无需重复保存' : ''))}
-            {button('download', '保存并下载', Download, () => void run('download', async () => {
-              await saveMirror();
-              try { return await installOfficial(downloadProgress); }
-              catch (error) { throw new Error(`镜像已保存；核心安装未完成：${error instanceof Error ? error.message : String(error)}`); }
-            }), mirrorError)}
+        <div className="mh-section-label">连接</div>
+        <div className="mh-group" ref={subscription}>
+          <div className="mh-field">
+            <div className="mh-field-heading"><label htmlFor="ufi-subscription">订阅</label>
+              <span className="mh-save-state">{values.subscription?.trim() ? '待应用' : device?.subscription ? '已保存' : '未配置'}</span>
+            </div>
+            <input {...form.register('subscription', { validate: value => model.validate('subscription', value) })}
+              id="ufi-subscription" type="password" data-url placeholder={device?.subscription ? '留空使用已保存订阅' : '粘贴订阅链接'}
+              disabled={!!busy} autoComplete="off" autoCapitalize="none" spellCheck={false}
+              enterKeyHint="go" onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void perform('update'); } }}
+              aria-invalid={!!errors.subscription} aria-describedby="ufi-subscription-error" />
+            {errors.subscription && <p id="ufi-subscription-error" className="mh-field-error">{errors.subscription.message}</p>}
+            {action('update', values.subscription?.trim() ? '保存并更新' : '更新订阅', RefreshCw)}
           </div>
-        </div>
-      </details>
-      <details data-advanced className="ufi-rounded-xl ufi-border ufi-border-solid ufi-border-slate-500/20">
-        <summary className="ufi-flex ufi-items-center ufi-gap-2 ufi-p-3 ufi-text-sm ufi-font-medium"><Settings2 size={16} aria-hidden />高级设置<ChevronDown data-chevron size={16} className="ufi-ml-auto" aria-hidden /></summary>
-        <div className="ufi-space-y-3 ufi-px-3 ufi-pb-3">
-          <label className="ufi-block ufi-text-xs">共享接口
-            <input data-lan type="text" placeholder="留空自动识别" value={lan}
-              onChange={event => setLan(event.target.value)} disabled={!!busy} />
+          <label className="mh-row">
+            <span><Power size={17} aria-hidden />开机自启</span>
+            <input type="checkbox" role="switch" data-boot checked={device?.boot ?? false}
+              disabled={!!disabledReason(device?.boot ? 'boot-off' : 'boot-on', device, !!busy)}
+              title={disabledReason(device?.boot ? 'boot-off' : 'boot-on', device, !!busy)}
+              onChange={event => void perform(event.target.checked ? 'boot-on' : 'boot-off')} />
           </label>
-          <div className="ufi-grid ufi-grid-cols-2 ufi-gap-2">
-            {button('save-interfaces', '保存接口设置', Save, () => void run('save-interfaces', async () => {
-              await upload('interfaces', interfaces(lan) + '\n'); return '接口设置已保存';
-            }))}
-            {button('diagnose', '网络诊断', Stethoscope, () => void run('diagnose', () => shell('ip -o -4 addr show; ip -4 rule show; ip -4 route show table all; ip -6 route show table all; getprop ro.product.cpu.abi')))}
-            {commandButton('restart', '重启', RefreshCw)}
-            {device?.service && button('service-update', '更新服务文件', Download, () => void run('service-update', installService))}
+        </div>
+
+        <details ref={settings} data-settings className="mh-group mh-settings" open={settingsOpen}
+          onToggle={event => { if (event.target === event.currentTarget) setSettingsOpen(event.currentTarget.open); }}>
+          <summary className="mh-row"><span><Settings2 size={18} aria-hidden />设置</span><ChevronDown data-chevron size={16} aria-hidden /></summary>
+          <div data-lifecycle className="mh-row">
+            <span>服务<span className="mh-row-value">{device ? device.service ? '已安装' : '未安装' : '未知'}</span></span>
+            {action(lifecycle ?? 'install', !device ? busy ? '检测中' : '状态未知' : lifecycle === 'uninstall' ? '卸载' : '安装',
+              lifecycle === 'uninstall' ? Trash2 : Download, () => {
+                if (lifecycle === 'uninstall') uninstall.current?.showModal();
+                else if (lifecycle === 'install') void perform('install');
+              })}
           </div>
-        </div>
-      </details>
-      <details data-result open={resultOpen} onToggle={event => { if (event.target === event.currentTarget) setResultOpen(event.currentTarget.open); }}>
-        <summary className="ufi-flex ufi-items-center ufi-gap-2 ufi-text-xs ufi-opacity-60">操作详情<ChevronDown data-chevron size={14} className="ufi-ml-auto" aria-hidden /></summary>
-        <pre data-output data-error={error} className="ufi-mt-2 ufi-max-h-64 ufi-overflow-auto ufi-whitespace-pre-wrap ufi-break-words ufi-rounded-xl ufi-bg-slate-500/10 ufi-p-3 ufi-text-xs ufi-leading-relaxed">{message}</pre>
-      </details>
-    </div>
-    <dialog ref={dialog} data-uninstall aria-labelledby="ufi-mihomo-uninstall-title">
-      <form method="dialog" className="ufi-space-y-4" onSubmit={event => {
-        event.preventDefault(); dialog.current?.close();
-        void run('uninstall', async () => {
-          const result = await service('uninstall', 95_000);
-          settingsLoaded.current = false; setUrl(''); setLan(''); setMirror(''); setSavedMirror(null);
-          return result;
-        });
-      }}>
-        <h3 id="ufi-mihomo-uninstall-title" className="ufi-m-0 ufi-text-base">卸载 Mihomo 服务？</h3>
-        <p className="ufi-text-sm ufi-leading-relaxed">停止代理并关闭自启，文件与配置保留备份。</p>
-        <div className="ufi-flex ufi-flex-wrap ufi-justify-end ufi-gap-2">
-          <button type="button" autoFocus onClick={() => dialog.current?.close()}>取消</button>
-          <button type="submit" data-danger>卸载并备份</button>
-        </div>
-      </form>
-    </dialog>
-  </details></>;
+          {settingField('mirror', '下载镜像', 'https://ghfast.top')}
+          <div className="mh-row"><span>官方核心<span className="mh-row-value">{device?.running ? '停止后更新' : device?.core ? '已安装' : '未安装'}</span></span>
+            {action('download', device?.core ? '更新核心' : '下载核心', Download)}
+          </div>
+          {settingField('interfaces', '共享接口', '自动识别')}
+        </details>
+        {model.detail && <button type="button" className={model.error ? 'mh-detail-link mh-field-error' : 'mh-detail-link'}
+          onClick={() => model.setDetailOpen(true)}>{model.error ? '操作失败 · 查看详情' : '最近操作'}</button>}
+      </div>
+
+      <dialog ref={uninstall} data-uninstall aria-labelledby="ufi-uninstall-title">
+        <form method="dialog" onSubmit={event => { event.preventDefault(); uninstall.current?.close(); void perform('uninstall'); }}>
+          <h3 id="ufi-uninstall-title">卸载 Mihomo？</h3>
+          <p>停止代理并关闭自启，文件与配置保留备份。</p>
+          <div className="mh-dialog-actions"><button type="button" className="mh-button" autoFocus onClick={() => uninstall.current?.close()}>取消</button>
+            <button type="submit" className="mh-button" data-danger>卸载并备份</button></div>
+        </form>
+      </dialog>
+      <dialog ref={details} data-result aria-labelledby="ufi-detail-title" onClose={() => model.setDetailOpen(false)}>
+        <div className="mh-dialog-heading"><h3 id="ufi-detail-title">操作详情</h3><button type="button" className="mh-icon-button" aria-label="关闭详情" onClick={() => model.setDetailOpen(false)}><X size={20} aria-hidden /></button></div>
+        <pre data-output>{model.detail}</pre>
+      </dialog>
+    </details>
+  </>;
 }
 
 function mount() {

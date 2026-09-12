@@ -1,67 +1,80 @@
-@tailwind utilities;
-
-/* Scoped baseline: UFI owns the rest of the page. No Tailwind preflight. */
+/* Tailwind handles layout; component selectors stay inside the UFI card. */
 #ufi-mihomo {
-  --mh-text: var(--dark-text-color, #e2e8f0);
-  color: var(--mh-text);
-  font-family: inherit;
-  font-size: 14px;
-  line-height: 1.5;
-  border: 1px solid #64748b40;
-  border-radius: 18px;
-  background: var(--dark-bg-color, #0f172a);
-  box-shadow: 0 6px 24px #00000018;
-  overflow: hidden;
-  margin: 14px 0;
+  --mh-text: var(--dark-text-color, #f5f5f7);
+  --mh-bg: var(--dark-bg-color, #111114);
+  --mh-group: var(--dark-btn-color, #1c1c1f);
+  --mh-line: #80808026;
+  margin: 14px 0; border: 1px solid var(--mh-line); border-radius: 22px;
+  background: var(--mh-bg); color: var(--mh-text); overflow: hidden;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 #ufi-mihomo *, #ufi-mihomo *::before, #ufi-mihomo *::after { box-sizing: border-box; }
+#ufi-mihomo h2, #ufi-mihomo h3, #ufi-mihomo p { margin: 0; }
 #ufi-mihomo summary { cursor: pointer; list-style: none; }
 #ufi-mihomo summary::-webkit-details-marker { display: none; }
-#ufi-mihomo details[open] > summary [data-chevron], #ufi-mihomo[open] > summary [data-chevron] { transform: rotate(180deg); }
-#ufi-mihomo button {
-  margin: 0;
-  padding: 10px 14px;
-  border: 1px solid #64748b50;
-  border-radius: 10px;
-  color: inherit;
-  background: #64748b18;
-  font: inherit;
-  font-size: 13px;
-  line-height: 1.4;
-  cursor: pointer;
-  min-height: 42px;
-  transition: background .15s, opacity .15s;
-}
-#ufi-mihomo button:hover { background: #64748b35; }
-#ufi-mihomo button[data-primary] { background: #0d9488; color: white; border-color: #0d9488; }
-#ufi-mihomo button[data-primary]:hover { background: #0f766e; }
+#ufi-mihomo[open] > summary [data-chevron], #ufi-mihomo details[open] > summary [data-chevron] { transform: rotate(180deg); }
+#ufi-mihomo .mh-header { @apply ufi-flex ufi-items-center ufi-gap-3; padding: 18px 20px; }
+#ufi-mihomo .mh-header > svg:first-child { color: #0a84ff; }
+#ufi-mihomo .mh-header strong { font-size: 16px; font-weight: 600; }
+#ufi-mihomo .mh-header-status { margin-left: auto; font-size: 12px; opacity: .65; }
+#ufi-mihomo .mh-header-status[data-health=ready] { color: #30d158; opacity: 1; }
+#ufi-mihomo .mh-body { padding: 0 16px 16px; }
+#ufi-mihomo .mh-hero { padding: 20px; background: var(--mh-group); border-radius: 18px; }
+#ufi-mihomo .mh-hero-heading { @apply ufi-flex ufi-items-start ufi-justify-between; }
+#ufi-mihomo .mh-status-symbol { @apply ufi-flex ufi-items-center ufi-justify-center; width: 54px; height: 54px; border-radius: 16px; background: #0a84ff18; color: #0a84ff; }
+#ufi-mihomo .mh-status-symbol[data-health=ready] { background: #30d15818; color: #30d158; }
+#ufi-mihomo h2 { margin-top: 16px; font-size: 28px; font-weight: 600; letter-spacing: -.5px; }
+#ufi-mihomo .mh-subtitle { margin: 2px 0 20px; font-size: 13px; opacity: .6; }
+#ufi-mihomo .mh-button { @apply ufi-inline-flex ufi-items-center ufi-justify-center ufi-gap-2; min-height: 42px; padding: 9px 14px; margin: 0; border: 1px solid var(--mh-line); border-radius: 11px; background: #80808012; color: inherit; font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+#ufi-mihomo .mh-button:hover { background: #80808028; }
+#ufi-mihomo .mh-primary { width: 100%; min-height: 46px; background: #0a84ff; color: white; border: 0; font-size: 15px; font-weight: 500; }
+#ufi-mihomo .mh-primary:hover { background: #0075eb; }
+#ufi-mihomo .mh-primary[data-action=stop] { background: #80808024; color: inherit; }
+#ufi-mihomo [data-danger] { color: #ff6961; }
+#ufi-mihomo .mh-icon-button { @apply ufi-inline-flex ufi-items-center ufi-justify-center; width: 40px; height: 40px; padding: 0; margin: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+#ufi-mihomo .mh-icon-button:hover { background: #80808020; }
 #ufi-mihomo button:disabled, #ufi-mihomo input:disabled { opacity: .4; cursor: not-allowed; }
-#ufi-mihomo[aria-busy=true] button:disabled, #ufi-mihomo[aria-busy=true] input:disabled { cursor: wait; }
-#ufi-mihomo button[data-danger] { color: #fda4af; border-color: #f43f5e66; background: #f43f5e12; }
-#ufi-mihomo dialog { position: fixed; width: min(440px, 90vw); padding: 22px; border: 1px solid #64748b66; border-radius: 16px; background: #0f172a; color: #e2e8f0; font: inherit; }
-#ufi-mihomo dialog::backdrop { background: #020617aa; }
-#ufi-mihomo input:is([type=text], [type=password], [type=url]) {
-  display: block;
-  width: 100%;
-  margin-top: 8px;
-  padding: 12px;
-  border: 1px solid #64748b50;
-  border-radius: 10px;
-  background: #64748b10;
-  color: inherit;
-  font: inherit;
-  font-size: 16px;
-  min-width: 0;
-}
-#ufi-mihomo input[role=switch] { appearance: none; -webkit-appearance: none; flex-shrink: 0; width: 42px; height: 24px; margin: 0; padding: 3px; border: 0; border-radius: 99px; background: #64748b66; cursor: pointer; }
-#ufi-mihomo input[role=switch]::before { content: ''; display: block; width: 18px; height: 18px; border-radius: 50%; background: #e2e8f0; }
-#ufi-mihomo input[role=switch]:checked { background: #0d9488; }
+#ufi-mihomo :is(button, input, summary):focus-visible { outline: 2px solid #0a84ff; outline-offset: 3px; }
+#ufi-mihomo .mh-steps { @apply ufi-flex ufi-items-center ufi-justify-between; margin-top: 18px; font-size: 12px; opacity: .7; }
+#ufi-mihomo .mh-steps > span { @apply ufi-flex ufi-items-center ufi-gap-1; }
+#ufi-mihomo .mh-steps [data-done=true] { color: #30d158; }
+#ufi-mihomo .mh-step-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: .4; }
+#ufi-mihomo .mh-section-label { padding: 20px 12px 8px; font-size: 12px; opacity: .55; }
+#ufi-mihomo .mh-group { border-radius: 16px; overflow: hidden; background: var(--mh-group); }
+#ufi-mihomo .mh-settings { margin-top: 16px; }
+#ufi-mihomo .mh-row { @apply ufi-flex ufi-items-center ufi-justify-between ufi-gap-3; min-height: 58px; padding: 14px 16px; border-top: 1px solid var(--mh-line); }
+#ufi-mihomo summary.mh-row { border: 0; }
+#ufi-mihomo .mh-row > span { @apply ufi-flex ufi-items-center ufi-gap-2; }
+#ufi-mihomo .mh-row-value { font-size: 12px; opacity: .5; }
+#ufi-mihomo .mh-field { padding: 16px; }
+#ufi-mihomo .mh-settings .mh-field { border-top: 1px solid var(--mh-line); }
+#ufi-mihomo .mh-field-heading { @apply ufi-flex ufi-items-center ufi-justify-between ufi-gap-2; margin-bottom: 10px; }
+#ufi-mihomo .mh-field-heading label { font-size: 14px; }
+#ufi-mihomo .mh-save-state { @apply ufi-inline-flex ufi-items-center ufi-gap-1; font-size: 11px; opacity: .55; }
+#ufi-mihomo .mh-field > .mh-button { width: 100%; margin-top: 12px; }
+#ufi-mihomo input:is([type=text], [type=password], [type=url]) { display: block; width: 100%; min-width: 0; height: 44px; margin: 0; padding: 10px 12px; border: 1px solid var(--mh-line); border-radius: 10px; background: #80808010; color: inherit; font: inherit; font-size: 16px; }
+#ufi-mihomo input::placeholder { color: inherit; opacity: .35; }
+#ufi-mihomo .mh-hint { margin-top: 8px; font-size: 11px; opacity: .5; }
+#ufi-mihomo .mh-field-error { color: #ff6961; font-size: 12px; }
+#ufi-mihomo p.mh-field-error { margin-top: 8px; }
+#ufi-mihomo .mh-retry { border: 0; padding: 4px 0; background: transparent; color: #ff6961; cursor: pointer; font: inherit; font-size: 12px; }
+#ufi-mihomo input[role=switch] { appearance: none; -webkit-appearance: none; flex-shrink: 0; width: 46px; height: 28px; margin: 0; padding: 3px; border: 0; border-radius: 99px; background: #80808044; cursor: pointer; }
+#ufi-mihomo input[role=switch]::before { content: ''; display: block; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0002; }
+#ufi-mihomo input[role=switch]:checked { background: #30d158; }
 #ufi-mihomo input[role=switch]:checked::before { transform: translateX(18px); }
-#ufi-mihomo input[role=switch]:disabled { cursor: not-allowed; }
-#ufi-mihomo :is(button, input, summary):focus-visible { outline: 2px solid #2dd4bf; outline-offset: 3px; }
-#ufi-mihomo [data-output][data-error=true] { color: #fb7185; }
-#ufi-mihomo [data-dot] { background: #94a3b8; }
-#ufi-mihomo [data-dot][data-state=running] { background: #2dd4bf; }
-#ufi-mihomo [data-dot][data-state=waiting] { background: #fbbf24; }
-#ufi-mihomo [data-output]:empty { display: none; }
-#ufi-mihomo p, #ufi-mihomo pre { margin: 0; }
+#ufi-mihomo .mh-detail-link { display: block; margin: 14px auto 0; padding: 6px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 12px; opacity: .6; cursor: pointer; }
+#ufi-mihomo dialog { width: min(560px, calc(100vw - 32px)); max-height: 80vh; padding: 22px; border: 1px solid var(--mh-line); border-radius: 20px; background: var(--mh-group); color: var(--mh-text); font: inherit; }
+#ufi-mihomo dialog::backdrop { background: #0009; }
+#ufi-mihomo dialog h3 { font-size: 17px; font-weight: 600; }
+#ufi-mihomo dialog p { margin-top: 12px; opacity: .7; }
+#ufi-mihomo .mh-dialog-actions { @apply ufi-flex ufi-justify-end ufi-gap-2; margin-top: 24px; }
+#ufi-mihomo .mh-dialog-heading { @apply ufi-flex ufi-items-center ufi-justify-between; }
+#ufi-mihomo pre { max-height: 60vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; }
+[data-ufi-menu] { z-index: 2147483640; min-width: 205px; padding: 6px; border: 1px solid #ffffff18; border-radius: 14px; background: #252528; color: #f5f5f7; box-shadow: 0 12px 38px #0005; font: 14px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; }
+[data-ufi-menu] .mh-menu-item { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 9px 12px; border-radius: 8px; outline: none; cursor: pointer; user-select: none; }
+[data-ufi-menu] .mh-menu-item[data-highlighted] { background: #ffffff12; }
+[data-ufi-menu] .mh-menu-item[data-disabled] { opacity: .35; cursor: not-allowed; }
+[data-ufi-menu] .mh-menu-separator { height: 1px; margin: 5px 8px; background: #ffffff15; }
+@keyframes mh-spin { to { transform: rotate(360deg); } }
+#ufi-mihomo .mh-spin { animation: mh-spin 1s linear infinite; }
+@media (prefers-reduced-motion: reduce) { #ufi-mihomo .mh-spin { animation: none; } }

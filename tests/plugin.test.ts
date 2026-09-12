@@ -329,14 +329,13 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
   expect(disabledReason('uninstall', installed, true)).not.toBe('');
   for (const action of ['start', 'restart', 'update', 'boot-on'] as const) expect(disabledReason(action, installed)).not.toBe('');
   expect(disabledReason('download', installed)).toBe('');
-  expect(disabledReason('save', installed, false, 'https://example.com/sub')).toBe('');
-  expect(disabledReason('save', installed)).toContain('订阅链接');
   expect(disabledReason('save-mirror', { ...installed, running: true })).toBe('');
   expect(disabledReason('save-interfaces', { ...installed, running: true })).toContain('停止');
   expect(nextStep(installed)).toContain('核心');
   const ready = { ...installed, core: true, config: true, subscription: true };
   expect(disabledReason('start', ready)).toBe('');
-  expect(disabledReason('update', ready, false, 'https://new.example')).toContain('保存');
+  expect(disabledReason('update', ready, false, 'https://new.example')).toBe('');
+  expect(disabledReason('update', { ...ready, subscription: false }, false, '')).toContain('订阅');
   expect(disabledReason('update', ready, false, '')).toBe('');
   expect(disabledReason('start', { ...ready, running: true })).not.toBe('');
   expect(disabledReason('download', { ...ready, running: true })).not.toBe('');

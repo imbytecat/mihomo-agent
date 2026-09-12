@@ -4,7 +4,7 @@ export const emptyState = {
   boot: false, locked: false, capture: false,
 };
 export type DeviceState = typeof emptyState;
-export type Action = 'install' | 'service-update' | 'download' | 'save' | 'save-mirror' | 'save-interfaces' | 'update'
+export type Action = 'install' | 'service-update' | 'download' | 'save-mirror' | 'save-interfaces' | 'update'
   | 'start' | 'stop' | 'restart' | 'boot-on' | 'boot-off' | 'logs' | 'refresh' | 'diagnose' | 'uninstall';
 
 export function parseState(text: string): DeviceState {
@@ -28,7 +28,6 @@ export function disabledReason(action: Action, state: DeviceState | null, busy =
   if (action === 'uninstall' || action === 'logs') return '';
   if (action === 'stop') return state.running || state.capture ? '' : '服务已停止';
   if (action === 'boot-off') return state.boot ? '' : '开机自启已关闭';
-  if (action === 'save') return draftUrl.trim() ? '' : '请输入要保存的订阅链接';
   if (action === 'save-mirror') return '';
   if (action === 'save-interfaces' || action === 'download' || action === 'service-update') {
     if (state.running) return '请先停止服务';
@@ -36,8 +35,7 @@ export function disabledReason(action: Action, state: DeviceState | null, busy =
   }
   if (!state.core) return '请先安装核心';
   if (action === 'update') {
-    if (draftUrl.trim()) return '请先保存新订阅链接';
-    return state.subscription ? '' : '请先保存订阅链接';
+    return state.subscription || draftUrl.trim() ? '' : '请输入订阅链接';
   }
   if (!state.config) return '请先更新订阅，生成可用配置';
   if (action === 'start') return state.running ? '服务已运行，请使用重启' : '';
