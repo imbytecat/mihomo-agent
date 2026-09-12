@@ -1,14 +1,14 @@
 {
-  "version": "v0.2.0",
+  "version": "v0.2.1",
   "protocol": 1,
   "assets": {
     "arm64": {
-      "url": "https://github.com/imbytecat/ufi-mihomo/releases/download/agent-v0.2.0/ufi-agent-linux-arm64",
-      "sha256": "6349372ccd356a5587a8cf5e28409f76fc99cb1262d669032ab7a53fbb40a4e3"
+      "url": "https://github.com/imbytecat/ufi-mihomo/releases/download/agent-v0.2.1/ufi-agent-linux-arm64",
+      "sha256": "76978418ca454c82aac739fd14c8f3d1e946b935102685593b821afb2ccd9636"
     },
     "armv7": {
-      "url": "https://github.com/imbytecat/ufi-mihomo/releases/download/agent-v0.2.0/ufi-agent-linux-armv7",
-      "sha256": "bfb1611ec89a174af7c75e4b7cff27f81d96d66417f077708f8b911cbf5ccce4"
+      "url": "https://github.com/imbytecat/ufi-mihomo/releases/download/agent-v0.2.1/ufi-agent-linux-armv7",
+      "sha256": "728e6db23d62dcda75b87d0a4cc44c0b79f81c33e865ed9b9b0d690fa6e389d7"
     }
   }
 }

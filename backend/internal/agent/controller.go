@@ -36,12 +36,12 @@ func (c Controller) validate() error {
 	if c.Port < 1024 || c.Port > 65535 || c.Port == 7894 || c.Port == 1053 {
 		return errors.New("API 端口须为 1024–65535，且不能占用代理或 DNS 端口")
 	}
-	if len(c.Secret) < 16 || len(c.Secret) > 256 {
-		return errors.New("API 密钥须为 16–256 位字母、数字或英文符号")
+	if c.Secret == "" {
+		return errors.New("API 密钥不能为空")
 	}
 	for _, char := range c.Secret {
 		if char < 33 || char > 126 {
-			return errors.New("API 密钥须为 16–256 位字母、数字或英文符号")
+			return errors.New("API 密钥包含无法用于 HTTP 鉴权的字符")
 		}
 	}
 	return nil

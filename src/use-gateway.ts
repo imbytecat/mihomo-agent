@@ -234,7 +234,7 @@ export function useGateway() {
   const validate = (name: 'subscription' | Setting | 'controlPort' | 'controlSecret', value: string) => {
     try {
       if (name === 'controlPort') return /^\d+$/.test(value) && Number(value) >= 1024 && Number(value) <= 65535 && !['7894', '1053'].includes(value) || '请输入可用的 1024–65535 端口';
-      if (name === 'controlSecret') return !value || /^[\x21-\x7e]{16,256}$/.test(value) || '密钥须为 16–256 位字母、数字或英文符号';
+      if (name === 'controlSecret') return /^[\x21-\x7e]*$/.test(value) || '密钥包含无法用于 HTTP 鉴权的字符';
       if (name === 'subscription') { if (value.trim()) subscriptionURL(value.trim()); } else normalize[name](value); return true;
     }
     catch (error) { return error instanceof Error ? error.message : '格式不正确'; }

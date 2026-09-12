@@ -123,6 +123,7 @@ try {
   await browser('click', '[data-settings] > summary');
   await check('document.querySelector("[data-dashboard-link]").href.includes(":9090/ui/")');
   await browser('fill', '#ufi-control-port', '9191');
+  await browser('fill', '#ufi-control-secret', 'short');
   await browser('eval', 'window.mockTaskDelayMs = 5000');
   await browser('click', '[data-action=save-controller]');
   await browser('wait', '--fn', 'mockDeviceState.locked');
@@ -132,7 +133,7 @@ try {
   await check('document.querySelector("[data-dashboard-link]").href.includes(":9191/ui/") && !document.querySelector("[data-dashboard-link]").href.includes("secret")');
   await browser('find', 'role', 'button', 'click', '--name', '查看当前密钥', '--exact');
   await browser('wait', '[data-secret-dialog][open]');
-  await check('document.querySelector("[data-secret-dialog] input").value === "mock-controller-key-not-a-real-secret" && mockCommands.every(c => !c.includes("mock-controller-key-not-a-real-secret"))');
+  await check('document.querySelector("[data-secret-dialog] input").value === "short" && mockCommands.every(c => !c.includes(JSON.stringify({secret: "short"})))');
   await browser('find', 'role', 'button', 'click', '--name', '关闭密钥', '--exact');
   await browser('find', 'role', 'button', 'click', '--name', '更多操作', '--exact');
   await browser('find', 'role', 'menuitem', 'click', '--name', '查看日志', '--exact');

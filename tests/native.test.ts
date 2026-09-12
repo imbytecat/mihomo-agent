@@ -69,8 +69,10 @@ test('sealed browser intents run in a detached native worker; failed updates pre
     expect(config).toContain(secret);
     expect(JSON.stringify(await inspect())).not.toContain(secret);
     expect(await cli('logs')).not.toContain(secret);
-    expect((await submit('save-controller', JSON.stringify({ enabled: true, port: 9191, reset: true }))).state).toBe('succeeded');
+    expect((await submit('save-controller', JSON.stringify({ enabled: true, port: 9191, secret: 'short' }))).state).toBe('succeeded');
     expect((await inspect()).controller?.port).toBe(9191);
+    const savedKey = await cli('controller-secret', sodium.to_base64(keys.publicKey, sodium.base64_variants.ORIGINAL));
+    expect(sodium.to_string(sodium.crypto_box_seal_open(sodium.from_base64(savedKey, sodium.base64_variants.ORIGINAL), keys.publicKey, keys.privateKey))).toBe('short');
     expect(requested).toBe(1); // Local settings apply from the saved source, not another subscription download.
     const current = await readlink(join(root, 'runtime/current'));
     source = '<html>subscription error</html>';

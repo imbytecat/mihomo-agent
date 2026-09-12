@@ -63,6 +63,19 @@ func TestDeviceControllerOverridesSubscriptionWithoutSecret(t *testing.T) {
 	}
 }
 
+func TestControllerSecretHasNoLengthPolicy(t *testing.T) {
+	for _, secret := range []string{"a", "123", strings.Repeat("x", 300)} {
+		if err := (Controller{Enabled: true, Port: 9090, Secret: secret}).validate(); err != nil {
+			t.Fatalf("rejected a valid key of length %d: %v", len(secret), err)
+		}
+	}
+	for _, secret := range []string{"", "invalid\r\nheader", "invalid\x00header"} {
+		if err := (Controller{Enabled: true, Port: 9090, Secret: secret}).validate(); err == nil {
+			t.Fatal("accepted empty or malformed authentication key")
+		}
+	}
+}
+
 func TestControllerSettingsCommitWithConfigAndRollbackOnFailure(t *testing.T) {
 	a := testAgent(t)
 	_ = atomicWrite(a.runtime("mihomo"), []byte("fixture"), 0700)

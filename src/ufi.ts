@@ -143,7 +143,7 @@ export async function readControllerSecret() {
     const sealed = await agent(['controller-secret', sodium.to_base64(key.publicKey, sodium.base64_variants.ORIGINAL)]);
     if (typeof sealed !== 'string') throw new Error('密钥响应无效');
     const value = sodium.to_string(sodium.crypto_box_seal_open(sodium.from_base64(sealed, sodium.base64_variants.ORIGINAL), key.publicKey, key.privateKey));
-    if (value.length < 16 || value.length > 256) throw new Error('密钥响应无效');
+    if (!value) throw new Error('密钥响应无效');
     return value;
   } finally { sodium.memzero(key.privateKey); }
 }
