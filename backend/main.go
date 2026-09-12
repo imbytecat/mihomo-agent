@@ -37,6 +37,11 @@ func main() {
 		result = map[string]any{"ok": err == nil}
 	case "inspect":
 		result, err = a.Inspect()
+	case "controller-secret":
+		if len(flags.Args()) != 1 {
+			fatal(fmt.Errorf("controller-secret requires recipient public key"))
+		}
+		result, err = a.ControllerSecret(flags.Arg(0))
 	case "boot":
 		result, err = a.Boot()
 	case "stop", "boot-off":

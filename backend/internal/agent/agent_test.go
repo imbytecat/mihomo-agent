@@ -171,7 +171,7 @@ func TestTaskRetainsLockAfterSubmitterReturns(t *testing.T) {
 	}
 	close(release)
 	finished := waitJob(t, a, job.ID)
-	if finished.State != "failed" || finished.Phase != "subscription" {
+	if finished.State != "failed" || finished.Phase != "adapt" {
 		t.Fatalf("%+v", finished)
 	}
 }
@@ -202,7 +202,7 @@ func TestUnmanagedDataAndInvalidRequestsArePreserved(t *testing.T) {
 
 func TestConfigPolicyPreservedAndFailedValidationDoesNotCommit(t *testing.T) {
 	source := []byte("proxies: []\nproxy-groups: [{name: choice, type: select, proxies: [DIRECT]}]\nrules: [MATCH,choice]\ndns: {nameserver: [https://223.5.5.5/dns-query], enhanced-mode: fake-ip}\n")
-	encoded, ports, err := adaptConfig(source)
+	encoded, ports, err := adaptConfig(source, Controller{Enabled: true, Port: 9090, Secret: strings.Repeat("x", 32)}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestConfigPolicyPreservedAndFailedValidationDoesNotCommit(t *testing.T) {
 			t.Fatal("policy changed", key)
 		}
 	}
-	if ports != "7894,1053" || after["dns"].(map[string]any)["enhanced-mode"] != "fake-ip" {
+	if ports != "7894,1053,9090" || after["dns"].(map[string]any)["enhanced-mode"] != "fake-ip" {
 		t.Fatal(ports, after)
 	}
 	a := testAgent(t)

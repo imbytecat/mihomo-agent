@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile, mkdir, symlink, readdir } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { subscriptionURL, downloadMirror, interfaces } from '../src/config';
-import { quote, shellCommand, shellResult } from '../src/ufi';
+import { quote, shellCommand, shellResult, controllerURL } from '../src/ufi';
 import { disabledReason, emptyState, lifecycleAction, nextStep, parseState } from '../src/state';
 import { request, responseJSON } from '../src/request';
 
@@ -200,6 +200,12 @@ test('listener readiness requires all four core-owned sockets, not foreign liste
     return proc.exited;
   };
   expect(await run()).toBe(0);
+  await mkdir(join(dir, 'current'));
+  await writeFile(join(dir, 'current/api-port'), '9090');
+  expect(await run()).toBe(1);
+  await symlink('socket:[15]', join(procdir, '123/fd/15'));
+  await writeFile(join(procdir, 'net/tcp'), row('1ED6', '0A', 11) + row('041D', '0A', 12) + row('2382', '0A', 15));
+  expect(await run()).toBe(0);
   await writeFile(join(procdir, 'net/udp'), row('1ED6', '07', 13) + row('041D', '07', 999));
   expect(await run()).toBe(1);
   await writeFile(join(procdir, 'net/udp'), row('1ED6', '07', 13));
@@ -211,7 +217,7 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
   expect(disabledReason('refresh', null)).toBe('');
   expect(disabledReason('install', emptyState)).toBe('');
   expect(disabledReason('uninstall', emptyState)).not.toBe('');
-  const installed = { ...emptyState, agent: true, service: true };
+  const installed = { ...emptyState, agent: true, service: true, controller: { enabled: true, port: 9090, applied: false } };
   expect(lifecycleAction(null)).toBe(null);
   expect(lifecycleAction(emptyState)).toBe('install');
   expect(lifecycleAction(installed)).toBe('uninstall');
@@ -237,6 +243,13 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
   expect(disabledReason('logs', { ...ready, locked: true })).toBe('');
   expect(() => parseState('{"service":true}')).toThrow();
   expect(parseState(JSON.stringify(ready))).toEqual(ready);
+  expect(disabledReason('save-controller', { ...ready, controller: null })).toContain('更新设备组件');
+  expect(disabledReason('open-dashboard', ready)).toContain('安装面板');
+  const panel = { ...ready, controller: { enabled: true, port: 9090, applied: true }, dashboard: { installed: true, ready: true, version: 'v1.0.0' } };
+  expect(disabledReason('open-dashboard', panel)).toContain('启动');
+  expect(disabledReason('open-dashboard', { ...panel, running: true, listeners: true })).toBe('');
+  expect(controllerURL('https://user:pass@192.168.0.1:8080/api?token=private#x', 9090)).toBe('http://192.168.0.1:9090/ui/');
+  expect(() => controllerURL('http://192.168.0.1/', 0)).toThrow();
 });
 
 test('request errors identify network, timeout, HTTP and malformed response stages', async () => {

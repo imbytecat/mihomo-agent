@@ -12,6 +12,7 @@
 - 修改 UI、表单或任务恢复：先读 `src/use-gateway.ts`、`src/state.ts`、`src/ufi.ts`。浏览器只与 UFI 通信；下载、版本查询、YAML 处理和配置应用归 Go 后端。
 - 修改设备任务或安装：先读 `backend/main.go`、`backend/internal/agent/jobs.go`、`operations.go` 与 `src/bootstrap.sh`。任务必须独立于浏览器存活；前端轮询只是观察，不负责串联设备执行步骤。
 - 修改配置或网络：先读 `backend/internal/agent/config.go`、`runtime.go`、`network.sh`，以及对应 Go 测试和 `tests/plugin.test.ts`。shell 仅桥接 Android 网络命令，代理数据流归 mihomo。
+- 修改控制面板：先读 `backend/internal/agent/controller.go`、`dashboard.go`。本机管理设置覆盖订阅中的控制 API/UI 字段；配置版本同时保存有效密钥和端口，保持失败回滚的一致性。密钥查看使用浏览器临时公钥加密响应；Dashboard 链接不携带密钥。
 - 修改 UFI 加载/通信协议时，核对下方官方接口来源，不根据其他插件的实现猜测。
 
 ## 必须保持的边界
@@ -20,6 +21,7 @@
 - 启动引导使用 UFI 自带 curl；安装后的 HTTP/TLS、SHA-256、解压和 YAML 处理使用 Go。保持 TLS 验证与 Android CA 支持，下载摘要缺失或不匹配时停止。
 - `submit` 持有系统文件锁并把锁描述符交给独立 worker。保留任务状态用于重连和防重放；丢失提交响应后查询已知任务 ID，不盲目重交。
 - UI 禁用条件只是提示，后端独立检查安装、运行和任务锁状态。保存完成或后台刷新不能覆盖更新的输入草稿。
+- 概览中的运行状态与设备任务状态分开；任务详情和运行日志对应各自内容。开机启动属于运行设置；API 参数明确保存并应用，保持原有普通偏好的失焦保存。
 - 原始订阅、运行配置、订阅链接同属一个配置版本；校验成功后原子切换。失败保留旧版，未完成的事务由 journal 恢复。保留已有节点、规则、DNS 上游等策略。
 - 自动接管仅限识别到的共享入口，排除蜂窝及上游。启动核心前安装监听端口保护，等待 LAN 时仍保留保护；核心退出后才能撤掉保护。
 - 网络资源只操作本插件拥有的链、路由和 mark；不清空系统防火墙或改全局默认路由。进程操作核对出生时间，避免 PID 复用。

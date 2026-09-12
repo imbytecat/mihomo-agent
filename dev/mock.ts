@@ -5,11 +5,11 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import { parse } from 'shell-quote';
 import { emptyState, type DeviceState, type DeviceJob, type TaskAction } from '../src/state';
 
-const ready = { ...emptyState, agent: true, service: true, core: true, config: true, subscription: true };
+const ready = { ...emptyState, agent: true, version: 'v0.2.0', service: true, core: true, config: true, subscription: true, controller: { enabled: true, port: 9090, applied: true } };
 const scenarios: Record<string, DeviceState> = {
   'missing-service': emptyState, 'missing-core': { ...ready, core: false, config: false, subscription: false },
   'missing-config': { ...ready, config: false, subscription: false }, ready,
-  running: { ...ready, running: true, supervisor: true, listeners: true, network: true, capture: true },
+  running: { ...ready, running: true, supervisor: true, listeners: true, network: true, capture: true, dashboard: { installed: true, ready: true, version: 'v3.26.0' } },
 };
 const scenario = new URL(location.href).searchParams.get('state') || 'missing-service';
 const storageKey = 'ufi-mock-' + scenario;
@@ -17,6 +17,7 @@ type Intent = { id: string; action: TaskAction | 'bootstrap'; value: string };
 type Pending = { intent: Intent; end: number; failure: string };
 const persisted = JSON.parse(sessionStorage.getItem(storageKey) || 'null');
 const state: DeviceState = persisted?.state || structuredClone(scenarios[scenario] || emptyState);
+let controllerSecret = persisted?.controllerSecret || 'mock-controller-key-not-a-real-secret';
 let pending: Pending | null = persisted?.pending || null;
 const jobs: Record<string, DeviceJob> = persisted?.jobs || {};
 const commands: string[] = [], intents: Intent[] = [], requests: string[] = [];
@@ -26,7 +27,7 @@ const flags = globalThis as typeof globalThis & {
   mockProbeError?: boolean; mockUploadFailure?: boolean; mockUploadDelayMs?: number;
   mockTaskDelayMs?: number; mockTaskFailure?: string;
 };
-const save = () => sessionStorage.setItem(storageKey, JSON.stringify({ state, pending, jobs }));
+const save = () => sessionStorage.setItem(storageKey, JSON.stringify({ state, pending, jobs, controllerSecret }));
 function advance() {
   if (!pending || Date.now() < pending.end) return;
   const { intent, failure } = pending;
@@ -35,11 +36,19 @@ function advance() {
   job.updated = new Date().toISOString(); state.locked = false;
   if (!failure) {
     switch (intent.action) {
-      case 'bootstrap': case 'install': state.agent = state.service = true; state.settings.mirror = intent.value; job.result = '服务已安装'; break;
+      case 'bootstrap': case 'install': state.agent = state.service = true; state.version = 'v0.2.0'; state.controller = { enabled: true, port: 9090, applied: false }; state.settings.mirror = intent.value; job.result = '服务已安装'; break;
       case 'save-mirror': state.settings.mirror = intent.value; job.result = '镜像已保存'; break;
       case 'save-interfaces': state.settings.interfaces = intent.value === 'auto' ? [] : intent.value.split(' '); job.result = '接口已保存'; break;
       case 'download': state.core = true; state.settings.mirror = intent.value; job.result = '核心 v9.8.7 已安装，校验通过'; break;
-      case 'update': state.config = state.subscription = true; job.result = '配置已更新'; break;
+      case 'update': state.config = state.subscription = true; state.controller!.applied = true; state.dashboard.ready = state.dashboard.installed && state.controller!.enabled; job.result = '配置已更新'; break;
+      case 'save-controller': {
+        const value = JSON.parse(intent.value);
+        state.controller = { enabled: value.enabled, port: value.port, applied: state.config };
+        if (value.reset) controllerSecret = 'mock-regenerated-controller-key'; else if (value.secret) controllerSecret = value.secret;
+        state.dashboard.ready = state.dashboard.installed && state.config && value.enabled;
+        job.result = '面板设置已应用'; break;
+      }
+      case 'download-dashboard': state.dashboard = { installed: true, ready: state.config && !!state.controller?.enabled, version: 'v3.26.0' }; job.result = 'Zashboard v3.26.0 已安装'; break;
       case 'boot-on': state.boot = true; job.result = '自启已开启'; break;
       case 'boot-off': state.boot = false; job.result = '自启已关闭'; break;
       case 'start': case 'restart': Object.assign(state, { running: true, supervisor: true, listeners: true, network: true, capture: true }); job.result = '代理已启动'; break;
@@ -81,6 +90,7 @@ Object.assign(globalThis, {
             result = submit(intent, args[3]); break;
           }
           case 'job': result = jobs[args[2]!]; break;
+          case 'controller-secret': result = sodium.to_base64(sodium.crypto_box_seal(sodium.from_string(controllerSecret), sodium.from_base64(args[2]!, sodium.base64_variants.ORIGINAL)), sodium.base64_variants.ORIGINAL); break;
           case 'job-log': result = 'F50 任务日志'; break;
           case 'logs': result = 'core.log\n代理运行正常'; break;
           case 'diagnose': result = 'wlan0 192.168.0.1/24'; break;

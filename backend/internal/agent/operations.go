@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -72,6 +73,9 @@ func (a *Agent) installRuntime() error {
 		if err := writeJSON(a.runtime("settings.json"), Settings{Mirror: mirror, Interfaces: []string{}}); err != nil {
 			return err
 		}
+	}
+	if err := a.ensureController(); err != nil {
+		return err
 	}
 	return writeJSON(a.runtime("installed.json"), map[string]any{"protocol": Protocol, "version": a.Version})
 }
@@ -148,6 +152,10 @@ func (a *Agent) execute(ctx context.Context, request Request, phase func(string)
 		return a.downloadCore(ctx, work, phase)
 	case "update":
 		return a.updateConfig(ctx, request, work, phase)
+	case "save-controller":
+		return a.saveController(ctx, request, phase)
+	case "download-dashboard":
+		return a.downloadDashboard(ctx, request, work, phase)
 	case "start":
 		if a.running() {
 			return "", errors.New("代理已运行")
@@ -202,14 +210,25 @@ func (a *Agent) execute(ctx context.Context, request Request, phase func(string)
 	return "", errors.New("未知任务")
 }
 
+func parseRelease(data []byte) (release, error) {
+	var value release
+	if json.Unmarshal(data, &value) != nil || !versionPattern.MatchString(value.Tag) || value.Draft == nil || value.Prerelease == nil || *value.Draft || *value.Prerelease {
+		return value, errors.New("官方版本信息无效")
+	}
+	return value, nil
+}
+
 func selectAsset(data []byte, arch string) (string, string, string, error) {
-	var release release
-	if json.Unmarshal(data, &release) != nil || !versionPattern.MatchString(release.Tag) || release.Draft == nil || release.Prerelease == nil || *release.Draft || *release.Prerelease {
+	value, err := parseRelease(data)
+	if err != nil {
 		return "", "", "", errors.New("官方版本信息无效")
 	}
-	name := "mihomo-android-" + arch + "-" + release.Tag + ".gz"
-	expectedURL := "https://github.com/MetaCubeX/mihomo/releases/download/" + release.Tag + "/" + name
-	for _, asset := range release.Assets {
+	return value.asset("MetaCubeX/mihomo", "mihomo-android-"+arch+"-"+value.Tag+".gz")
+}
+
+func (r release) asset(repo, name string) (string, string, string, error) {
+	expectedURL := "https://github.com/" + repo + "/releases/download/" + r.Tag + "/" + name
+	for _, asset := range r.Assets {
 		if asset.Name != name {
 			continue
 		}
@@ -218,9 +237,9 @@ func selectAsset(data []byte, arch string) (string, string, string, error) {
 		if asset.URL != expectedURL || !strings.HasPrefix(asset.Digest, "sha256:") || err != nil || len(decoded) != 32 {
 			return "", "", "", errors.New("官方资产缺少有效 SHA-256")
 		}
-		return release.Tag, expectedURL, strings.ToLower(digest), nil
+		return r.Tag, expectedURL, strings.ToLower(digest), nil
 	}
-	return "", "", "", errors.New("官方没有对应架构的核心")
+	return "", "", "", errors.New("官方版本缺少所需文件")
 }
 
 func (a *Agent) downloadCore(ctx context.Context, work string, phase func(string)) (string, error) {
@@ -337,38 +356,58 @@ func (a *Agent) updateConfig(ctx context.Context, request Request, work string, 
 	if err != nil {
 		return "", err
 	}
-	config, ports, err := adaptConfig(source)
+	control, err := a.controller()
 	if err != nil {
 		return "", err
 	}
-	phase("validate")
-	generation := a.runtime("configurations", request.ID)
-	if err = atomicWrite(filepath.Join(generation, "config.yaml"), config, 0600); err != nil {
+	if err = a.applyConfig(ctx, request.ID, source, address, control, phase); err != nil {
 		return "", err
+	}
+	return "配置已更新", nil
+}
+
+func (a *Agent) applyConfig(ctx context.Context, id string, source []byte, address string, control Controller, phase func(string)) error {
+	phase("adapt")
+	dashboard := a.dashboard().Installed
+	config, ports, err := adaptConfig(source, control, dashboard)
+	if err != nil {
+		return err
+	}
+	phase("validate")
+	generation := a.runtime("configurations", id)
+	if err = atomicWrite(filepath.Join(generation, "config.yaml"), config, 0600); err != nil {
+		return err
 	}
 	if err = atomicWrite(filepath.Join(generation, "source.yaml"), source, 0600); err != nil {
-		return "", err
+		return err
 	}
 	if err = atomicWrite(filepath.Join(generation, "ports"), []byte(ports), 0600); err != nil {
-		return "", err
+		return err
 	}
-	if err = writeJSON(filepath.Join(generation, "source.json"), configuration{URL: address}); err != nil {
-		return "", err
+	apiPort := 0
+	if control.Enabled {
+		apiPort = control.Port
+	}
+	if err = atomicWrite(filepath.Join(generation, "api-port"), []byte(strconv.Itoa(apiPort)), 0600); err != nil {
+		return err
+	}
+	if err = writeJSON(filepath.Join(generation, "source.json"), configuration{URL: address, Controller: &control, Dashboard: dashboard && control.Enabled}); err != nil {
+		return err
 	}
 	if err = a.testCore(ctx, a.runtime("mihomo"), filepath.Join(generation, "config.yaml")); err != nil {
-		return "", err
+		return err
 	}
 	previous, err := a.activeGeneration()
 	if err != nil {
-		return "", err
+		return err
 	}
 	wasRunning := a.running()
-	if err = writeJSON(a.runtime("pending.json"), pendingConfig{Previous: previous, Next: request.ID, WasRunning: wasRunning}); err != nil {
-		return "", err
+	if err = writeJSON(a.runtime("pending.json"), pendingConfig{Previous: previous, Next: id, WasRunning: wasRunning}); err != nil {
+		return err
 	}
 	phase("applying")
 	if err = a.stopRuntime(); err == nil {
-		err = a.activate(request.ID)
+		err = a.activate(id)
 	}
 	if err == nil && wasRunning {
 		err = a.startRuntime(ctx)
@@ -380,12 +419,12 @@ func (a *Agent) updateConfig(ctx context.Context, request Request, work string, 
 			rollbackErr = a.startRuntime(ctx)
 		}
 		if rollbackErr != nil {
-			return "", fmt.Errorf("配置应用失败，恢复也失败：%v", rollbackErr)
+			return fmt.Errorf("配置应用失败，恢复也失败：%v", rollbackErr)
 		}
-		return "", errors.New("配置应用失败，已恢复上一版本")
+		return errors.New("配置应用失败，已恢复上一版本")
 	}
 	if err = os.Remove(a.runtime("pending.json")); err != nil {
-		return "", err
+		return err
 	}
-	return "配置已更新", nil
+	return nil
 }

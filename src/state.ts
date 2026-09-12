@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const jobSchema = z.object({
-  id: z.string().regex(/^[a-f0-9]{32}$/), action: z.enum(['bootstrap', 'install', 'download', 'update', 'start', 'stop', 'restart', 'boot-on', 'boot-off', 'uninstall', 'save-mirror', 'save-interfaces']),
+  id: z.string().regex(/^[a-f0-9]{32}$/), action: z.enum(['bootstrap', 'install', 'download', 'update', 'start', 'stop', 'restart', 'boot-on', 'boot-off', 'uninstall', 'save-mirror', 'save-interfaces', 'save-controller', 'download-dashboard']),
   state: z.enum(['queued', 'running', 'succeeded', 'failed', 'interrupted']), phase: z.string(), updated: z.string(),
   result: z.string().optional().default(''), error: z.string().optional().default(''), hash: z.string(),
 });
@@ -11,6 +11,8 @@ const stateSchema = z.object({
   protocol: z.literal(1), version: z.string(), publicKey: z.string(), service: z.boolean(), core: z.boolean(), config: z.boolean(), subscription: z.boolean(),
   running: z.boolean(), supervisor: z.boolean(), listeners: z.boolean(), network: z.boolean(), boot: z.boolean(), locked: z.boolean(), capture: z.boolean(),
   settings: z.object({ mirror: z.string(), interfaces: z.array(z.string()) }), task: jobSchema.nullable(),
+  controller: z.object({ enabled: z.boolean(), port: z.number().int().min(1024).max(65535), applied: z.boolean() }).nullable().optional().default(null),
+  dashboard: z.object({ installed: z.boolean(), ready: z.boolean(), version: z.string() }).optional().default({ installed: false, ready: false, version: '' }),
 });
 export type DeviceState = z.infer<typeof stateSchema> & { agent: boolean };
 export const emptyState: DeviceState = {
@@ -18,9 +20,11 @@ export const emptyState: DeviceState = {
   running: false, supervisor: false, listeners: false, network: false,
   boot: false, locked: false, capture: false,
   agent: false, protocol: 1, version: '', publicKey: '', settings: { mirror: '', interfaces: [] }, task: null,
+  controller: null, dashboard: { installed: false, ready: false, version: '' },
 };
 export type Action = 'install' | 'service-update' | 'download' | 'save-mirror' | 'save-interfaces' | 'update'
-  | 'start' | 'stop' | 'restart' | 'boot-on' | 'boot-off' | 'logs' | 'refresh' | 'diagnose' | 'uninstall';
+  | 'start' | 'stop' | 'restart' | 'boot-on' | 'boot-off' | 'logs' | 'refresh' | 'diagnose' | 'uninstall'
+  | 'save-controller' | 'download-dashboard' | 'view-secret' | 'open-dashboard';
 
 export function parseState(text: string): DeviceState {
   const result = stateSchema.safeParse(JSON.parse(text));
@@ -45,6 +49,14 @@ export function disabledReason(action: Action, state: DeviceState | null, busy =
   if (state.locked) return '设备正在安装或更新，请等待完成后刷新';
   if (action === 'install') return state.service ? '服务已安装，请刷新状态' : state.running ? '请先停止服务' : '';
   if (!state.service) return '请先安装服务';
+  if (['save-controller', 'download-dashboard', 'view-secret', 'open-dashboard', 'update'].includes(action) && !state.controller) return '请先更新设备组件';
+  if (action === 'save-controller' || action === 'download-dashboard' || action === 'view-secret') return '';
+  if (action === 'open-dashboard') {
+    if (!state.controller?.enabled) return '请先启用控制面板';
+    if (!state.dashboard.installed) return '请先安装面板';
+    if (!state.controller.applied || !state.dashboard.ready) return '请先应用面板设置或更新订阅';
+    return state.running && state.listeners ? '' : '请先启动代理';
+  }
   if (action === 'uninstall') return '';
   if (action === 'stop') return state.running || state.capture ? '' : '服务已停止';
   if (action === 'boot-off') return state.boot ? '' : '开机自启已关闭';

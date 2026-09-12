@@ -45,6 +45,7 @@ export const phases: Record<string, string> = {
   accepted: '任务已接收', preparing: '准备中', release: '查询官方版本', download: '下载中',
   verify: '校验文件', installing: '安装中', subscription: '下载订阅', validate: '校验配置',
   applying: '应用配置', rollback: '恢复上一配置', saving: '保存设置', starting: '启动代理',
+  adapt: '适配配置',
   stopping: '停止代理', done: '已完成', interrupted: '任务已中断', failed: '任务失败',
 };
 export async function readDeviceState() {
@@ -125,6 +126,35 @@ export async function deviceLogs(diagnose = false) {
   const result = await agent([diagnose ? 'diagnose' : 'logs']);
   return typeof result === 'string' ? result : '';
 }
+
+export function describeTask(job: DeviceJob) {
+  const names: Record<DeviceJob['action'], string> = {
+    bootstrap: '安装设备组件', install: '安装服务', download: '下载核心', update: '更新订阅', start: '启动代理', stop: '停止代理', restart: '重启代理',
+    'boot-on': '开启自启', 'boot-off': '关闭自启', uninstall: '卸载服务', 'save-mirror': '保存镜像', 'save-interfaces': '保存接口',
+    'save-controller': '应用面板设置', 'download-dashboard': '安装面板',
+  };
+  return [names[job.action], `执行阶段：${phases[job.phase] || job.phase}`, job.result, job.error, `任务 ID：${job.id}`].filter(Boolean).join('\n');
+}
+
+export async function readControllerSecret() {
+  await sodium.ready;
+  const key = sodium.crypto_box_keypair();
+  try {
+    const sealed = await agent(['controller-secret', sodium.to_base64(key.publicKey, sodium.base64_variants.ORIGINAL)]);
+    if (typeof sealed !== 'string') throw new Error('密钥响应无效');
+    const value = sodium.to_string(sodium.crypto_box_seal_open(sodium.from_base64(sealed, sodium.base64_variants.ORIGINAL), key.publicKey, key.privateKey));
+    if (value.length < 16 || value.length > 256) throw new Error('密钥响应无效');
+    return value;
+  } finally { sodium.memzero(key.privateKey); }
+}
+
+export function controllerURL(base: string, port: number) {
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('无效面板端口');
+  const url = new URL(base);
+  url.protocol = 'http:'; url.port = String(port); url.pathname = '/ui/'; url.search = ''; url.hash = ''; url.username = ''; url.password = '';
+  return url.href;
+}
+export function dashboardURL(port: number) { return controllerURL(new URL(KANO_baseURL, location.href).href, port); }
 async function readBootstrap(id?: string): Promise<DeviceJob | null> {
   if (id && !/^[a-f0-9]{32}$/.test(id)) throw new Error('无效任务 ID');
   const output = await shell(`

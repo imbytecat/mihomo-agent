@@ -111,7 +111,7 @@ func (a *Agent) decrypt(data []byte) (Request, error) {
 		return request, errors.New("请求格式无效")
 	}
 	switch request.Action {
-	case "install", "download", "update", "start", "stop", "restart", "boot-on", "boot-off", "uninstall", "save-mirror", "save-interfaces":
+	case "install", "download", "update", "start", "stop", "restart", "boot-on", "boot-off", "uninstall", "save-mirror", "save-interfaces", "save-controller", "download-dashboard":
 	default:
 		return request, errors.New("未知设备操作")
 	}

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,7 +14,10 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-func adaptConfig(source []byte) ([]byte, string, error) {
+func adaptConfig(source []byte, control Controller, dashboard bool) ([]byte, string, error) {
+	if err := control.validate(); err != nil {
+		return nil, "", err
+	}
 	decoder := yaml.NewDecoder(bytes.NewReader(source))
 	var config map[string]any
 	if err := decoder.Decode(&config); err != nil || config == nil {
@@ -28,10 +30,8 @@ func adaptConfig(source []byte) ([]byte, string, error) {
 	if config["proxies"] == nil && config["proxy-providers"] == nil {
 		return nil, "", errors.New("订阅没有 proxies 或 proxy-providers")
 	}
-	for _, key := range []string{"interface-name", "external-controller-unix", "external-controller-pipe", "external-doh-server"} {
-		if value, ok := config[key]; ok && value != "" && value != nil {
-			return nil, "", fmt.Errorf("不支持配置项 %s", key)
-		}
+	if value := config["interface-name"]; value != "" && value != nil {
+		return nil, "", errors.New("不支持配置项 interface-name")
 	}
 	if value := config["routing-mark"]; value != nil && value != 0 {
 		return nil, "", errors.New("请移除 routing-mark，避免 Android 路由冲突")
@@ -70,27 +70,23 @@ func adaptConfig(source []byte) ([]byte, string, error) {
 			return nil, "", fmt.Errorf("%s 无效", key)
 		}
 		if port != 0 {
+			if control.Enabled && port == control.Port {
+				return nil, "", errors.New("API 端口与代理监听端口冲突")
+			}
 			ports = append(ports, port)
 		}
 	}
-	for _, key := range []string{"external-controller", "external-controller-tls"} {
-		if config[key] == nil || config[key] == "" {
-			continue
+	// Management belongs to the device, independently of subscription policy.
+	for _, key := range []string{"external-controller", "external-controller-tls", "external-controller-unix", "external-controller-pipe", "external-doh-server", "external-controller-cors", "external-ui", "external-ui-name", "external-ui-url", "secret"} {
+		delete(config, key)
+	}
+	if control.Enabled {
+		config["external-controller"] = "0.0.0.0:" + strconv.Itoa(control.Port)
+		config["secret"] = control.Secret
+		if dashboard {
+			config["external-ui"] = "dashboard"
 		}
-		secret, ok := config["secret"].(string)
-		if !ok || strings.TrimSpace(secret) == "" {
-			return nil, "", errors.New("控制 API 必须设置 secret")
-		}
-		endpoint, ok := config[key].(string)
-		if !ok {
-			return nil, "", errors.New("控制 API 地址无效")
-		}
-		_, p, err := net.SplitHostPort(endpoint)
-		port, e := strconv.Atoi(p)
-		if err != nil || e != nil || port < 1 || port > 65535 {
-			return nil, "", errors.New("控制 API 端口无效")
-		}
-		ports = append(ports, port)
+		ports = append(ports, control.Port)
 	}
 	seen := map[int]bool{}
 	var protected []string
@@ -105,7 +101,9 @@ func adaptConfig(source []byte) ([]byte, string, error) {
 }
 
 type configuration struct {
-	URL string `json:"url"`
+	URL        string      `json:"url"`
+	Controller *Controller `json:"controller,omitempty"`
+	Dashboard  bool        `json:"dashboard,omitempty"`
 }
 type pendingConfig struct {
 	Previous, Next string

@@ -14,22 +14,24 @@ import (
 )
 
 type Status struct {
-	Protocol     int      `json:"protocol"`
-	Version      string   `json:"version"`
-	PublicKey    string   `json:"publicKey"`
-	Service      bool     `json:"service"`
-	Core         bool     `json:"core"`
-	Config       bool     `json:"config"`
-	Subscription bool     `json:"subscription"`
-	Running      bool     `json:"running"`
-	Supervisor   bool     `json:"supervisor"`
-	Listeners    bool     `json:"listeners"`
-	Network      bool     `json:"network"`
-	Boot         bool     `json:"boot"`
-	Locked       bool     `json:"locked"`
-	Capture      bool     `json:"capture"`
-	Settings     Settings `json:"settings"`
-	Task         *Job     `json:"task"`
+	Protocol     int               `json:"protocol"`
+	Version      string            `json:"version"`
+	PublicKey    string            `json:"publicKey"`
+	Service      bool              `json:"service"`
+	Core         bool              `json:"core"`
+	Config       bool              `json:"config"`
+	Subscription bool              `json:"subscription"`
+	Running      bool              `json:"running"`
+	Supervisor   bool              `json:"supervisor"`
+	Listeners    bool              `json:"listeners"`
+	Network      bool              `json:"network"`
+	Boot         bool              `json:"boot"`
+	Locked       bool              `json:"locked"`
+	Capture      bool              `json:"capture"`
+	Settings     Settings          `json:"settings"`
+	Task         *Job              `json:"task"`
+	Controller   *ControllerStatus `json:"controller"`
+	Dashboard    DashboardStatus   `json:"dashboard"`
 }
 
 func (a *Agent) Inspect() (Status, error) {
@@ -54,6 +56,13 @@ func (a *Agent) Inspect() (Status, error) {
 	status.Supervisor = a.alive("supervisor")
 	status.Capture = regularFile(a.runtime("network.active")) || regularFile(a.runtime("network.pending"))
 	if status.Service {
+		control, e := a.controller()
+		if e != nil {
+			return status, e
+		}
+		config, _ := a.configuration()
+		status.Controller = &ControllerStatus{Enabled: control.Enabled, Port: control.Port, Applied: config.Controller != nil}
+		status.Dashboard = a.dashboard()
 		if output, e := a.run(context.Background(), "/system/bin/sh", a.runtime("network.sh"), a.runtime(), "inspect"); e == nil {
 			var network struct{ Listeners, Network bool }
 			if json.Unmarshal(output, &network) == nil {

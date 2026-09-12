@@ -3,13 +3,13 @@ import { useForm, useWatch } from 'react-hook-form';
 import PQueue from 'p-queue';
 import { toast } from 'sonner';
 import { subscriptionURL, downloadMirror, interfaces } from './config';
-import { bootstrapAgent, deviceLogs, readDeviceState, submitTask, waitTask, phases } from './ufi';
+import { bootstrapAgent, deviceLogs, readDeviceState, submitTask, waitTask, describeTask, readJob, jobLog, readControllerSecret } from './ufi';
 import { disabledReason, type Action, type DeviceState, type DeviceJob } from './state';
 
-type Fields = { subscription: string; mirror: string; interfaces: string };
+type Fields = { subscription: string; mirror: string; interfaces: string; controlEnabled: boolean; controlPort: string; controlSecret: string; resetSecret: boolean };
 export type Setting = 'mirror' | 'interfaces';
-export type Operation = Exclude<Action, 'save-mirror' | 'save-interfaces'>;
-const defaults: Fields = { subscription: '', mirror: '', interfaces: '' };
+export type Operation = Exclude<Action, 'save-mirror' | 'save-interfaces' | 'open-dashboard'>;
+const defaults: Fields = { subscription: '', mirror: '', interfaces: '', controlEnabled: true, controlPort: '9090', controlSecret: '', resetSecret: false };
 const normalize = { mirror: downloadMirror, interfaces };
 const settingAction = { mirror: 'save-mirror', interfaces: 'save-interfaces' } as const;
 const settingLabel = { mirror: '镜像', interfaces: '接口' };
@@ -31,12 +31,15 @@ export function useGateway() {
   const open = useRef(false);
   const [detail, setDetail] = useState('');
   const [detailOpen, setDetailOpen] = useState(false);
+  const [detailTitle, setDetailTitle] = useState('操作详情');
+  const [secret, setSecret] = useState('');
   const [error, setError] = useState(false);
-  const lastTask = useRef('');
+  const detailRequest = useRef(0);
   const observe = (task: DeviceJob) => {
-    setDevice(current => current && ({ ...current, task, locked: ['queued', 'running'].includes(task.state) }));
-    const label = phases[task.phase] || task.phase;
-    setDetail([label, task.result, task.error, `任务 ID：${task.id}`].filter(Boolean).join('\n'));
+    if (deviceRef.current) {
+      const state = { ...deviceRef.current, task, locked: ['queued', 'running'].includes(task.state) };
+      deviceRef.current = state; setDevice(state);
+    }
   };
 
   const readState = async () => {
@@ -47,13 +50,6 @@ export function useGateway() {
         savedRef.current = { mirror: null, interfaces: null }; setSaved({ ...savedRef.current });
       }
       deviceRef.current = state; setDevice(state);
-      if (state.task && lastTask.current !== state.task.id + state.task.updated) {
-        lastTask.current = state.task.id + state.task.updated;
-        if (!busyRef.current) {
-          observe(state.task);
-          setError(['failed', 'interrupted'].includes(state.task.state));
-        }
-      }
       return state;
     } catch (error) { deviceRef.current = null; setDevice(null); throw error; }
   };
@@ -71,9 +67,25 @@ export function useGateway() {
           if (replace) form.resetField(name, { defaultValue: value === 'auto' ? '' : value });
         }
         setSaved({ ...savedRef.current }); loaded.current = true;
+        if (state.controller) {
+          if (!form.getFieldState('controlEnabled').isDirty) form.resetField('controlEnabled', { defaultValue: state.controller.enabled });
+          if (!form.getFieldState('controlPort').isDirty) form.resetField('controlPort', { defaultValue: String(state.controller.port) });
+        }
       } catch (error) { deviceRef.current = null; setDevice(null); throw error; }
     }
     return state;
+  };
+
+  const showTask = async () => {
+    const task = deviceRef.current?.task;
+    if (!task) return;
+    const revision = ++detailRequest.current;
+    setDetailTitle('任务详情'); setDetail(describeTask(task)); setDetailOpen(true);
+    try {
+      const latest = task.action === 'bootstrap' ? task : await readJob(task.id);
+      const log = await jobLog(latest);
+      if (revision === detailRequest.current) setDetail(describeTask(latest) + (log ? '\n\n' + log : ''));
+    } catch { if (revision === detailRequest.current) setDetail(value => value + '\n\n暂时无法读取任务日志'); }
   };
 
   function dirty(name: Setting) {
@@ -120,7 +132,8 @@ export function useGateway() {
   const perform = async (id: Operation, quiet = false) => {
     const snapshot = form.getValues();
     if (busyRef.current || disabledReason(id, deviceRef.current, false, snapshot.subscription)) return;
-    busyRef.current = true; setBusy(id); setError(false);
+    detailRequest.current++;
+    busyRef.current = true; setBusy(id); setError(false); setDetailTitle('操作详情');
     let failed = false;
     if (!quiet) toast.loading('正在处理…', notification);
     try {
@@ -148,6 +161,20 @@ export function useGateway() {
           case 'start':
             result = await waitTask(await submitTask('start', interfaces(snapshot.interfaces)), observe);
             loaded.current = false; break;
+          case 'save-controller': {
+            if (!await form.trigger(['controlPort', 'controlSecret'])) throw new Error('请检查控制面板设置');
+            const input = { enabled: snapshot.controlEnabled, port: Number(snapshot.controlPort), secret: snapshot.controlSecret, reset: snapshot.resetSecret };
+            result = await waitTask(await submitTask('save-controller', JSON.stringify(input)), observe);
+            form.resetField('controlSecret', { defaultValue: '' }); form.resetField('resetSecret', { defaultValue: false });
+            form.resetField('controlEnabled', { defaultValue: snapshot.controlEnabled });
+            form.resetField('controlPort', { defaultValue: String(input.port) });
+            setSecret(''); break;
+          }
+          case 'download-dashboard':
+            await persist('mirror', snapshot.mirror);
+            result = await waitTask(await submitTask('download-dashboard'), observe); break;
+          case 'view-secret':
+            setSecret(await readControllerSecret()); result = '密钥已读取'; break;
           case 'uninstall':
             result = await waitTask(await submitTask('uninstall'), observe);
             loaded.current = false; form.reset(defaults);
@@ -157,16 +184,12 @@ export function useGateway() {
             result = await deviceLogs(true); break;
           case 'logs': result = await deviceLogs(); break;
           case 'refresh':
-            if (state.task) {
-              observe(state.task);
-              setError(['failed', 'interrupted'].includes(state.task.state));
-            }
             result = '状态已刷新'; break;
           default:
             result = await waitTask(await submitTask(id), observe);
         }
         if (!quiet && id !== 'refresh') setDetail(result);
-        if (id === 'logs' || id === 'diagnose') setDetailOpen(true);
+        if (id === 'logs' || id === 'diagnose') { setDetailTitle(id === 'logs' ? '运行日志' : '网络诊断'); setDetailOpen(true); }
         if (!quiet) toast.success(id === 'logs' ? '日志已加载' : id === 'diagnose' ? '诊断完成' : result.split('\n')[0]!.slice(0, 180), notification);
       });
     } catch (error) {
@@ -185,11 +208,21 @@ export function useGateway() {
 
   useEffect(() => {
     void perform('refresh', true);
+    let probing = false;
     const timer = setInterval(() => {
-      if (open.current && !document.hidden && !busyRef.current && !queue.pending && !queue.size) void queue.add(refresh).catch(() => {});
+      if (!open.current || document.hidden || probing) return;
+      if (busyRef.current) {
+        // Observe runtime changes even while a detached task is being watched.
+        probing = true;
+        void readState().catch(() => {}).finally(() => { probing = false; });
+      } else if (!queue.pending && !queue.size) {
+        probing = true;
+        void queue.add(refresh).catch(() => {}).finally(() => { probing = false; });
+      }
     }, 5000);
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (pendingSaves.current || form.getValues('subscription').trim()
+        || (['controlEnabled', 'controlPort', 'controlSecret', 'resetSecret'] as const).some(name => form.getFieldState(name).isDirty)
         || (['mirror', 'interfaces'] as const).some(name => form.getFieldState(name).isDirty && dirty(name))) {
         event.preventDefault(); event.returnValue = '';
       }
@@ -198,8 +231,12 @@ export function useGateway() {
     return () => { clearInterval(timer); window.removeEventListener('beforeunload', beforeUnload); };
   }, []);
 
-  const validate = (name: keyof Fields, value: string) => {
-    try { if (name === 'subscription') { if (value.trim()) subscriptionURL(value.trim()); } else normalize[name](value); return true; }
+  const validate = (name: 'subscription' | Setting | 'controlPort' | 'controlSecret', value: string) => {
+    try {
+      if (name === 'controlPort') return /^\d+$/.test(value) && Number(value) >= 1024 && Number(value) <= 65535 && !['7894', '1053'].includes(value) || '请输入可用的 1024–65535 端口';
+      if (name === 'controlSecret') return !value || /^[\x21-\x7e]{16,256}$/.test(value) || '密钥须为 16–256 位字母、数字或英文符号';
+      if (name === 'subscription') { if (value.trim()) subscriptionURL(value.trim()); } else normalize[name](value); return true;
+    }
     catch (error) { return error instanceof Error ? error.message : '格式不正确'; }
   };
   const saveStatus = (name: Setting) => {
@@ -209,5 +246,5 @@ export function useGateway() {
     if (saved[name] === null) return '读取中';
     return dirty(name) ? '未保存' : !form.getValues(name).trim() ? name === 'mirror' ? '直连' : '自动' : '已保存';
   };
-  return { device, busy, form, values, saving, saveStatus, validate, autosave, perform, open, detail, detailOpen, setDetailOpen, error };
+  return { device, busy, form, values, saving, saveStatus, validate, autosave, perform, open, detail, detailTitle, detailOpen, setDetailOpen, error, showTask, secret, setSecret };
 }

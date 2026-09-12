@@ -78,7 +78,9 @@ listeners_ready() {
   socket_inodes=$(for fd in /proc/"$listener_pid"/fd/*; do readlink "$fd" 2>/dev/null; done |
     sed -n 's/^socket:\[\([0-9]*\)\]$/\1/p' | tr '\n' ' ')
   [ -n "$socket_inodes" ] || return 1
-  awk -v owned="$socket_inodes" '
+  api_port=$(cat "$DIR/current/api-port" 2>/dev/null)
+  case "$api_port" in ''|0) api_hex='';; *[!0-9]*) return 1;; *) api_hex=$(printf '%04X' "$api_port") || return 1;; esac
+  awk -v owned="$socket_inodes" -v api="$api_hex" '
     BEGIN { n=split(owned, ids, " "); for(i=1;i<=n;i++) inode[ids[i]]=1 }
     inode[$10] {
       split($2, localaddr, ":")
@@ -86,7 +88,7 @@ listeners_ready() {
       port=toupper(localaddr[2]); proto=FILENAME ~ /udp6?$/ ? "udp" : "tcp"
       if ((proto=="tcp" && $4=="0A") || (proto=="udp" && $4=="07")) found[proto,port]=1
     }
-    END { exit !(found["tcp","1ED6"] && found["udp","1ED6"] && found["tcp","041D"] && found["udp","041D"]) }
+    END { exit !(found["tcp","1ED6"] && found["udp","1ED6"] && found["tcp","041D"] && found["udp","041D"] && (api=="" || found["tcp",api])) }
   ' /proc/net/tcp /proc/net/udp /proc/net/tcp6 /proc/net/udp6 2>/dev/null
 }
 
