@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/google/renameio/v2"
 )
 
 type DashboardStatus struct {
@@ -99,12 +101,7 @@ func (a *Agent) switchDashboard(target string) error {
 	if !strings.HasPrefix(target, "dashboards/") || !validID(strings.TrimPrefix(target, "dashboards/")) {
 		return errors.New("面板目录无效")
 	}
-	temp := a.runtime(".dashboard-" + randomID())
-	defer os.Remove(temp)
-	if err := os.Symlink(target, temp); err != nil {
-		return err
-	}
-	return os.Rename(temp, a.runtime("dashboard"))
+	return renameio.Symlink(target, a.runtime("dashboard"))
 }
 
 func (a *Agent) downloadDashboard(ctx context.Context, request Request, work string, phase func(string)) (string, error) {

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/prometheus/procfs"
 )
 
 //go:embed network.sh
@@ -24,19 +26,15 @@ type processRecord struct {
 }
 
 func processStart(pid int) string {
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	process, err := procfs.NewProc(pid)
 	if err != nil {
 		return ""
 	}
-	end := strings.LastIndex(string(data), ")")
-	if end < 0 {
+	stat, err := process.Stat()
+	if err != nil || stat.State == "Z" {
 		return ""
 	}
-	fields := strings.Fields(string(data[end+1:]))
-	if len(fields) < 20 || fields[0] == "Z" {
-		return ""
-	}
-	return fields[19]
+	return strconv.FormatUint(stat.Starttime, 10)
 }
 
 func (a *Agent) process(name string) (*os.Process, bool) {

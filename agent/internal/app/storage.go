@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/google/renameio/v2"
 )
 
 const Protocol = 1
@@ -48,11 +50,12 @@ func atomicWrite(path string, data []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".write-")
+	// Keep staging on the destination filesystem and private before writing secrets.
+	f, err := renameio.NewPendingFile(path, renameio.WithTempDir(filepath.Dir(path)))
 	if err != nil {
 		return err
 	}
-	defer os.Remove(f.Name())
+	defer f.Cleanup()
 	err = f.Chmod(mode)
 	// Android shared storage fixes permissions; only the public boot file uses 0644.
 	if mode == 0644 && (errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EOPNOTSUPP)) {
@@ -61,16 +64,10 @@ func atomicWrite(path string, data []byte, mode os.FileMode) error {
 	if err == nil {
 		_, err = f.Write(data)
 	}
-	if err == nil {
-		err = f.Sync()
-	}
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
-	}
 	if err != nil {
 		return err
 	}
-	if err = os.Rename(f.Name(), path); err != nil {
+	if err = f.CloseAtomicallyReplace(); err != nil {
 		return err
 	}
 	if dir, e := os.Open(filepath.Dir(path)); e == nil {

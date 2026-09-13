@@ -2,96 +2,73 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
-	"fmt"
 	"os"
 
 	"github.com/imbytecat/ufi-mihomo/agent/internal/app"
+	"github.com/spf13/cobra"
 )
 
 var version = "dev"
 
 func main() {
-	flags := flag.NewFlagSet("mihomo-agent", flag.ContinueOnError)
-	root := flags.String("root", "/data/ufi-mihomo", "device state directory")
-	uploads := flags.String("uploads", "/data/data/com.minikano.f50_sms/files/uploads", "UFI upload directory")
-	githubProxy := flags.String("github-proxy", "", "GitHub download proxy prefix")
-	if len(os.Args) < 2 {
-		fatal(fmt.Errorf("missing command"))
-	}
-	command := os.Args[1]
-	if err := flags.Parse(os.Args[2:]); err != nil {
-		fatal(err)
-	}
-	a, err := app.New(*root, *uploads, version)
-	if err != nil {
-		fatal(err)
-	}
-	a.InitialGitHubProxy = *githubProxy
-	var result any
-	switch command {
-	case "version":
-		result = map[string]any{"version": version, "protocol": app.Protocol}
-	case "install":
-		err = a.Install()
-		result = map[string]any{"ok": err == nil}
-	case "inspect":
-		result, err = a.Inspect()
-	case "controller-secret":
-		if len(flags.Args()) != 1 {
-			fatal(fmt.Errorf("controller-secret requires recipient public key"))
-		}
-		result, err = a.ControllerSecret(flags.Arg(0))
-	case "boot":
-		result, err = a.Boot()
-	case "stop", "boot-off":
-		result, err = a.LocalTask(command)
-	case "submit":
-		if len(flags.Args()) != 2 {
-			fatal(fmt.Errorf("submit requires upload name and SHA-256"))
-		}
-		result, err = a.Submit(flags.Arg(0), flags.Arg(1))
-	case "job":
-		if len(flags.Args()) != 1 {
-			fatal(fmt.Errorf("job requires id"))
-		}
-		result, err = a.Job(flags.Arg(0))
-	case "logs":
-		result, err = a.Logs()
-	case "diagnose":
-		result, err = a.Diagnose()
-	case "job-log":
-		if len(flags.Args()) != 1 {
-			fatal(fmt.Errorf("job-log requires id"))
-		}
-		result, err = a.JobLog(flags.Arg(0))
-	case "worker":
-		if len(flags.Args()) != 1 {
-			fatal(fmt.Errorf("worker requires id"))
-		}
-		err = a.Worker(flags.Arg(0))
-		if err != nil {
-			fatal(err)
-		}
-		return
-	case "supervise":
-		err = a.Supervise()
-		if err != nil {
-			fatal(err)
-		}
-		return
-	default:
-		fatal(fmt.Errorf("unknown command"))
-	}
-	if err != nil {
-		fatal(err)
-	}
-	if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
-		fatal(err)
+	if err := newCommand().Execute(); err != nil {
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"error": err.Error()})
+		os.Exit(1)
 	}
 }
 
-func fatal(err error) {
-	_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"error": err.Error()})
-	os.Exit(1)
+func newCommand() *cobra.Command {
+	var root, uploads, githubProxy string
+	command := &cobra.Command{
+		Use: "mihomo-agent", Short: "Manage the Mihomo gateway on UFI devices",
+		Version: version, SilenceUsage: true, SilenceErrors: true,
+	}
+	command.PersistentFlags().StringVar(&root, "root", "/data/ufi-mihomo", "Device state directory")
+	command.PersistentFlags().StringVar(&uploads, "uploads", "/data/data/com.minikano.f50_sms/files/uploads", "UFI upload directory")
+	for _, entry := range []struct {
+		use, short string
+		args       cobra.PositionalArgs
+		hidden     bool
+		run        func(*app.Agent, []string) (any, error)
+	}{
+		{"version", "Print version and protocol as JSON", cobra.NoArgs, false, func(_ *app.Agent, _ []string) (any, error) {
+			return map[string]any{"version": version, "protocol": app.Protocol}, nil
+		}},
+		{"install", "Install Mihomo Agent and initialize the service", cobra.NoArgs, false, func(a *app.Agent, _ []string) (any, error) {
+			a.InitialGitHubProxy = githubProxy
+			return map[string]bool{"ok": true}, a.Install()
+		}},
+		{"inspect", "Print device state as JSON", cobra.NoArgs, false, func(a *app.Agent, _ []string) (any, error) { return a.Inspect() }},
+		{"controller-secret PUBLIC_KEY", "Encrypt the API secret for the supplied public key", cobra.ExactArgs(1), false, func(a *app.Agent, args []string) (any, error) { return a.ControllerSecret(args[0]) }},
+		{"boot", "Submit a startup task", cobra.NoArgs, false, func(a *app.Agent, _ []string) (any, error) { return a.Boot() }},
+		{"stop", "Submit a stop task", cobra.NoArgs, false, func(a *app.Agent, _ []string) (any, error) { return a.LocalTask("stop") }},
+		{"boot-off", "Submit a task to disable startup", cobra.NoArgs, false, func(a *app.Agent, _ []string) (any, error) { return a.LocalTask("boot-off") }},
+		{"submit UPLOAD SHA256", "Submit a verified encrypted request", cobra.ExactArgs(2), false, func(a *app.Agent, args []string) (any, error) { return a.Submit(args[0], args[1]) }},
+		{"job ID", "Print task state as JSON", cobra.ExactArgs(1), false, func(a *app.Agent, args []string) (any, error) { return a.Job(args[0]) }},
+		{"job-log ID", "Print sanitized task logs as JSON", cobra.ExactArgs(1), false, func(a *app.Agent, args []string) (any, error) { return a.JobLog(args[0]) }},
+		{"logs", "Print sanitized service logs as JSON", cobra.NoArgs, false, func(a *app.Agent, _ []string) (any, error) { return a.Logs() }},
+		{"diagnose", "Print network diagnostics as JSON", cobra.NoArgs, false, func(a *app.Agent, _ []string) (any, error) { return a.Diagnose() }},
+		{"worker ID", "Run a detached task with the inherited lock", cobra.ExactArgs(1), true, func(a *app.Agent, args []string) (any, error) { return nil, a.Worker(args[0]) }},
+		{"supervise", "Supervise the proxy runtime", cobra.NoArgs, true, func(a *app.Agent, _ []string) (any, error) { return nil, a.Supervise() }},
+	} {
+		child := &cobra.Command{
+			Use: entry.use, Short: entry.short, Args: entry.args, Hidden: entry.hidden,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				a, err := app.New(root, uploads, version)
+				if err != nil {
+					return err
+				}
+				result, err := entry.run(a, args)
+				if err != nil || result == nil {
+					return err
+				}
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
+			},
+		}
+		if child.Name() == "install" {
+			child.Flags().StringVar(&githubProxy, "github-proxy", "", "HTTPS GitHub download proxy prefix")
+		}
+		command.AddCommand(child)
+	}
+	return command
 }

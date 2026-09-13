@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/renameio/v2"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -136,12 +137,7 @@ func (a *Agent) activate(id string) error {
 	if !validID(id) {
 		return errors.New("配置 ID 无效")
 	}
-	temp := a.runtime(".current-" + randomID())
-	defer os.Remove(temp)
-	if err := os.Symlink(filepath.Join("configurations", id), temp); err != nil {
-		return err
-	}
-	return os.Rename(temp, a.runtime("current"))
+	return renameio.Symlink(filepath.Join("configurations", id), a.runtime("current"))
 }
 
 func (a *Agent) configuration() (configuration, error) {
