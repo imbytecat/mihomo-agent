@@ -273,7 +273,32 @@ test('request errors identify network, timeout, HTTP and malformed response stag
     await expect(request('https://api.github.com/releases/latest', {}, context)).rejects.toThrow('HTTP 403（请求已被限流');
     await expect(responseJSON(new Response('<html>login</html>'), context)).rejects.toThrow('响应不是有效 JSON');
     fetch.mockResolvedValueOnce(new Response('', { status: 401 }));
-    await expect(request('/api/upload_img', {}, { step: '上传到 F50', target: 'F50 /api/upload_img', hint: '重新登录 UFI' })).rejects.toThrow('认证失败');
+    await expect(request('http://192.168.0.1/api/upload_img', {}, { step: '上传到 F50', target: 'F50 /api/upload_img', hint: '重新登录 UFI' })).rejects.toThrow('认证失败');
+  } finally { fetch.mockRestore(); }
+});
+
+test('UFI uploads preserve FormData and never retry failed requests', async () => {
+  const context = { step: '上传到 F50', target: 'F50 /api/upload_img', hint: '检查连接' };
+  const body = new FormData();
+  body.append('file', new File(['encrypted-fixture'], 'request.bin'));
+  let requests = 0, uploaded = '';
+  const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: async request => {
+    requests++;
+    expect(request.method).toBe('POST');
+    expect(request.headers.get('content-type')).toContain('multipart/form-data; boundary=');
+    uploaded = await ((await request.formData()).get('file') as File).text();
+    return new Response('{}', { status: 503 });
+  } });
+  try {
+    await expect(request(server.url.href, { method: 'POST', body }, context)).rejects.toThrow('HTTP 503');
+    expect(requests).toBe(1);
+    expect(uploaded).toBe('encrypted-fixture');
+  } finally { server.stop(true); }
+  const fetch = spyOn(globalThis, 'fetch');
+  try {
+    fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await expect(request('http://192.168.0.1/api/upload_img', { method: 'POST', body }, context)).rejects.toThrow('Failed to fetch');
+    expect(fetch).toHaveBeenCalledTimes(1);
   } finally { fetch.mockRestore(); }
 });
 
@@ -290,4 +315,13 @@ test('component versions and task placement stay consistent', () => {
   expect(topTask({ ...job, action: 'update' })).toBe(false);
   expect(lifecycleAction({ ...emptyState, agent: true })).toBe('uninstall');
   expect(disabledReason('uninstall', { ...emptyState, agent: true })).toBe('');
+});
+
+test('release builds reject noncanonical or unstable semantic versions before building', async () => {
+  for (const version of ['v01.2.3', 'v1.2.3-beta.1', 'v1.2.3+build', '1.2.3', 'v1.2']) {
+    const child = Bun.spawn([process.execPath, 'tools/build-agent.ts', version], { stdout: 'pipe', stderr: 'pipe' });
+    const error = await new Response(child.stderr).text();
+    expect(await child.exited).toBe(1);
+    expect(error).toContain('Invalid Agent version');
+  }
 });

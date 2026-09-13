@@ -1,3 +1,5 @@
+import ky, { isHTTPError, isNetworkError } from 'ky';
+
 export type RequestContext = { step: string; target: string; hint: string };
 
 export function requestFailure(context: RequestContext, reason: string): Error {
@@ -5,6 +7,7 @@ export function requestFailure(context: RequestContext, reason: string): Error {
 }
 
 export function transportFailure(context: RequestContext, error: unknown): Error {
+  if (isNetworkError(error)) error = error.cause;
   const name = error instanceof Error ? error.name : 'Error';
   const message = error instanceof Error ? error.message : String(error);
   const reason = name === 'AbortError' || name === 'TimeoutError' ? '请求超时'
@@ -13,14 +16,16 @@ export function transportFailure(context: RequestContext, error: unknown): Error
 }
 
 export async function request(url: string, options: RequestInit, context: RequestContext) {
-  let response: Response;
-  try { response = await fetch(url, options); }
-  catch (error) { throw transportFailure(context, error); }
-  if (!response.ok) {
+  try {
+    // UFI uploads are not idempotent. Never replay them automatically or impose
+    // a second timeout over the host's own request lifecycle.
+    return await ky(url, { ...options, retry: 0, timeout: false });
+  } catch (error) {
+    if (!isHTTPError(error)) throw transportFailure(context, error);
+    const response = error.response;
     const rateLimited = response.status === 429 || (response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0');
     throw requestFailure(context, `HTTP ${response.status}${rateLimited ? '（请求已被限流，请稍后重试）' : response.status === 401 ? '（认证失败，请重新登录）' : ''}`);
   }
-  return response;
 }
 
 export async function responseJSON(response: Response, context: RequestContext): Promise<unknown> {

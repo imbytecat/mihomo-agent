@@ -117,9 +117,10 @@ const mockFetch = async (input: Parameters<typeof fetch>[0], init?: Parameters<t
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   requests.push(url);
   if (new URL(url, location.href).origin !== location.origin) throw new Error('浏览器不应请求外网：' + url);
-  if (url === '/api/upload_img') {
+  if (new URL(url, location.href).pathname === '/api/upload_img') {
     if (flags.mockUploadFailure) return Response.json({ error: '模拟上传失败' }, { status: 500 });
-    const file = (init!.body as FormData).get('file') as File;
+    const body = input instanceof Request ? await input.formData() : init!.body as FormData;
+    const file = body.get('file') as File;
     const name = crypto.randomUUID() + '.bin';
     uploads.push({ name, bytes: new Uint8Array(await file.arrayBuffer()) });
     if (flags.mockUploadDelayMs) await new Promise(resolve => setTimeout(resolve, flags.mockUploadDelayMs));

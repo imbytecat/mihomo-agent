@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 import { copyFile, mkdir, writeFile } from 'node:fs/promises';
+import { parse } from 'semver';
 
 const version = process.argv[2] || (await Bun.file('agent-bootstrap.json').json()).version;
-if (!/^v\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid Agent version');
+const parsed = parse(version);
+if (!parsed || parsed.prerelease.length || parsed.build.length || version !== `v${parsed.version}`) throw new Error('Invalid Agent version');
 const buildEnv = { ...process.env, GOTOOLCHAIN: 'go1.26.7', GOENV: 'off', GOWORK: 'off', GOFLAGS: '', GOEXPERIMENT: '', GOFIPS140: 'off', CGO_ENABLED: '0' };
 const probe = Bun.spawn(['go', 'env', 'GOROOT'], { env: buildEnv, stdout: 'pipe', stderr: 'inherit' });
 const goroot = (await new Response(probe.stdout).text()).trim();

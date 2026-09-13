@@ -1,6 +1,8 @@
 import sodium from 'libsodium-wrappers';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import { quote as shellQuote } from 'shell-quote';
+import { z } from 'zod';
 import manifest from '../agent-bootstrap.json';
 import bootstrapScript from './bootstrap.sh?raw';
 import { emptyState, parseState, parseJob, type DeviceJob, type TaskAction } from './state';
@@ -12,7 +14,9 @@ declare const common_headers: HeadersInit;
 export const DIR = '/data/ufi-mihomo';
 const AGENT = DIR + '/agent';
 const BOOT = '/data/ufi-mihomo-bootstrap';
-export const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+export const quote = (value: string) => shellQuote([value]);
+const uploadResponse = z.object({ url: z.string().transform(value => value.replace(/^\/?uploads\//, ''))
+  .refine(name => name.endsWith('.bin') && z.guid().safeParse(name.slice(0, -4)).success) });
 
 export function shellCommand(command: string, marker: string) {
   return `sh -c ${quote(command)}; printf '\\n${marker}%s\\n' "$?"`;
@@ -73,10 +77,9 @@ async function uploadBytes(bytes: Uint8Array) {
   body.append('file', new File([new Uint8Array(bytes)], 'request.bin', { type: 'application/octet-stream' }));
   const context = { step: '上传设备请求', target: 'F50 /api/upload_img', hint: '检查设备连接和 UFI 登录状态。' };
   const response = await request(`${KANO_baseURL}/upload_img`, { method: 'POST', headers: common_headers, body }, context);
-  const result = await responseJSON(response, context) as { url?: unknown } | null;
-  const name = typeof result?.url === 'string' ? result.url.replace(/^\/?uploads\//, '') : '';
-  if (!/^[a-fA-F0-9-]{36}\.bin$/.test(name)) throw requestFailure(context, '设备返回了无效的上传路径');
-  return name;
+  const result = uploadResponse.safeParse(await responseJSON(response, context));
+  if (!result.success) throw requestFailure(context, '设备返回了无效的上传路径');
+  return result.data.url;
 }
 export async function sealRequest(publicKey: string, value: object) {
   await sodium.ready;
@@ -85,7 +88,7 @@ export async function sealRequest(publicKey: string, value: object) {
   const bytes = sodium.crypto_box_seal(sodium.from_string(JSON.stringify(value)), key);
   return { bytes, hash: bytesToHex(sha256(bytes)) };
 }
-export function taskID() { return Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join(''); }
+export function taskID() { return bytesToHex(crypto.getRandomValues(new Uint8Array(16))); }
 
 export async function submitTask(action: TaskAction, value = '') {
   const state = await readDeviceState();
