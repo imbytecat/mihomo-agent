@@ -61,7 +61,7 @@ jobs:
           test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = false
           gh release download "$RELEASE_TAG" --pattern SHA256SUMS --dir "$verify_dir"
           cmp "$verify_dir/SHA256SUMS" .release/SHA256SUMS
-          while read -r digest name; do
+          while read -r _digest name; do
             curl --fail --silent --show-error --location --retry 3 "https://github.com/imbytecat/ufi-mihomo/releases/download/$RELEASE_TAG/$name" -o "$verify_dir/$name"
           done < .release/SHA256SUMS
           cd "$verify_dir"
