@@ -1,37 +1,80 @@
+import { controllerURL } from '../ui/src/gateway';
 import { afterEach, expect, spyOn, test } from 'bun:test';
-import { mkdtemp, readFile, rm, writeFile, mkdir, symlink, readdir } from 'node:fs/promises';
+import {
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+  mkdir,
+  symlink,
+  readdir,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { subscriptionURL, githubProxyURL, interfaces } from '../src/config';
-import { quote, shellCommand, shellResult, controllerURL } from '../src/ufi';
-import { disabledReason, emptyState, lifecycleAction, nextStep, parseState, componentVersion, topTask, parseJob } from '../src/state';
-import { request, responseJSON } from '../src/request';
+import { subscriptionURL, githubProxyURL, interfaces } from '../ui/src/config';
+import { quote, shellCommand, shellResult } from '../ui/src/transport/ufi';
+import {
+  disabledReason,
+  emptyState,
+  lifecycleAction,
+  nextStep,
+  parseState,
+  componentVersion,
+  topTask,
+  parseJob,
+} from '../ui/src/state';
+import { request, responseJSON } from '../ui/src/request';
 
 const temporary: string[] = [];
-afterEach(async () => { for (const dir of temporary.splice(0)) await rm(dir, { recursive: true, force: true }); });
+afterEach(async () => {
+  for (const dir of temporary.splice(0))
+    await rm(dir, { recursive: true, force: true });
+});
 async function networkFunctions() {
-  const source = await readFile('agent/internal/app/network.sh', 'utf8');
-  return 'PROTECTED_PORTS=7894,1053\n' + source.slice(source.indexOf('MARK='), source.indexOf('\nPROTECTED_PORTS='));
+  const source = await readFile(
+    'agent/internal/platform/network_ufi.sh',
+    'utf8',
+  );
+  return (
+    'PROTECTED_PORTS=7894,1053\n' +
+    source.slice(source.indexOf('MARK='), source.indexOf('\nPROTECTED_PORTS='))
+  );
 }
 
 test('input validation and shell results preserve the trust boundary', async () => {
   expect(interfaces('wlan0, rndis0 wlan0')).toBe('wlan0 rndis0');
   expect(interfaces('')).toBe('auto');
   expect(interfaces(' auto ')).toBe('auto');
-  for (const name of ['lo', 'rmnet_data0', 'wlan0;reboot', '-i']) expect(() => interfaces(name)).toThrow();
+  for (const name of ['lo', 'rmnet_data0', 'wlan0;reboot', '-i'])
+    expect(() => interfaces(name)).toThrow();
   expect(() => subscriptionURL('file:///etc/passwd')).toThrow();
   expect(() => subscriptionURL('https://example.com/\noutput=/bad')).toThrow();
   expect(subscriptionURL('https://example.com/?key=x')).toContain('key=x');
   expect(githubProxyURL('')).toBe('');
-  expect(githubProxyURL('https://worker.example/')).toBe('https://worker.example');
+  expect(githubProxyURL('https://worker.example/')).toBe(
+    'https://worker.example',
+  );
   expect(() => githubProxyURL('http://worker.example/')).toThrow();
   expect(() => githubProxyURL('https://user:pass@worker.example/')).toThrow();
   expect(githubProxyURL('https://ghfast.top/')).toBe('https://ghfast.top');
-  expect(() => githubProxyURL('https://github.com/MetaCubeX/mihomo/releases/download/v1/core.gz')).toThrow('前缀');
-  expect(() => githubProxyURL('https://ghfast.top/https://github.com/MetaCubeX/mihomo/releases/download/v1/core.gz')).toThrow('前缀');
+  expect(() =>
+    githubProxyURL(
+      'https://github.com/MetaCubeX/mihomo/releases/download/v1/core.gz',
+    ),
+  ).toThrow('前缀');
+  expect(() =>
+    githubProxyURL(
+      'https://ghfast.top/https://github.com/MetaCubeX/mihomo/releases/download/v1/core.gz',
+    ),
+  ).toThrow('前缀');
   const value = "a'b $(printf injected) `printf injected`\n中文";
-  const proc = Bun.spawn(['sh', '-c', shellCommand(`printf '%s' ${quote(value)}`, 'TEST_')], { stdout: 'pipe' });
-  expect(shellResult(await new Response(proc.stdout).text(), 'TEST_')).toBe(value);
+  const proc = Bun.spawn(
+    ['sh', '-c', shellCommand(`printf '%s' ${quote(value)}`, 'TEST_')],
+    { stdout: 'pipe' },
+  );
+  expect(shellResult(await new Response(proc.stdout).text(), 'TEST_')).toBe(
+    value,
+  );
   expect(await proc.exited).toBe(0);
   expect(() => shellResult('bad\nTEST_2', 'TEST_')).toThrow('bad');
   expect(() => shellResult('looks successful', 'TEST_')).toThrow('完整响应');
@@ -41,7 +84,16 @@ test('network setup refuses foreign table and scopes interception to LAN', async
   const dir = await mkdtemp(join(tmpdir(), 'ufi-mihomo-network-'));
   temporary.push(dir);
   await writeFile(join(dir, 'interfaces'), 'wlan0 rndis0\n');
-  for (const name of ['routes', 'rules', 'ready', 'fw-4-mangle-PREROUTING', 'fw-4-nat-PREROUTING', 'fw-4-filter-INPUT', 'fw-6-filter-INPUT', 'fw-6-filter-FORWARD']) {
+  for (const name of [
+    'routes',
+    'rules',
+    'ready',
+    'fw-4-mangle-PREROUTING',
+    'fw-4-nat-PREROUTING',
+    'fw-4-filter-INPUT',
+    'fw-6-filter-INPUT',
+    'fw-6-filter-FORWARD',
+  ]) {
     await writeFile(join(dir, name), '');
   }
   const network = await networkFunctions();
@@ -51,8 +103,14 @@ test('network setup refuses foreign table and scopes interception to LAN', async
 ${network}
 ${harness}
 network_start`;
-    const proc = Bun.spawn(['sh', '-c', script], { stdout: 'pipe', stderr: 'pipe' });
-    return { output: await new Response(proc.stdout).text(), code: await proc.exited };
+    const proc = Bun.spawn(['sh', '-c', script], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    return {
+      output: await new Response(proc.stdout).text(),
+      code: await proc.exited,
+    };
   };
   await writeFile(join(dir, 'routes'), 'foreign route');
   const collision = await run();
@@ -64,20 +122,33 @@ network_start`;
   const calls = await readFile(join(dir, 'network.calls'), 'utf8');
   expect(calls).toContain('-i wlan0 -p tcp ! --dport 53 -j TPROXY');
   expect(calls).toContain('-i rndis0 -p udp --dport 53 -j REDIRECT');
-  expect(calls).toContain('-i wlan0 -j REJECT --reject-with icmp6-adm-prohibited');
+  expect(calls).toContain(
+    '-i wlan0 -j REJECT --reject-with icmp6-adm-prohibited',
+  );
   expect(calls).not.toContain('OUTPUT');
   expect(calls).not.toContain(' -F ');
-  expect(await readFile(join(dir, 'network.active'), 'utf8')).toBe('A\nwlan0 rndis0\n');
+  expect(await readFile(join(dir, 'network.active'), 'utf8')).toBe(
+    'A\nwlan0 rndis0\n',
+  );
   await writeFile(join(dir, 'interfaces'), 'wlan0 rndis0 usb0\n');
   await writeFile(join(dir, 'fail-switch'), '');
   expect((await run()).code).toBe(1);
-  expect(await readFile(join(dir, 'network.active'), 'utf8')).toBe('A\nwlan0 rndis0\n');
-  for (const name of ['fw-4-filter-UFI_MH_IN', 'fw-6-filter-UFI_MH6', 'fw-4-nat-UFI_MH_DNS', 'fw-4-mangle-UFI_MH']) {
+  expect(await readFile(join(dir, 'network.active'), 'utf8')).toBe(
+    'A\nwlan0 rndis0\n',
+  );
+  for (const name of [
+    'fw-4-filter-UFI_MH_IN',
+    'fw-6-filter-UFI_MH6',
+    'fw-4-nat-UFI_MH_DNS',
+    'fw-4-mangle-UFI_MH',
+  ]) {
     expect(await readFile(join(dir, name), 'utf8')).toMatch(/_A\n$/);
   }
   expect(await Bun.file(join(dir, 'network.pending')).exists()).toBe(false);
   expect((await run()).code).toBe(0);
-  expect(await readFile(join(dir, 'network.active'), 'utf8')).toBe('B\nwlan0 rndis0 usb0\n');
+  expect(await readFile(join(dir, 'network.active'), 'utf8')).toBe(
+    'B\nwlan0 rndis0 usb0\n',
+  );
   await rm(join(dir, 'ready'));
   expect((await run()).code).toBe(1);
 });
@@ -85,30 +156,52 @@ network_start`;
 test('startup and missing-LAN states keep listener guards without capturing traffic', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ufi-mihomo-guards-'));
   temporary.push(dir);
-  for (const name of ['routes', 'rules', 'fw-4-mangle-PREROUTING', 'fw-4-nat-PREROUTING', 'fw-4-filter-INPUT', 'fw-6-filter-INPUT', 'fw-6-filter-FORWARD']) {
+  for (const name of [
+    'routes',
+    'rules',
+    'fw-4-mangle-PREROUTING',
+    'fw-4-nat-PREROUTING',
+    'fw-4-filter-INPUT',
+    'fw-6-filter-INPUT',
+    'fw-6-filter-FORWARD',
+  ]) {
     await writeFile(join(dir, name), '');
   }
   const network = await networkFunctions();
   const harness = await readFile('tests/fake-net.sh', 'utf8');
   const run = async (action: string) => {
-    const proc = Bun.spawn(['sh', '-c', `DIR=${quote(dir)}\n${network}\n${harness}\n${action}`], { stdout: 'pipe', stderr: 'pipe' });
+    const proc = Bun.spawn(
+      ['sh', '-c', `DIR=${quote(dir)}\n${network}\n${harness}\n${action}`],
+      { stdout: 'pipe', stderr: 'pipe' },
+    );
     const error = await new Response(proc.stderr).text();
     expect(await proc.exited).toBe(0);
     expect(error).toBe('');
   };
   await run('ACTION=prepare network_start');
-  expect(await readFile(join(dir, 'fw-4-filter-UFI_MH_IN_A'), 'utf8')).toContain('--dports 7894,1053 -j REJECT');
-  expect(await readFile(join(dir, 'fw-6-filter-UFI_MH_IN6_A'), 'utf8')).toContain('--dports 7894,1053 -j REJECT');
-  expect(await readFile(join(dir, 'fw-4-mangle-UFI_MH_A'), 'utf8')).not.toContain('TPROXY');
+  expect(
+    await readFile(join(dir, 'fw-4-filter-UFI_MH_IN_A'), 'utf8'),
+  ).toContain('--dports 7894,1053 -j REJECT');
+  expect(
+    await readFile(join(dir, 'fw-6-filter-UFI_MH_IN6_A'), 'utf8'),
+  ).toContain('--dports 7894,1053 -j REJECT');
+  expect(
+    await readFile(join(dir, 'fw-4-mangle-UFI_MH_A'), 'utf8'),
+  ).not.toContain('TPROXY');
   await writeFile(join(dir, 'ready'), '');
   await writeFile(join(dir, 'interfaces'), 'wlan0');
   await run('network_sync');
   await run('resolve_interfaces() { echo; }; network_sync');
   const slot = (await readFile(join(dir, 'network.active'), 'utf8')).trim();
-  const guard = await readFile(join(dir, `fw-4-filter-UFI_MH_IN_${slot}`), 'utf8');
+  const guard = await readFile(
+    join(dir, `fw-4-filter-UFI_MH_IN_${slot}`),
+    'utf8',
+  );
   expect(guard).toContain('-j REJECT');
   expect(guard).not.toContain('-i wlan0');
-  expect(await readFile(join(dir, `fw-4-mangle-UFI_MH_${slot}`), 'utf8')).not.toContain('TPROXY');
+  expect(
+    await readFile(join(dir, `fw-4-mangle-UFI_MH_${slot}`), 'utf8'),
+  ).not.toContain('TPROXY');
 });
 
 test('built plugin is one classic script with HTML-safe boundaries', async () => {
@@ -146,13 +239,23 @@ ip() {
   esac
 }
 resolve_interfaces`;
-    const proc = Bun.spawn(['sh', '-c', script], { stdout: 'pipe', stderr: 'pipe' });
+    const proc = Bun.spawn(['sh', '-c', script], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
     const error = await new Response(proc.stderr).text();
     expect(error).toBe('');
-    return { value: (await new Response(proc.stdout).text()).trim(), code: await proc.exited };
+    return {
+      value: (await new Response(proc.stdout).text()).trim(),
+      code: await proc.exited,
+    };
   };
-  expect((await run('default dev rmnet_data0 table 1009')).value).toBe('br-lan rndis0 wlan0');
-  expect((await run('default dev wlan0 table 1011')).value).toBe('br-lan rndis0');
+  expect((await run('default dev rmnet_data0 table 1009')).value).toBe(
+    'br-lan rndis0 wlan0',
+  );
+  expect((await run('default dev wlan0 table 1011')).value).toBe(
+    'br-lan rndis0',
+  );
   expect((await run('', '')).value).toBe('');
   expect((await run('', addresses, true)).code).toBe(1);
   await writeFile(join(dir, 'interfaces'), 'custom0\n');
@@ -177,7 +280,9 @@ desired='rndis0 wlan0'; network_sync
 desired=''; network_sync
 desired=wlan0; network_sync`;
   const proc = Bun.spawn(['sh', '-c', script], { stdout: 'pipe' });
-  expect(await new Response(proc.stdout).text()).toBe('start:wlan0\nstart:rndis0 wlan0\npause\nstart:\nstart:wlan0\n');
+  expect(await new Response(proc.stdout).text()).toBe(
+    'start:wlan0\nstart:rndis0 wlan0\npause\nstart:\nstart:wlan0\n',
+  );
   expect(await proc.exited).toBe(0);
 });
 
@@ -188,15 +293,27 @@ test('listener readiness requires all four core-owned sockets, not foreign liste
   await mkdir(join(procdir, '123/fd'), { recursive: true });
   await mkdir(join(procdir, 'net'));
   await writeFile(join(dir, 'core.pid'), '123');
-  for (const inode of [11, 12, 13, 14]) await symlink(`socket:[${inode}]`, join(procdir, `123/fd/${inode}`));
-  const row = (port: string, state: string, inode: number) => `0: 00000000:${port} 00000000:0000 ${state} 0 0 0 0 0 ${inode}\n`;
-  await writeFile(join(procdir, 'net/tcp'), row('1ED6', '0A', 11) + row('041D', '0A', 12));
-  await writeFile(join(procdir, 'net/udp'), row('1ED6', '07', 13) + row('041D', '07', 14));
+  for (const inode of [11, 12, 13, 14])
+    await symlink(`socket:[${inode}]`, join(procdir, `123/fd/${inode}`));
+  const row = (port: string, state: string, inode: number) =>
+    `0: 00000000:${port} 00000000:0000 ${state} 0 0 0 0 0 ${inode}\n`;
+  await writeFile(
+    join(procdir, 'net/tcp'),
+    row('1ED6', '0A', 11) + row('041D', '0A', 12),
+  );
+  await writeFile(
+    join(procdir, 'net/udp'),
+    row('1ED6', '07', 13) + row('041D', '07', 14),
+  );
   await writeFile(join(procdir, 'net/tcp6'), '');
   await writeFile(join(procdir, 'net/udp6'), '');
   const source = (await networkFunctions()).replaceAll('/proc/', `${procdir}/`);
   const run = async () => {
-    const proc = Bun.spawn(['sh', '-c', `DIR=${quote(dir)}\n${source}\nalive() { return 0; }\nlisteners_ready`]);
+    const proc = Bun.spawn([
+      'sh',
+      '-c',
+      `DIR=${quote(dir)}\n${source}\nalive() { return 0; }\nlisteners_ready`,
+    ]);
     return proc.exited;
   };
   expect(await run()).toBe(0);
@@ -204,9 +321,15 @@ test('listener readiness requires all four core-owned sockets, not foreign liste
   await writeFile(join(dir, 'current/api-port'), '9090');
   expect(await run()).toBe(1);
   await symlink('socket:[15]', join(procdir, '123/fd/15'));
-  await writeFile(join(procdir, 'net/tcp'), row('1ED6', '0A', 11) + row('041D', '0A', 12) + row('2382', '0A', 15));
+  await writeFile(
+    join(procdir, 'net/tcp'),
+    row('1ED6', '0A', 11) + row('041D', '0A', 12) + row('2382', '0A', 15),
+  );
   expect(await run()).toBe(0);
-  await writeFile(join(procdir, 'net/udp'), row('1ED6', '07', 13) + row('041D', '07', 999));
+  await writeFile(
+    join(procdir, 'net/udp'),
+    row('1ED6', '07', 13) + row('041D', '07', 999),
+  );
   expect(await run()).toBe(1);
   await writeFile(join(procdir, 'net/udp'), row('1ED6', '07', 13));
   expect(await run()).toBe(1);
@@ -217,7 +340,12 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
   expect(disabledReason('refresh', null)).toBe('');
   expect(disabledReason('install', emptyState)).toBe('');
   expect(disabledReason('uninstall', emptyState)).not.toBe('');
-  const installed = { ...emptyState, agent: true, service: true, controller: { enabled: true, port: 9090, applied: false } };
+  const installed = {
+    ...emptyState,
+    agent: true,
+    service: true,
+    controller: { enabled: true, port: 9090, applied: false },
+  };
   expect(lifecycleAction(null)).toBe(null);
   expect(lifecycleAction(emptyState)).toBe('install');
   expect(lifecycleAction(installed)).toBe('uninstall');
@@ -225,15 +353,24 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
   expect(disabledReason('update-agent', installed)).toBe('');
   expect(disabledReason('uninstall', null)).not.toBe('');
   expect(disabledReason('uninstall', installed, true)).not.toBe('');
-  for (const action of ['start', 'restart', 'update', 'boot-on'] as const) expect(disabledReason(action, installed)).not.toBe('');
+  for (const action of ['start', 'restart', 'update', 'boot-on'] as const)
+    expect(disabledReason(action, installed)).not.toBe('');
   expect(disabledReason('download', installed)).toBe('');
-  expect(disabledReason('save-github-proxy', { ...installed, running: true })).toBe('');
-  expect(disabledReason('save-interfaces', { ...installed, running: true })).toContain('停止');
+  expect(
+    disabledReason('save-github-proxy', { ...installed, running: true }),
+  ).toBe('');
+  expect(
+    disabledReason('save-interfaces', { ...installed, running: true }),
+  ).toContain('停止');
   expect(nextStep(installed)).toContain('内核');
   const ready = { ...installed, core: true, config: true, subscription: true };
   expect(disabledReason('start', ready)).toBe('');
-  expect(disabledReason('update', ready, false, 'https://new.example')).toBe('');
-  expect(disabledReason('update', { ...ready, subscription: false }, false, '')).toContain('订阅');
+  expect(disabledReason('update', ready, false, 'https://new.example')).toBe(
+    '',
+  );
+  expect(
+    disabledReason('update', { ...ready, subscription: false }, false, ''),
+  ).toContain('订阅');
   expect(disabledReason('update', ready, false, '')).toBe('');
   expect(disabledReason('start', { ...ready, running: true })).not.toBe('');
   expect(disabledReason('download', { ...ready, running: true })).not.toBe('');
@@ -243,63 +380,135 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
   expect(disabledReason('logs', { ...ready, locked: true })).toBe('');
   expect(() => parseState('{"service":true}')).toThrow();
   expect(parseState(JSON.stringify(ready))).toEqual(ready);
-  expect(disabledReason('save-controller', { ...ready, controller: null })).toContain('更新 Mihomo Agent');
+  expect(
+    disabledReason('save-controller', { ...ready, controller: null }),
+  ).toContain('更新 Mihomo Agent');
   expect(disabledReason('update-agent', null)).toBe('');
   expect(disabledReason('stop', null)).toBe('');
   expect(lifecycleAction({ ...emptyState, agent: true })).toBe('uninstall');
   expect(disabledReason('uninstall', { ...emptyState, agent: true })).toBe('');
   expect(disabledReason('open-dashboard', ready)).toContain('安装面板');
-  const panel = { ...ready, controller: { enabled: true, port: 9090, applied: true }, dashboard: { installed: true, ready: true, version: 'v1.0.0' } };
+  const panel = {
+    ...ready,
+    controller: { enabled: true, port: 9090, applied: true },
+    dashboard: { installed: true, ready: true, version: 'v1.0.0' },
+  };
   expect(disabledReason('open-dashboard', panel)).toContain('启动');
-  expect(disabledReason('open-dashboard', { ...panel, running: true, listeners: true })).toBe('');
-  expect(controllerURL('https://user:pass@192.168.0.1:8080/api?token=private#x', 9090)).toBe('http://192.168.0.1:9090/ui/');
+  expect(
+    disabledReason('open-dashboard', {
+      ...panel,
+      running: true,
+      listeners: true,
+    }),
+  ).toBe('');
+  expect(
+    controllerURL(
+      'https://user:pass@192.168.0.1:8080/api?token=private#x',
+      9090,
+    ),
+  ).toBe('http://192.168.0.1:9090/ui/');
   expect(() => controllerURL('http://192.168.0.1/', 0)).toThrow();
 });
 
 test('request errors identify network, timeout, HTTP and malformed response stages', async () => {
-  const context = { step: '查询最新版本', target: '管理浏览器 GET https://api.github.com/releases/latest', hint: 'GitHub Proxy不代理版本查询' };
+  const context = {
+    step: '查询最新版本',
+    target: '管理浏览器 GET https://api.github.com/releases/latest',
+    hint: 'GitHub Proxy不代理版本查询',
+  };
   const fetch = spyOn(globalThis, 'fetch');
   try {
     fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
-    const error = await request('https://api.github.com/releases/latest', {}, context).catch(error => error as Error);
-    if (!(error instanceof Error)) throw new Error('Expected a request failure');
+    const error = await request(
+      'https://api.github.com/releases/latest',
+      {},
+      context,
+    ).catch((error) => error as Error);
+    if (!(error instanceof Error))
+      throw new Error('Expected a request failure');
     expect(error.message).toContain('查询最新版本失败');
     expect(error.message).toContain('api.github.com');
     expect(error.message).toContain('TypeError: Failed to fetch');
     expect(error.message).toContain('GitHub Proxy不代理版本查询');
     fetch.mockRejectedValueOnce(new DOMException('aborted', 'AbortError'));
-    await expect(request('https://api.github.com/releases/latest', {}, context)).rejects.toThrow('请求超时');
-    fetch.mockResolvedValueOnce(new Response('{}', { status: 403, headers: { 'x-ratelimit-remaining': '0' } }));
-    await expect(request('https://api.github.com/releases/latest', {}, context)).rejects.toThrow('HTTP 403（请求已被限流');
-    await expect(responseJSON(new Response('<html>login</html>'), context)).rejects.toThrow('响应不是有效 JSON');
+    await expect(
+      request('https://api.github.com/releases/latest', {}, context),
+    ).rejects.toThrow('请求超时');
+    fetch.mockResolvedValueOnce(
+      new Response('{}', {
+        status: 403,
+        headers: { 'x-ratelimit-remaining': '0' },
+      }),
+    );
+    await expect(
+      request('https://api.github.com/releases/latest', {}, context),
+    ).rejects.toThrow('HTTP 403（请求已被限流');
+    await expect(
+      responseJSON(new Response('<html>login</html>'), context),
+    ).rejects.toThrow('响应不是有效 JSON');
     fetch.mockResolvedValueOnce(new Response('', { status: 401 }));
-    await expect(request('http://192.168.0.1/api/upload_img', {}, { step: '上传到 F50', target: 'F50 /api/upload_img', hint: '重新登录 UFI' })).rejects.toThrow('认证失败');
-  } finally { fetch.mockRestore(); }
+    await expect(
+      request(
+        'http://192.168.0.1/api/upload_img',
+        {},
+        {
+          step: '上传到 F50',
+          target: 'F50 /api/upload_img',
+          hint: '重新登录 UFI',
+        },
+      ),
+    ).rejects.toThrow('认证失败');
+  } finally {
+    fetch.mockRestore();
+  }
 });
 
 test('UFI uploads preserve FormData and never retry failed requests', async () => {
-  const context = { step: '上传到 F50', target: 'F50 /api/upload_img', hint: '检查连接' };
+  const context = {
+    step: '上传到 F50',
+    target: 'F50 /api/upload_img',
+    hint: '检查连接',
+  };
   const body = new FormData();
   body.append('file', new File(['encrypted-fixture'], 'request.bin'));
-  let requests = 0, uploaded = '';
-  const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: async request => {
-    requests++;
-    expect(request.method).toBe('POST');
-    expect(request.headers.get('content-type')).toContain('multipart/form-data; boundary=');
-    uploaded = await ((await request.formData()).get('file') as File).text();
-    return new Response('{}', { status: 503 });
-  } });
+  let requests = 0,
+    uploaded = '';
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch: async (request) => {
+      requests++;
+      expect(request.method).toBe('POST');
+      expect(request.headers.get('content-type')).toContain(
+        'multipart/form-data; boundary=',
+      );
+      uploaded = await ((await request.formData()).get('file') as File).text();
+      return new Response('{}', { status: 503 });
+    },
+  });
   try {
-    await expect(request(server.url.href, { method: 'POST', body }, context)).rejects.toThrow('HTTP 503');
+    await expect(
+      request(server.url.href, { method: 'POST', body }, context),
+    ).rejects.toThrow('HTTP 503');
     expect(requests).toBe(1);
     expect(uploaded).toBe('encrypted-fixture');
-  } finally { server.stop(true); }
+  } finally {
+    server.stop(true);
+  }
   const fetch = spyOn(globalThis, 'fetch');
   try {
     fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
-    await expect(request('http://192.168.0.1/api/upload_img', { method: 'POST', body }, context)).rejects.toThrow('Failed to fetch');
+    await expect(
+      request(
+        'http://192.168.0.1/api/upload_img',
+        { method: 'POST', body },
+        context,
+      ),
+    ).rejects.toThrow('Failed to fetch');
     expect(fetch).toHaveBeenCalledTimes(1);
-  } finally { fetch.mockRestore(); }
+  } finally {
+    fetch.mockRestore();
+  }
 });
 
 test('component versions and task placement stay consistent', () => {
@@ -307,7 +516,14 @@ test('component versions and task placement stay consistent', () => {
   expect(componentVersion(true, '')).toBe('版本未知');
   expect(componentVersion(false, 'v1.19.30')).toBe('未安装');
   expect(componentVersion(undefined, '')).toBe('状态未知');
-  const job = parseJob({ id: 'a'.repeat(32), action: 'download', state: 'succeeded', phase: 'done', updated: '', hash: '' });
+  const job = parseJob({
+    id: 'a'.repeat(32),
+    action: 'download',
+    state: 'succeeded',
+    phase: 'done',
+    updated: '',
+    hash: '',
+  });
   expect(topTask(job)).toBe(false);
   expect(topTask({ ...job, state: 'running' })).toBe(false);
   expect(topTask({ ...job, state: 'failed' })).toBe(true);
@@ -318,8 +534,17 @@ test('component versions and task placement stay consistent', () => {
 });
 
 test('release builds reject noncanonical or unstable semantic versions before building', async () => {
-  for (const version of ['v01.2.3', 'v1.2.3-beta.1', 'v1.2.3+build', '1.2.3', 'v1.2']) {
-    const child = Bun.spawn([process.execPath, 'tools/build-agent.ts', version], { stdout: 'pipe', stderr: 'pipe' });
+  for (const version of [
+    'v01.2.3',
+    'v1.2.3-beta.1',
+    'v1.2.3+build',
+    '1.2.3',
+    'v1.2',
+  ]) {
+    const child = Bun.spawn(
+      [process.execPath, 'tools/build-agent.ts', version],
+      { stdout: 'pipe', stderr: 'pipe' },
+    );
     const error = await new Response(child.stderr).text();
     expect(await child.exited).toBe(1);
     expect(error).toContain('Invalid Agent version');

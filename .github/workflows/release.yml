@@ -23,14 +23,23 @@ jobs:
       - run: bun run check
       - run: go test -race ./... && go vet ./...
         working-directory: agent
+      - name: Verify real systemd lifecycle on the isolated runner
+        run: |
+          mkdir -p .build
+          cd agent
+          go build -o ../.build/mihomo-agent-ci ./cmd/mihomo-agent
+          go build -o ../.build/mihomo-core-fixture ./internal/integration/testdata/core
+          go test -c -o ../.build/systemd-integration ./internal/integration
+          cd ..
+          sudo env MIHOMO_SYSTEMD_TEST=1 MIHOMO_TEST_AGENT="$PWD/.build/mihomo-agent-ci" MIHOMO_TEST_CORE="$PWD/.build/mihomo-core-fixture" .build/systemd-integration -test.v -test.timeout=4m
       - name: Build pinned binaries and plugin
         run: bun run build:release "${GITHUB_REF_NAME#agent-}"
       - run: git diff --exit-code -- agent-bootstrap.json
-      - run: bun test && shellcheck -x -s sh src/bootstrap.sh agent/internal/app/network.sh
+      - run: bun test && shellcheck -x -s sh ui/src/transport/ufi-bootstrap.sh agent/internal/platform/network_ufi.sh
       - run: npm install --global agent-browser@0.37.1
       - run: agent-browser install --with-deps
       - run: bun tests/ui-smoke.ts
       - name: Publish release assets
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" .release/mihomo-agent-linux-arm64 .release/mihomo-agent-linux-armv7 .release/ufi-mihomo.js .release/SHA256SUMS --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" .release/mihomo-agent-linux-arm64 .release/mihomo-agent-linux-armv7 .release/mihomo-agent-linux-amd64 .release/ufi-mihomo.js .release/SHA256SUMS --verify-tag --title "$GITHUB_REF_NAME" --generate-notes

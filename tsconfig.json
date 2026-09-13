@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "types": ["bun", "vite/client"]
   },
-  "include": ["src", "dev", "tests", "tools", "vite.config.ts"]
+  "include": ["ui/src", "ui/dev", "tests", "tools", "vite.config.ts"]
 }

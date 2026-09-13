@@ -4,24 +4,46 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from 'tailwindcss';
 
 export default defineConfig(({ mode }) => ({
-  root: 'dev',
+  root: 'ui/dev',
   server: { host: '127.0.0.1' },
   define: {
-    'process.env.NODE_ENV': JSON.stringify(mode === 'production' ? 'production' : 'development'),
+    'process.env.NODE_ENV': JSON.stringify(
+      mode === 'production' ? 'production' : 'development',
+    ),
     // libsodium embeds its WASM. An injected classic script has no module URL.
     ...(mode === 'production' ? { 'import.meta.url': 'undefined' } : {}),
   },
-  plugins: [react(), {
-    name: 'ufi-single-script',
-    generateBundle(_, bundle) {
-      for (const output of Object.values(bundle)) {
-        if (output.type === 'chunk') output.code = `//<script>\n${output.code.replace(/<\/script/gi, '<\\/script')}\n//</script>\n`;
-      }
+  plugins: [
+    react(),
+    {
+      name: 'ufi-single-script',
+      generateBundle(_, bundle) {
+        for (const output of Object.values(bundle)) {
+          if (output.type === 'chunk')
+            output.code = `//<script>\n${output.code.replace(/<\/script/gi, '<\\/script')}\n//</script>\n`;
+        }
+      },
     },
-  }],
-  css: { postcss: { plugins: [tailwindcss(fileURLToPath(new URL('./tailwind.config.cjs', import.meta.url)))] } },
+  ],
+  css: {
+    postcss: {
+      plugins: [
+        tailwindcss(
+          fileURLToPath(new URL('./tailwind.config.cjs', import.meta.url)),
+        ),
+      ],
+    },
+  },
   build: {
-    outDir: '../dist', emptyOutDir: true, target: 'es2020', sourcemap: false,
-    lib: { entry: fileURLToPath(new URL('./src/index.tsx', import.meta.url)), name: 'UfiMihomo', formats: ['iife'], fileName: () => 'ufi-mihomo.js' },
+    outDir: '../../dist',
+    emptyOutDir: true,
+    target: 'es2020',
+    sourcemap: false,
+    lib: {
+      entry: fileURLToPath(new URL('./ui/src/index.tsx', import.meta.url)),
+      name: 'UfiMihomo',
+      formats: ['iife'],
+      fileName: () => 'ufi-mihomo.js',
+    },
   },
 }));

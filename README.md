@@ -1,37 +1,29 @@
-# UFI Mihomo
+# Mihomo Agent
 
-为中兴 F50 / [UFI-TOOLS](https://github.com/kanoqwq/UFI-TOOLS) 提供单订阅代理网关，自动识别 Wi-Fi 热点和 USB 共享接口。
+独立的 Mihomo 管理器，共用订阅、配置校验、回滚和设备任务。
 
-[下载插件](https://github.com/imbytecat/ufi-mihomo/releases/latest) · [反馈问题](https://github.com/imbytecat/ufi-mihomo/issues)
+- **UFI-TOOLS / Android**：通过插件管理内核、自启和热点 / USB 共享。F50 是适用设备之一，不代表所有 UFI 硬件均已验证。
+- **Linux / systemd**：通过 CLI 管理已有系统部署。软件包、自启和网络规则由系统负责，见 [Linux 使用说明](docs/linux.md)。
 
-## 安装
+[下载](https://github.com/imbytecat/ufi-mihomo/releases/latest) · [反馈](https://github.com/imbytecat/ufi-mihomo/issues)
 
-需要 UFI-TOOLS 完整版、root / 高级功能，以及返回完整 mihomo YAML 的订阅。支持 ARM64 / ARMv7。
+## UFI 安装
 
-1. 停用其他代理及自启。使用过旧版插件的，先在旧界面卸载；本版不迁移旧数据。
-2. 下载 Release 中的 `ufi-mihomo.js`，在 UFI 插件管理导入、提交保存并刷新。
-3. 展开 Mihomo，在「安装与更新」安装 Mihomo 服务和 Mihomo 内核，按需安装 Zashboard。
-4. 粘贴订阅链接，点击「保存并更新」，然后「启动代理」。
+需要 UFI-TOOLS 完整版、root / 高级功能，以及支持 TPROXY 的系统。
 
-确认热点 / USB 客户端能正常上网后，可在「设置 → 运行」打开「开机启动」。关闭管理页面不影响代理和已接收的任务。
+1. 使用 v0.3.x 或其他代理插件时，**先在旧界面卸载并关闭自启**。v0.4 使用新目录和协议，不迁移旧状态。
+2. 下载 `ufi-mihomo.js`，在 UFI 插件管理导入、保存并刷新。
+3. 安装 Mihomo Agent / 服务、Mihomo 内核，粘贴完整 YAML 订阅，点击「保存并更新」。
+4. 启动代理，确认客户端能正常上网后再开启自启；需要控制面板时安装 Zashboard。
 
-## 日常使用
+GitHub Proxy 留空直连，或填写 `https://ghfast.top` 这样的 HTTPS 前缀；失焦保存。订阅和面板设置需要明确保存并应用。订阅无需提供 API secret。
 
-- **订阅**：修改后点击「保存并更新」；留空则更新已保存的订阅。
-- **GitHub Proxy**：留空直连，或填写 HTTPS 代理前缀，如 `https://ghfast.top`，不是完整下载链接。离开输入框自动保存；也可在安装前填写。
-- **共享接口**：默认留空，自动识别；特殊固件可停止代理后手动设置。
-- **控制面板**：在「安装与更新」安装 Zashboard，启动代理后点击「打开面板」。首次连接可在「控制面板」查看 API 密钥；密钥自动生成，也可修改或重置，修改后点「保存并应用」。订阅无需提供 `secret`。
-- **安装与更新**：Mihomo Agent、Mihomo 内核和 Zashboard 在同一区域显示版本，按钮统一为「安装 / 更新」。Agent 和内核更新前需停止代理。
-- **卸载**：Mihomo 服务的「卸载」会停止代理、清理规则和自启，删除本插件全部设备文件，包括配置、密钥、日志和以前的备份，不可恢复。直接删除 UFI 插件不会停止代理。
+页面关闭不会取消已接收的任务。失败时查看详情；丢失响应后先刷新，不要连续提交。
 
-GitHub Proxy 用于 GitHub 文件下载，不代理订阅或版本查询；示例服务的可用性由第三方决定。
+## 数据与安全
 
-操作失败时，点击「详情」。连接中断后先刷新状态，避免重复提交任务。安装任务详情保留在「安装与更新」，完成提示不常驻首页。
+设置、任务和配置版本元数据保存在私有 SQLite；YAML、运行记录、日志和二进制单独存放。**卸载删除本安装的全部设备数据，不留备份，不可恢复。** 删除 UFI 插件本身不会停止代理。
 
-更新插件 JS 后，在「安装与更新」更新 Mihomo Agent。普通更新会查询 GitHub 最新稳定版；首次安装使用插件附带的校验信息。
+只在可信网络使用管理入口。UFI 接管 IPv4 共享流量，故障或停止期间可能直连，不提供断网保护。Linux 的私网地址绑定不等于防火墙隔离，转发、DNS 接管及故障策略仍需由系统配置。
 
-## 注意
-
-仅在可信局域网使用 UFI，不要暴露管理端口。共享客户端使用 IPv4；停止或故障恢复期间可能直连，不提供断网保护。
-
-目前已通过自动化测试，F50 实机联网仍待验证。
+当前提供 UFI 插件和本地 CLI，没有独立 Web 服务。自动化测试不等于 F50 实机或真实代理流量验收。
