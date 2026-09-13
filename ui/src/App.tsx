@@ -39,7 +39,7 @@ export default function Gateway({ container }: { container: HTMLElement }) {
     <>
       {createPortal(
         <Toaster
-          id="ufi-mihomo"
+          id="mihomo-agent"
           position="top-center"
           theme="dark"
           richColors

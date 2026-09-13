@@ -9,10 +9,10 @@
 
 ## 修改前定位
 
-- 设备入口：agent/cmd/mihomo-agent 只处理进程入口，agent/internal/cli 用 Cobra 装配平台、CLI 和 UFI 上传 Adapter。机器响应是 JSON；错误不得混入 usage。
-- 共享 Module：agent/internal/manager 管请求校验、持久任务、订阅、下载校验、配置事务与回滚。CLI 与解密后的 UFI 请求都调用 Submit；不能依赖浏览器串联关键步骤。
-- 平台 Module：agent/internal/platform 管 UFI 守护 / 网络桥接及 systemd 运行时。Adapter 配置由数据库持久化，worker、boot、supervise 都重新读取；已有安装不能通过环境或旗标换平台。
-- 存储 Module：agent/internal/storage 使用 database/sql + modernc SQLite，拥有类型化状态表；YAML、日志和运行文件留在文件系统。fsutil、host、download、redact 是共享基础实现。
+- 设备入口：cmd/mihomo-agent 只处理进程入口，internal/cli 用 Cobra 装配平台、CLI 和 UFI 上传 Adapter。机器响应是 JSON；错误不得混入 usage。
+- 共享 Module：internal/manager 管请求校验、持久任务、订阅、下载校验、配置事务与回滚。CLI 与解密后的 UFI 请求都调用 Submit；不能依赖浏览器串联关键步骤。
+- 平台 Module：internal/platform 管 UFI 守护 / 网络桥接及 systemd 运行时。Adapter 配置由数据库持久化，worker、boot、supervise 都重新读取；已有安装不能通过环境或旗标换平台。
+- 存储 Module：internal/storage 使用 database/sql + modernc SQLite，拥有类型化状态表；YAML、日志和运行文件留在文件系统。fsutil、host、download、redact 是共享基础实现。
 - 前端：ui/src/transport/ufi 只处理 UFI 通信和引导；gateway.ts 处理任务观察与展示；use-gateway.ts 管草稿和交互；components/ 管视图。CSS 仅留主题与宿主隔离，其余用 Tailwind className。
 - 修改加载协议时核对下方 UFI 官方来源；没有文档保证的行为不能从其他插件推断。
 
@@ -45,17 +45,17 @@
 - renameio 暂存必须同文件系统且初始私有，不沿用旧文件权限覆盖密钥。Android 公共自启文件的 chmod 可容忍 EPERM/EOPNOTSUPP，其余情况必须报错。
 - DoH 使用 net/http 与 x/net/dnsmessage，保留引导 IP、Android CA、取消、HTTPS 重定向限制与响应上限。解压使用标准库，调用方保留路径、类型和大小限制。
 - modernc.org/libc 必须与所用 modernc.org/sqlite 的 go.mod 匹配；保持 CGO_ENABLED=0 和 ARM64 / ARMv7 / AMD64 构建。
-- 根目录运行 bun run check、bun run build、bun test；agent/ 运行 go test -race ./... 和 go vet ./...。桥接脚本运行 shellcheck -x -s sh ui/src/transport/ufi-bootstrap.sh agent/internal/platform/network_ufi.sh。
-- 交互修改运行 bun run test:ui，用真实 DOMParser 加载生产 IIFE。native.test.ts 验证 Bun → Go；platform 测试替换 D-Bus；真实 systemd 验证仅在隔离 CI runner 通过 MIHOMO_SYSTEMD_TEST 显式启用。
+- 根目录为 Go module，前端包与测试独立位于 ui/。构建与验证入口见 Makefile；Go 构建不能依赖 Bun 或前端资产。
+- 交互修改运行 make test-ui，用真实 DOMParser 加载生产 IIFE。ui/tests/native.test.ts 验证 Bun → Go；platform 测试替换 D-Bus；真实 systemd 验证仅在隔离 CI runner 通过 MIHOMO_SYSTEMD_TEST 显式启用。
 - CI systemd fixture 只监听 loopback 测试端口，不发送代理流量或改路由 / 防火墙。不得把它描述为真实网关流量验证。
 
 ## 发布
 
-- 使用官方 Go，通过 mise exec go@1.26.7 -- bun run build:release <version> 构建。Nix 修改标准库路径，同版本编译器也会产生不同摘要。
-- 构建命令、资产和版本以 tools/build-agent.ts、package.json、mise.toml 与 workflows 为准；协议从 Go 程序读取。提交生成的 agent-bootstrap.json，再推送对应 agent-v* 标签，不能覆盖已发布标签或资产。
-- agent-bootstrap.json 仅为 UFI 初装信任锚，不参与正常版本比较；不能只信任同一下载代理同时提供的文件与摘要。
+- 使用官方 Go，通过 mise exec -- make release VERSION=vX.Y.Z 构建。Nix 修改标准库路径，同版本编译器也会产生不同摘要。
+- 构建资产与校验以 tools/release、mise.toml 与 workflows 为准；协议复用 Go 常量。提交生成的 ui/agent-bootstrap.json，再推送对应 v* 标签，不能覆盖已发布标签或资产。
+- ui/agent-bootstrap.json 仅为 UFI 初装信任锚，不参与正常版本比较；不能只信任同一下载代理同时提供的文件与摘要。
 - 发布前通过 Check 和 Release CI；从公开地址下载所有资产，校验 SHA256SUMS 并与本地构建对比。插件保持单 JS，不增加 CDN / WASM 请求。
-- v0.4 使用新目录和协议，不迁移 v0.3 状态。升级说明要求先在旧界面完成卸载；不得引入旧路径或旧协议别名。
+- 项目与 Go module 统一命名为 mihomo-agent；UFI 插件资产为 mihomo-agent-ufi.js。只维护当前名称、目录和协议，不提供历史别名或状态迁移。
 
 ## UFI 官方来源
 

@@ -51,7 +51,7 @@ const settingAction = {
   interfaces: 'save-interfaces',
 } as const;
 const settingLabel = { githubProxy: 'GitHub Proxy', interfaces: '接口' };
-const notification = { id: 'ufi-mihomo-operation', toasterId: 'ufi-mihomo' };
+const notification = { id: 'mihomo-agent-operation', toasterId: 'mihomo-agent' };
 
 export function useGateway() {
   const form = useForm<Fields>({
@@ -207,7 +207,7 @@ export function useGateway() {
       setSaved({ ...savedRef.current });
       if (form.getValues(name) === snapshot)
         form.resetField(name, { defaultValue: value === 'auto' ? '' : value });
-      toast.dismiss(`ufi-mihomo-${name}`);
+      toast.dismiss(`mihomo-agent-${name}`);
     } catch (error) {
       form.setError(name, { type: 'server', message: '保存失败，点此重试' });
       throw error;
@@ -230,8 +230,8 @@ export function useGateway() {
             message: '保存失败，点此重试',
           });
           toast.error(`${settingLabel[name]}保存失败`, {
-            id: `ufi-mihomo-${name}`,
-            toasterId: 'ufi-mihomo',
+            id: `mihomo-agent-${name}`,
+            toasterId: 'mihomo-agent',
             description: (error instanceof Error
               ? error.message
               : String(error)

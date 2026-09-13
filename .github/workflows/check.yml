@@ -18,25 +18,20 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: 1.26.7
-          cache-dependency-path: agent/go.sum
-      - run: bun install --frozen-lockfile
-      - run: bun run check && bun run build && bun test
-      - run: go test -race ./... && go vet ./...
-        working-directory: agent
+          cache-dependency-path: go.sum
+      - run: make check
       - name: Verify real systemd lifecycle on the isolated runner
         run: |
           mkdir -p .build
-          cd agent
-          go build -o ../.build/mihomo-agent-ci ./cmd/mihomo-agent
-          go build -o ../.build/mihomo-core-fixture ./internal/integration/testdata/core
-          go test -c -o ../.build/systemd-integration ./internal/integration
-          cd ..
+          go build -o .build/mihomo-agent-ci ./cmd/mihomo-agent
+          go build -o .build/mihomo-core-fixture ./internal/integration/testdata/core
+          go test -c -o .build/systemd-integration ./internal/integration
           sudo env MIHOMO_SYSTEMD_TEST=1 MIHOMO_TEST_AGENT="$PWD/.build/mihomo-agent-ci" MIHOMO_TEST_CORE="$PWD/.build/mihomo-core-fixture" .build/systemd-integration -test.v -test.timeout=4m
-      - run: shellcheck -x -s sh ui/src/transport/ufi-bootstrap.sh agent/internal/platform/network_ufi.sh
       - run: npm install --global agent-browser@0.37.1
       - run: agent-browser install --with-deps
       - run: bun tests/ui-smoke.ts
+        working-directory: ui
       - uses: actions/upload-artifact@v4
         with:
-          name: ufi-mihomo-plugin
-          path: dist/ufi-mihomo.js
+          name: mihomo-agent-ufi
+          path: ui/dist/mihomo-agent-ufi.js

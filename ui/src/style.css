@@ -3,7 +3,7 @@
 @tailwind base;
 @tailwind utilities;
 
-:is(#ufi-mihomo, #ufi-mihomo-portals) {
+:is(#mihomo-agent, #mihomo-agent-portals) {
   --mh-text: var(--dark-text-color, #f5f5f7);
   --mh-bg: var(--dark-bg-color, #111114);
   --mh-group: var(--dark-btn-color, #1c1c1f);
@@ -15,14 +15,14 @@
     'Segoe UI',
     sans-serif;
 }
-#ufi-mihomo {
+#mihomo-agent {
   margin: 14px 0;
 }
-:is(#ufi-mihomo, #ufi-mihomo-portals) :where(button, input, textarea, select) {
+:is(#mihomo-agent, #mihomo-agent-portals) :where(button, input, textarea, select) {
   font-family: inherit;
 }
-:is(#ufi-mihomo, #ufi-mihomo-portals) *,
-:is(#ufi-mihomo, #ufi-mihomo-portals) *::before,
-:is(#ufi-mihomo, #ufi-mihomo-portals) *::after {
+:is(#mihomo-agent, #mihomo-agent-portals) *,
+:is(#mihomo-agent, #mihomo-agent-portals) *::before,
+:is(#mihomo-agent, #mihomo-agent-portals) *::after {
   box-sizing: border-box;
 }

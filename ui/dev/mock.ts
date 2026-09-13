@@ -3,6 +3,7 @@ import sodium from 'libsodium-wrappers';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { parse } from 'shell-quote';
+import { version } from '../agent-bootstrap.json';
 import {
   emptyState,
   type DeviceState,
@@ -14,7 +15,7 @@ import {
 const ready = {
   ...emptyState,
   agent: true,
-  version: 'v0.4.0',
+  version,
   service: true,
   core: true,
   coreVersion: 'v1.19.30',
@@ -106,14 +107,14 @@ function advance() {
       case 'bootstrap':
       case 'install':
         state.agent = state.service = true;
-        state.version = 'v0.4.0';
+        state.version = version;
         state.controller = { enabled: true, port: 9090, applied: false };
         state.settings.githubProxy =
           intent.params.githubProxy ?? state.settings.githubProxy;
         job.result = 'Mihomo 服务已安装';
         break;
       case 'update-agent':
-        state.version = 'v0.4.0';
+        state.version = version;
         job.result = 'Mihomo Agent 已是最新版本';
         break;
       case 'save-github-proxy':

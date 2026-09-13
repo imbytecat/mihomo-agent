@@ -3,7 +3,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { quote as shellQuote } from 'shell-quote';
 import { z } from 'zod';
-import manifest from '../../../agent-bootstrap.json';
+import manifest from '../../agent-bootstrap.json';
 import bootstrapScript from './ufi-bootstrap.sh?raw';
 import {
   emptyState,

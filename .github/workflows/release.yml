@@ -3,16 +3,16 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing agent-v tag to verify and publish
+        description: Existing vMAJOR.MINOR.PATCH tag to verify and publish
         required: true
         type: string
   push:
-    tags: ['agent-v*']
+    tags: ['v*']
 permissions:
   contents: read
 jobs:
   release:
-    if: startsWith(github.ref, 'refs/tags/agent-v') || startsWith(inputs.tag, 'agent-v')
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(inputs.tag, 'v')
     env:
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     runs-on: ubuntu-latest
@@ -29,32 +29,34 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: 1.26.7
-          cache-dependency-path: agent/go.sum
+          cache-dependency-path: go.sum
       - run: bun install --frozen-lockfile
+        working-directory: ui
       - run: bun run check
+        working-directory: ui
       - run: go test -race ./... && go vet ./...
-        working-directory: agent
       - name: Verify real systemd lifecycle on the isolated runner
         run: |
           mkdir -p .build
-          cd agent
-          go build -o ../.build/mihomo-agent-ci ./cmd/mihomo-agent
-          go build -o ../.build/mihomo-core-fixture ./internal/integration/testdata/core
-          go test -c -o ../.build/systemd-integration ./internal/integration
-          cd ..
+          go build -o .build/mihomo-agent-ci ./cmd/mihomo-agent
+          go build -o .build/mihomo-core-fixture ./internal/integration/testdata/core
+          go test -c -o .build/systemd-integration ./internal/integration
           sudo env MIHOMO_SYSTEMD_TEST=1 MIHOMO_TEST_AGENT="$PWD/.build/mihomo-agent-ci" MIHOMO_TEST_CORE="$PWD/.build/mihomo-core-fixture" .build/systemd-integration -test.v -test.timeout=4m
       - name: Build pinned binaries and plugin
-        run: bun run build:release "${RELEASE_TAG#agent-}"
-      - run: git diff --exit-code -- agent-bootstrap.json
-      - run: bun test && shellcheck -x -s sh ui/src/transport/ufi-bootstrap.sh agent/internal/platform/network_ufi.sh
+        run: make release VERSION="$RELEASE_TAG"
+      - run: git diff --exit-code -- ui/agent-bootstrap.json
+      - run: bun test
+        working-directory: ui
+      - run: shellcheck -x -s sh ui/src/transport/ufi-bootstrap.sh internal/platform/network_ufi.sh
       - run: npm install --global agent-browser@0.37.1
       - run: agent-browser install --with-deps
       - run: bun tests/ui-smoke.ts
+        working-directory: ui
       - name: Publish release assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$RELEASE_TAG" .release/mihomo-agent-linux-arm64 .release/mihomo-agent-linux-armv7 .release/mihomo-agent-linux-amd64 .release/ufi-mihomo.js .release/SHA256SUMS --verify-tag --title "$RELEASE_TAG" --notes "使用与升级说明：https://github.com/imbytecat/ufi-mihomo#readme" || true
+          gh release create "$RELEASE_TAG" .release/mihomo-agent-linux-arm64 .release/mihomo-agent-linux-armv7 .release/mihomo-agent-linux-amd64 .release/mihomo-agent-ufi.js .release/SHA256SUMS --verify-tag --title "$RELEASE_TAG" --notes "使用与升级说明：https://github.com/imbytecat/mihomo-agent#readme" || true
           # The API may return 5xx after committing the release. Public byte verification
           # determines success; no existing tag or asset is ever overwritten.
           verify_dir=$(mktemp -d)
@@ -62,7 +64,7 @@ jobs:
           gh release download "$RELEASE_TAG" --pattern SHA256SUMS --dir "$verify_dir"
           cmp "$verify_dir/SHA256SUMS" .release/SHA256SUMS
           while read -r _digest name; do
-            curl --fail --silent --show-error --location --retry 3 "https://github.com/imbytecat/ufi-mihomo/releases/download/$RELEASE_TAG/$name" -o "$verify_dir/$name"
+            curl --fail --silent --show-error --location --retry 3 "https://github.com/imbytecat/mihomo-agent/releases/download/$RELEASE_TAG/$name" -o "$verify_dir/$name"
           done < .release/SHA256SUMS
           cd "$verify_dir"
           sha256sum -c SHA256SUMS
