@@ -113,8 +113,12 @@ func systemdFixture(t *testing.T) (*SystemdAdapter, *fakeBus) {
 	if err = fsutil.AtomicWrite(p.unitPath(), []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
+	link := filepath.Join(t.TempDir(), config.Unit)
+	if err = os.Symlink(p.unitPath(), link); err != nil {
+		t.Fatal(err)
+	}
 	b := &fakeBus{result: "done", unitPath: p.unitPath(), linked: true, properties: map[string]any{
-		"Id": config.Unit, "LoadState": "loaded", "FragmentPath": p.unitPath(), "DropInPaths": []string{},
+		"Id": config.Unit, "LoadState": "loaded", "FragmentPath": link, "DropInPaths": []string{},
 		"WorkingDirectory": p.runtime(), "PrivateNetwork": false, "KillMode": "control-group", "MainPID": uint32(0), "ControlPID": uint32(0),
 		"ActiveState": "inactive", "SubState": "dead", "UnitFileState": "enabled",
 		"ExecStart": []unitExec{{Path: core, Args: []string{core, "-d", p.runtime(), "-f", p.runtime("current", "config.yaml")}}},
@@ -184,6 +188,17 @@ func TestSystemdRefusesForeignOrUnknownUnits(t *testing.T) {
 		func(b *fakeBus) { b.properties["Id"] = "ssh.service" },
 		func(b *fakeBus) { delete(b.properties, "FragmentPath") },
 		func(b *fakeBus) { b.properties["FragmentPath"] = "/etc/systemd/system/foreign.service" },
+		func(b *fakeBus) {
+			data, err := os.ReadFile(b.unitPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			copy := b.unitPath + ".foreign"
+			if err := os.WriteFile(copy, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			b.properties["FragmentPath"] = copy
+		},
 		func(b *fakeBus) { b.properties["DropInPaths"] = []string{"/etc/systemd/system/override.conf"} },
 		func(b *fakeBus) { _ = os.WriteFile(b.unitPath, []byte("foreign content"), 0600) },
 		func(b *fakeBus) { b.properties["WorkingDirectory"] = "/another-installation" },

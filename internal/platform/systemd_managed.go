@@ -117,14 +117,21 @@ func (a *SystemdAdapter) SetBoot(ctx context.Context, enabled bool) error {
 func (a *SystemdAdapter) Remove(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
 	defer cancel()
-	if err := a.Stop(ctx); err != nil {
-		return err
-	}
 	bus, err := a.Connect(ctx)
 	if err != nil {
 		return err
 	}
 	defer bus.Close()
+	// A prior attempt may have deleted the source before daemon-reload failed.
+	// Refresh stale properties before checking the identity of a now-missing link.
+	if _, err = os.Lstat(a.unitPath()); os.IsNotExist(err) {
+		if err = bus.ReloadContext(ctx); err != nil {
+			return err
+		}
+	}
+	if err := a.Stop(ctx); err != nil {
+		return err
+	}
 	if _, err = a.properties(ctx, bus); err != nil {
 		return err
 	}

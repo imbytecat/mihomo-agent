@@ -47,6 +47,11 @@ func TestSystemdDeployment(t *testing.T) {
 	hold := make(chan struct{})
 	var release sync.Once
 	t.Cleanup(func() {
+		if t.Failed() {
+			output, _ := exec.Command("systemctl", "show", name,
+				"--property=Id,LoadState,FragmentPath,ExecStart,WorkingDirectory,ActiveState,SubState").CombinedOutput()
+			t.Logf("fixture systemd properties:\n%s", output)
+		}
 		release.Do(func() { close(hold) })
 		for _, id := range tasks {
 			_ = exec.Command("systemctl", "stop", "mihomo-agent-task-"+id+".scope").Run()

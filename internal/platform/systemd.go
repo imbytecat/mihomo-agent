@@ -113,13 +113,17 @@ func (a *SystemdAdapter) properties(ctx context.Context, bus Bus) (map[string]an
 	if dbus.Store([]any{p["ExecStart"]}, &starts) != nil || len(starts) != 1 {
 		return nil, errors.New("无法验证 systemd ExecStart")
 	}
-	if fragment != a.unitPath() || starts[0].Path != a.CorePath() {
+	// Linked units expose the systemd search-path link as FragmentPath.
+	// File identity accepts that link without accepting an external copy.
+	loaded, loadedErr := os.Stat(fragment)
+	owned, ownedErr := os.Stat(a.unitPath())
+	if loadedErr != nil || ownedErr != nil || !os.SameFile(loaded, owned) || starts[0].Path != a.CorePath() {
 		return nil, errors.New("systemd unit 不属于本安装")
 	}
 	if drops, ok := p["DropInPaths"].([]string); !ok || len(drops) != 0 {
 		return nil, errors.New("Agent 托管的 systemd unit 不接受 drop-in")
 	}
-	if err := a.checkUnitFile(); err != nil && !os.IsNotExist(err) {
+	if err := a.checkUnitFile(); err != nil {
 		return nil, err
 	}
 	argv := starts[0].Args
