@@ -24,6 +24,10 @@
     </main>
     <script type="module">
       import '../../dev/mock.ts';
+      // UFI declares this with top-level const, not as a window property.
+      const globals = document.createElement('script');
+      globals.textContent = 'const originFetch = window.originFetch; delete window.originFetch;';
+      document.head.append(globals);
       // Vite publicDir serves the exact production bytes without transforming them.
       const response = await fetch('/mihomoctl-ufi.js');
       if (!response.ok) throw new Error('Production plugin is missing; build it first');

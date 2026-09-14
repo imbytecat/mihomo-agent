@@ -16,6 +16,7 @@
 - 前端：ui/src/transport/ufi 只处理 UFI 通信和引导；gateway.ts 处理任务观察与展示；use-gateway.ts 管草稿和交互；components/ 管视图。CSS 仅留主题与宿主隔离，其余用 Tailwind className。
 - 无样式交互组件统一使用 Base UI。Tailwind 4 使用官方 Vite 插件、ufi: 前缀和容器内的无 layer utilities；不加载 preflight，避免宿主样式覆盖插件或插件样式外溢。
 - 修改加载协议时核对下方 UFI 官方来源；没有文档保证的行为不能从其他插件推断。
+- UFI SDK 位于 ui/packages/ufi-sdk，拥有接口定义、运行时校验、签名和宿主适配；mihomoctl 按需导入，业务加密与命令退出标记仍归 transport。宿主入口使用 requests.js 的裸全局 originFetch，自行签名设备请求，缺失时明确报错；不调用 window.fetch 包装。修改 SDK 时核对其 README 中的源码／文档差异，测试覆盖全部路由清单和认证、上传、取消行为。
 
 ## 必须保持的约束
 

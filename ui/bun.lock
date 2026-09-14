@@ -6,6 +6,7 @@
       "name": "mihomoctl",
       "dependencies": {
         "@base-ui/react": "^1.8.0",
+        "@imbytecat/ufi-sdk": "workspace:*",
         "@noble/hashes": "^2.4.0",
         "clsx": "^2.1.1",
         "ky": "^2.1.0",
@@ -34,6 +35,15 @@
         "vitest": "^5.0.0",
       },
     },
+    "packages/ufi-sdk": {
+      "name": "@imbytecat/ufi-sdk",
+      "version": "0.1.0",
+      "dependencies": {
+        "@noble/hashes": "^2.4.0",
+        "ky": "^2.1.0",
+        "zod": "^4.6.5",
+      },
+    },
   },
   "packages": {
     "@babel/runtime": ["@babel/runtime@7.29.7", "", {}, "sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw=="],
@@ -51,6 +61,8 @@
     "@floating-ui/react-dom": ["@floating-ui/react-dom@2.1.9", "", { "dependencies": { "@floating-ui/dom": "^1.8.0" }, "peerDependencies": { "react": ">=16.8.0", "react-dom": ">=16.8.0" } }, "sha512-JDjEFGCpImxDCA7JJKviA0M9+RtmJdj0m/NVU5IMgBK+AmZouAQQ7/+2GLH0GXXY0YMw9oXPB8hKdbPYg5QLYg=="],
 
     "@floating-ui/utils": ["@floating-ui/utils@0.2.12", "", {}, "sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww=="],
+
+    "@imbytecat/ufi-sdk": ["@imbytecat/ufi-sdk@workspace:packages/ufi-sdk"],
 
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 

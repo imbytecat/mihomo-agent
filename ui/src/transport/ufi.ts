@@ -3,6 +3,8 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { quote as shellQuote } from 'shell-quote';
 import { z } from 'zod';
+import { rootShell, uploadFile } from '@imbytecat/ufi-sdk';
+import { createUfiHostClient, hostFetch } from '@imbytecat/ufi-sdk/host';
 import bootstrapScript from './ufi-bootstrap.sh?raw';
 import {
   emptyState,
@@ -14,14 +16,9 @@ import {
   type TaskAction,
   type TaskParams,
 } from '../state';
-import { requestJSON, requestFailure, transportFailure } from '../request';
+import { requestJSON, requestFailure, requestError } from '../request';
 
-declare const runShellWithRoot: (
-  command: string,
-  timeout?: number,
-) => Promise<{ success: boolean; content?: string }>;
 declare const KANO_baseURL: string;
-declare const common_headers: HeadersInit;
 export const DIR = '/data/mihomoctl';
 const AGENT = DIR + '/mihomoctl';
 const BOOT = '/data/mihomoctl-bootstrap';
@@ -64,13 +61,15 @@ export async function shell(command: string, timeout = 30_000) {
   };
   let result;
   try {
-    result = await runShellWithRoot(shellCommand(command, marker), timeout);
+    result = await createUfiHostClient().request(
+      rootShell,
+      { command: shellCommand(command, marker), timeout },
+      { timeout: timeout + 1000 },
+    );
   } catch (error) {
-    throw transportFailure(context, error);
+    throw requestError(context, error);
   }
-  if (!result.success)
-    throw requestFailure(context, result.content || 'Root 接口不可用');
-  return shellResult(result.content || '', marker);
+  return shellResult(result.result, marker);
 }
 async function agent(args: string[], timeout = 30_000) {
   const result = await shell(
@@ -114,25 +113,19 @@ export async function readDeviceState() {
   };
 }
 async function uploadBytes(bytes: Uint8Array) {
-  const body = new FormData();
-  body.append(
-    'file',
-    new File([new Uint8Array(bytes)], 'request.bin', {
-      type: 'application/octet-stream',
-    }),
-  );
   const context = {
     step: '上传设备请求',
     target: 'UFI 设备 /api/upload_img',
     hint: '检查设备连接和 UFI 登录状态。',
   };
-  const result = await requestJSON(
-    `${KANO_baseURL}/upload_img`,
-    { method: 'POST', headers: common_headers, body },
-    context,
-    uploadResponse,
-  );
-  return result.url;
+  try {
+    const result = await createUfiHostClient().request(uploadFile, {
+      file: new File([new Uint8Array(bytes)], 'request.bin', { type: 'application/octet-stream' }),
+    });
+    return uploadResponse.parse(result).url;
+  } catch (error) {
+    throw requestError(context, error);
+  }
 }
 export async function sealRequest(publicKey: string, value: object) {
   await sodium.ready;
@@ -281,6 +274,7 @@ export async function latestAgentAssets() {
     { credentials: 'omit', signal: AbortSignal.timeout(30_000) },
     context,
     agentReleaseSchema,
+    hostFetch,
   );
   const asset = (arch: string) => {
     const name = `mihomoctl-linux-${arch}`;

@@ -221,7 +221,7 @@ function submit(intent: Intent, hash = '') {
 }
 Object.assign(globalThis, {
   KANO_baseURL: '/api',
-  common_headers: {},
+  common_headers: { authorization: 'a'.repeat(64) },
   mockDeviceState: state,
   mockCommands: commands,
   mockUploads: uploads,
@@ -360,6 +360,9 @@ const mockFetch = async (
         : input.url;
   requests.push(url);
   if (url === 'https://api.github.com/repos/imbytecat/mihomoctl/releases/latest') {
+    const headers = new Headers(input instanceof Request ? input.headers : init?.headers);
+    if (['authorization', 'kano-t', 'kano-sign'].some((name) => headers.has(name)))
+      throw new Error('发行查询不得携带 UFI 请求头');
     // Credential behavior is tested in Chromium; Bun does not model browser cookies.
     if ((input instanceof Request ? input.credentials : init?.credentials) !== 'omit')
       throw new Error('发行查询不得携带浏览器凭据');
@@ -376,13 +379,20 @@ const mockFetch = async (
   }
   if (new URL(url, location.href).origin !== location.origin)
     throw new Error('浏览器不应请求外网：' + url);
-  if (new URL(url, location.href).pathname === '/api/upload_img') {
+  const path = new URL(url, location.href).pathname;
+  if (path === '/api/upload_img' || path === '/api/root_shell') {
+    const request = new Request(input, init);
+    if (request.headers.get('authorization') !== 'a'.repeat(64) ||
+        !request.headers.has('kano-t') || !/^[a-f0-9]{64}$/.test(request.headers.get('kano-sign') || ''))
+      return new Response(null, { status: 401 });
+    if (path === '/api/root_shell') {
+      const body = await request.json() as { command: string };
+      const result = await (globalThis as typeof globalThis & { runShellWithRoot(command: string): Promise<{ success: boolean; content: string }> }).runShellWithRoot(body.command);
+      return result.success ? Response.json({ result: result.content }) : Response.json({ error: result.content }, { status: 500 });
+    }
     if (flags.mockUploadFailure)
       return Response.json({ error: '模拟上传失败' }, { status: 500 });
-    const body =
-      input instanceof Request
-        ? await input.formData()
-        : (init!.body as FormData);
+    const body = await request.formData();
     const file = body.get('file') as File;
     const name = crypto.randomUUID() + '.bin';
     uploads.push({ name, bytes: new Uint8Array(await file.arrayBuffer()) });
@@ -394,4 +404,13 @@ const mockFetch = async (
   }
   return nativeFetch(input, init);
 };
-globalThis.fetch = mockFetch;
+// Match the host contract: requests.js saves originFetch, then wraps fetch and
+// calls input.startsWith before adding UFI signing headers to every request.
+Object.assign(globalThis, { originFetch: mockFetch });
+globalThis.fetch = async (input, init = {}) => {
+  (input as string).startsWith('/api/');
+  const headers = new Headers(init.headers);
+  headers.set('kano-t', String(Date.now()));
+  headers.set('kano-sign', 'fixture-signature');
+  return mockFetch(input, { ...init, headers });
+};

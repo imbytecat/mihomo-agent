@@ -199,6 +199,8 @@ test('built plugin is one classic script with HTML-safe boundaries', async () =>
   expect(output.length).toBeLessThan(5 * 1024 * 1024);
   expect(await readdir('dist')).toEqual(['mihomoctl-ufi.js']);
   expect(output).not.toContain('mockDeviceState');
+  for (const unused of ['sms_forward_mail', 'one_click_shell', 'delete_all_uploads_data'])
+    expect(output).not.toContain(unused);
   expect(output).not.toContain('react_dom_client');
   expect(() => new Function(output)).not.toThrow();
 });
@@ -424,6 +426,13 @@ test('request errors identify network, timeout, HTTP and malformed response stag
     expect(error.message).toContain('api.github.com');
     expect(error.message).toContain('TypeError: Failed to fetch');
     expect(error.message).toContain('检查网络是否可以访问 GitHub API');
+    fetch.mockRejectedValueOnce(new TypeError('input.startsWith is not a function'));
+    const callError = await requestJSON(
+      'https://api.github.com/releases/latest', {}, context, z.unknown(),
+    ).catch((error) => error as Error);
+    if (!(callError instanceof Error)) throw new Error('Expected a request failure');
+    expect(callError.message).toContain('JavaScript');
+    expect(callError.message).not.toContain('DNS');
     fetch.mockRejectedValueOnce(new DOMException('aborted', 'AbortError'));
     await expect(
       requestJSON(

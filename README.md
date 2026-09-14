@@ -101,7 +101,11 @@ ctl=/var/lib/mihomoctl/mihomoctl
 
 ## 从源码构建
 
-根目录是 Go 模块；`ui/` 是可选的 UFI 前端。mise 统一固定 Go、Bun 和开发工具版本；Bun 同时负责包管理和前端工具运行，设备上的 mihomoctl 和 Mihomo 均为独立 Go 二进制。安装 [mise](https://mise.jdx.dev/) 后：
+根目录是 Go 模块；`ui/` 是可选的 UFI 前端。mise 统一固定 Go、Bun 和开发工具版本；Bun 同时负责包管理和前端工具运行，设备上的 mihomoctl 和 Mihomo 均为独立 Go 二进制。
+
+自用 [UFI TypeScript SDK](ui/packages/ufi-sdk/README.md) 作为 `ui/` 的 workspace 包维护，封装设备接口与签名；前端只按需导入 Shell 和上传等能力。
+
+安装 [mise](https://mise.jdx.dev/) 后：
 
 ```sh
 mise install

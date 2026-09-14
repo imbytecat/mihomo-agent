@@ -1,12 +1,24 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { quote, latestAgentAssets } from '../src/transport/ufi';
 import { protocol } from '../src/state';
+
+beforeEach(() => {
+  vi.stubGlobal('originFetch', (...args: Parameters<typeof fetch>) => globalThis.fetch(...args));
+});
+afterEach(() => vi.unstubAllGlobals());
+
+test('missing native host fetch fails without using the signed wrapper', async () => {
+  vi.stubGlobal('originFetch', undefined);
+  const fetch = vi.spyOn(globalThis, 'fetch');
+  await expect(latestAgentAssets()).rejects.toThrow('UFI 原始请求接口不可用');
+  expect(fetch).not.toHaveBeenCalled();
+});
 
 test('bootstrap verifies bytes before execution and reports failures without losing status', async () => {
   const base = await mkdtemp(join(tmpdir(), 'ufi-bootstrap-'));
