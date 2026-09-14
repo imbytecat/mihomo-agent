@@ -76,13 +76,15 @@ func (b *fakeBus) EnableUnitFilesContext(_ context.Context, files []string, runt
 	b.properties["UnitFileState"] = "enabled"
 	return true, nil, nil
 }
-func (b *fakeBus) DisableUnitFilesContext(_ context.Context, _ []string, _ bool) ([]systemdbus.DisableUnitFileChange, error) {
+func (b *fakeBus) DisableUnitFilesContext(_ context.Context, files []string, runtime bool) ([]systemdbus.DisableUnitFileChange, error) {
 	b.calls = append(b.calls, "disable")
-	if b.failOperation == "disable" {
+	if b.failOperation == "disable" || len(files) != 1 || files[0] != filepath.Base(b.unitPath) {
 		return nil, errors.New("disable refused")
 	}
-	b.linked = false
-	b.properties["UnitFileState"] = "disabled"
+	if !runtime {
+		b.linked = false
+		b.properties["UnitFileState"] = "disabled"
+	}
 	return nil, nil
 }
 func (b *fakeBus) ReloadContext(context.Context) error {

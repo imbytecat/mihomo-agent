@@ -92,7 +92,7 @@ func (a *SystemdAdapter) SetBoot(ctx context.Context, enabled bool) error {
 	if enabled {
 		_, _, err = bus.EnableUnitFilesContext(ctx, []string{a.unitPath()}, false, false)
 	} else {
-		_, err = bus.DisableUnitFilesContext(ctx, []string{a.unitPath()}, false)
+		_, err = bus.DisableUnitFilesContext(ctx, []string{a.deployment.Unit}, false)
 		if err == nil {
 			// Disable also removes the link of units outside systemd's search path.
 			_, err = bus.LinkUnitFilesContext(ctx, []string{a.unitPath()}, false, false)
@@ -136,8 +136,9 @@ func (a *SystemdAdapter) Remove(ctx context.Context) error {
 		return err
 	}
 	if err = a.checkUnitFile(); err == nil {
-		for _, runtime := range []bool{false, true} {
-			if _, err = bus.DisableUnitFilesContext(ctx, []string{a.unitPath()}, runtime); err != nil {
+		// Keep the persistent link discoverable until runtime links are disabled.
+		for _, runtime := range []bool{true, false} {
+			if _, err = bus.DisableUnitFilesContext(ctx, []string{a.deployment.Unit}, runtime); err != nil {
 				return err
 			}
 		}
