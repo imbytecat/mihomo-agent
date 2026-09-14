@@ -393,9 +393,7 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
     delete incomplete[field];
     expect(() => parseState(JSON.stringify(incomplete))).toThrow('协议不匹配');
   }
-  expect(
-    disabledReason('save-controller', { ...ready, controller: null }),
-  ).toContain('更新 Mihomo Agent');
+  expect(() => parseState(JSON.stringify({ ...ready, controller: null }))).toThrow('协议不匹配');
   expect(disabledReason('update-agent', null)).not.toBe('');
   expect(disabledReason('stop', null)).toBe('');
   expect(lifecycleAction({ ...emptyState, agent: true })).toBe('uninstall');
@@ -491,8 +489,8 @@ test('request errors identify network, timeout, HTTP and malformed response stag
         'http://192.168.0.1/api/upload_img',
         {},
         {
-          step: '上传到 F50',
-          target: 'F50 /api/upload_img',
+          step: '上传到设备',
+          target: 'UFI /api/upload_img',
           hint: '重新登录 UFI',
         },
         z.unknown(),
@@ -505,8 +503,8 @@ test('request errors identify network, timeout, HTTP and malformed response stag
 
 test('UFI uploads preserve FormData and never retry failed requests', async () => {
   const context = {
-    step: '上传到 F50',
-    target: 'F50 /api/upload_img',
+    step: '上传到设备',
+    target: 'UFI /api/upload_img',
     hint: '检查连接',
   };
   const body = new FormData();

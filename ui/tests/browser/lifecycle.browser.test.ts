@@ -84,7 +84,7 @@ test('reconnect observes the original task without resubmitting', async () => {
     .element(app.getByCSS('[data-group=maintenance] [data-action=download]'))
     .toHaveTextContent('安装');
   await evaluate(
-    'window.mockTaskFailure = "F50 TLS 握手失败：api.github.com"; window.mockTaskDelayMs = 9000',
+    'window.mockTaskFailure = "设备 TLS 握手失败：api.github.com"; window.mockTaskDelayMs = 9000',
   );
   await app.getByCSS('[data-group=maintenance] [data-action=download]').click();
   await expect.poll(() => evaluate('mockDeviceState.locked')).toBeTruthy();
@@ -100,7 +100,7 @@ test('reconnect observes the original task without resubmitting', async () => {
     .toBeVisible();
   await expect
     .element(app.getByCSS('[data-output]'))
-    .toMatchTextContent('F50 TLS');
+    .toMatchTextContent('设备 TLS');
   await expect
     .poll(() =>
       evaluate(

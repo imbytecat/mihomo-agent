@@ -79,26 +79,7 @@ func (a *Manager) authorize(r Request) error {
 	if err := r.validate(); err != nil {
 		return err
 	}
-	c := a.Platform.Capabilities()
-	switch r.Action {
-	case "download":
-		if !c.CoreInstall {
-			return errors.New("该平台不支持内核安装")
-		}
-	case "update-agent":
-		if !c.AgentUpdate {
-			return errors.New("该平台不支持 Agent 更新")
-		}
-	case "boot-on", "boot-off":
-		if !c.Autostart {
-			return errors.New("该平台不支持自启管理")
-		}
-	case "save-interfaces":
-		if !c.Interfaces {
-			return errors.New("共享网络由系统配置管理")
-		}
-	}
-	if r.Params.Interfaces != nil && !c.Interfaces {
+	if (r.Action == "save-interfaces" || r.Params.Interfaces != nil) && !a.Platform.Capabilities().Interfaces {
 		return errors.New("共享网络由系统配置管理")
 	}
 	return nil

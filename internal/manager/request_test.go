@@ -38,7 +38,7 @@ func TestWorkerGateAndTypedRequests(t *testing.T) {
 		t.Fatal("unhosted worker changed settings", err)
 	}
 	for _, data := range []string{
-		`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","action":"update","value":"legacy"}`,
+		`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","action":"update","unknown":"field"}`,
 		`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","action":"stop","params":{"url":"https://example.com"}}`,
 		`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","action":"save-controller","params":{"controller":{"enabled":true,"port":9090,"unknown":1}}}`,
 	} {
@@ -48,19 +48,15 @@ func TestWorkerGateAndTypedRequests(t *testing.T) {
 	}
 }
 
-type unsupportedPlatform struct{ platform.Adapter }
+type systemNetworkPlatform struct{ platform.Adapter }
 
-func (p unsupportedPlatform) Capabilities() platform.Capabilities { return platform.Capabilities{} }
-func TestUnsupportedCapabilitiesRejectBeforeTaskCreation(t *testing.T) {
+func (p systemNetworkPlatform) Capabilities() platform.Capabilities { return platform.Capabilities{} }
+func TestSystemOwnedInterfacesRejectBeforeTaskCreation(t *testing.T) {
 	a := testAgent(t)
-	a.Platform = unsupportedPlatform{a.Platform}
-	for _, action := range []string{"download", "update-agent", "boot-on", "boot-off", "save-interfaces"} {
-		params := Params{}
-		if action == "save-interfaces" {
-			params.Interfaces = ptr("eth0")
-		}
-		if _, err := a.Submit(Request{Action: action, Params: params}); err == nil {
-			t.Fatal("allowed unsupported action", action)
+	a.Platform = systemNetworkPlatform{a.Platform}
+	for _, action := range []string{"save-interfaces", "start"} {
+		if _, err := a.Submit(Request{Action: action, Params: Params{Interfaces: ptr("eth0")}}); err == nil {
+			t.Fatal("allowed unmanaged network configuration", action)
 		}
 	}
 	if id, err := a.store.LatestTask(); err == nil || id != "" {

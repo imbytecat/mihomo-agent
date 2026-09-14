@@ -62,7 +62,7 @@ func New(version string) *cobra.Command {
 			return map[string]any{"ok": true, "executable": m.Executable}, m.Install(githubProxy)
 		}},
 		{"inspect", "Print platform, capabilities and runtime state", cobra.NoArgs, false, func(_ *cobra.Command, m *manager.Manager, _ []string) (any, error) { return m.Inspect() }},
-		{"check-updates", "Compare installed components with official releases; changes nothing", cobra.NoArgs, false, func(cmd *cobra.Command, m *manager.Manager, _ []string) (any, error) {
+		{"check-updates", "Check official component releases and cache the comparison", cobra.NoArgs, false, func(cmd *cobra.Command, m *manager.Manager, _ []string) (any, error) {
 			return m.CheckUpdates(cmd.Context())
 		}},
 		{"submit UPLOAD SHA256", "Accept an encrypted UFI upload", cobra.ExactArgs(2), false, func(_ *cobra.Command, m *manager.Manager, args []string) (any, error) {
@@ -118,15 +118,6 @@ func New(version string) *cobra.Command {
 		}},
 		{"logs", "Print sanitized runtime logs", cobra.NoArgs, false, func(_ *cobra.Command, m *manager.Manager, _ []string) (any, error) { return m.Logs() }},
 		{"diagnose", "Print network diagnostics", cobra.NoArgs, false, func(_ *cobra.Command, m *manager.Manager, _ []string) (any, error) { return m.Diagnose() }},
-		{"start", "Submit a start task", cobra.NoArgs, false, func(_ *cobra.Command, m *manager.Manager, _ []string) (any, error) {
-			return m.Submit(manager.Request{Action: "start"})
-		}},
-		{"stop", "Submit a stop task", cobra.NoArgs, false, func(_ *cobra.Command, m *manager.Manager, _ []string) (any, error) {
-			return m.Submit(manager.Request{Action: "stop"})
-		}},
-		{"boot", "Submit a startup task", cobra.NoArgs, true, func(_ *cobra.Command, m *manager.Manager, _ []string) (any, error) {
-			return m.Submit(manager.Request{Action: "start"})
-		}},
 		{"worker ID", "Execute an accepted task with inherited descriptors", cobra.ExactArgs(1), true, func(_ *cobra.Command, m *manager.Manager, args []string) (any, error) { return nil, m.Worker(args[0]) }},
 		{"supervise", "Run the UFI runtime supervisor", cobra.NoArgs, true, func(_ *cobra.Command, m *manager.Manager, _ []string) (any, error) { return nil, m.Supervise() }},
 	} {

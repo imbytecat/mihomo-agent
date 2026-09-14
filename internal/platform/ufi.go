@@ -32,10 +32,12 @@ type UFIAdapter struct {
 func NewUFI(env Environment) *UFIAdapter {
 	return &UFIAdapter{Environment: env, BootPath: "/sdcard/ufi_tools_boot.sh"}
 }
-func (a *UFIAdapter) Config() Config             { return Config{Kind: UFI} }
-func (a *UFIAdapter) Capabilities() Capabilities { return Capabilities{true, true, true, true, true} }
-func (a *UFIAdapter) Policy() Policy             { return Policy{"*", "0.0.0.0", "0.0.0.0"} }
-func (a *UFIAdapter) ExtraPaths() []string       { return []string{a.Root + "-bootstrap"} }
+func (a *UFIAdapter) Config() Config { return Config{Kind: UFI} }
+func (a *UFIAdapter) Capabilities() Capabilities {
+	return Capabilities{Interfaces: true, Capture: true}
+}
+func (a *UFIAdapter) Policy() Policy       { return Policy{"*", "0.0.0.0", "0.0.0.0"} }
+func (a *UFIAdapter) ExtraPaths() []string { return []string{a.Root + "-bootstrap"} }
 func (a *UFIAdapter) CertDirs() []string {
 	return []string{"/system/etc/security/cacerts", "/apex/com.android.conscrypt/cacerts"}
 }
@@ -299,7 +301,7 @@ func (a *UFIAdapter) Supervise() error {
 }
 
 func (a *UFIAdapter) BootLine() string {
-	return "'" + strings.ReplaceAll(a.path("agent"), "'", "'\\''") + "' boot --root '" + strings.ReplaceAll(a.Root, "'", "'\\''") + "' # mihomo-agent"
+	return "'" + strings.ReplaceAll(a.path("agent"), "'", "'\\''") + "' task start --root '" + strings.ReplaceAll(a.Root, "'", "'\\''") + "' # mihomo-agent"
 }
 func (a *UFIAdapter) SetBoot(_ context.Context, enabled bool) error {
 	data, err := os.ReadFile(a.BootPath)

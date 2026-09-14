@@ -145,7 +145,7 @@ func TestSystemdManagedLifecycle(t *testing.T) {
 	if err := p.Prepare(); err != nil {
 		t.Fatal(err)
 	}
-	if c := p.Capabilities(); !c.CoreInstall || !c.AgentUpdate || !c.Autostart || c.Capture || c.Interfaces {
+	if c := p.Capabilities(); c.Capture || c.Interfaces {
 		t.Fatal("incorrect managed capabilities", c)
 	}
 	if state, err := p.Inspect(context.Background()); err != nil || state.Running {

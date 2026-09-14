@@ -15,7 +15,7 @@ func TestCommandsValidateArgumentsBeforeDeviceAccess(t *testing.T) {
 	for _, args := range [][]string{
 		{"install", "unexpected"}, {"inspect", "unexpected"}, {"check-updates", "unexpected"}, {"submit", "only-upload"},
 		{"job"}, {"controller-secret"}, {"worker"}, {"supervise", "unexpected"},
-		{"boot", "unexpected"}, {"stop", "unexpected"}, {"boot-off", "unexpected"},
+		{"start"}, {"stop"}, {"boot"}, {"boot-off"},
 		{"logs", "unexpected"}, {"diagnose", "unexpected"}, {"version", "unexpected"},
 		{"job-log", "id", "unexpected"}, {"inspect", "--github-proxy", "https://example.com"},
 		{"install", "--unknown"}, {"install", "--core", "/usr/bin/mihomo"}, {"unit"}, {"unknown"},

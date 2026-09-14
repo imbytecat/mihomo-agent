@@ -39,7 +39,7 @@ func (a *Manager) uninstall(phase func(string)) error {
 	}
 	defer pin.Close()
 	// Keep the agent and task record available if bulk deletion fails.
-	for _, path := range append([]string{a.runtime(), a.path("backups")}, extra...) {
+	for _, path := range append([]string{a.runtime()}, extra...) {
 		if err := os.RemoveAll(path); err != nil {
 			return err
 		}

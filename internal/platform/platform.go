@@ -18,11 +18,8 @@ const Linux = "linux"
 
 type Config storage.Deployment
 type Capabilities struct {
-	CoreInstall bool `json:"coreInstall"`
-	AgentUpdate bool `json:"agentUpdate"`
-	Autostart   bool `json:"autostart"`
-	Interfaces  bool `json:"interfaces"`
-	Capture     bool `json:"capture"`
+	Interfaces bool `json:"interfaces"`
+	Capture    bool `json:"capture"`
 }
 type State struct {
 	Running    bool

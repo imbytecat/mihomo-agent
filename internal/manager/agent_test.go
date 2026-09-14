@@ -376,10 +376,10 @@ func TestUninstallPreservesRuntimeOnCleanupFailure(t *testing.T) {
 
 func TestDetachedUninstallDeletesAllOwnedFiles(t *testing.T) {
 	a := testAgent(t)
-	_ = fsutil.AtomicWrite(a.path("backups", "old", "config.yaml"), []byte("old data"), 0600)
+	_ = fsutil.AtomicWrite(a.path("tasks", randomID(), "work", "config.yaml"), []byte("staged config"), 0600)
 	_ = fsutil.AtomicWrite(filepath.Join(a.Root+"-bootstrap", "jobs", "old", "agent"), []byte("staging"), 0600)
-	_ = fsutil.AtomicWrite(a.path("core-version.json"), []byte("cache"), 0600)
-	_ = fsutil.AtomicWrite(a.path("state.db-backup"), []byte("stale data"), 0600)
+	_ = fsutil.AtomicWrite(a.path("runtime", "core.log"), []byte("core log"), 0600)
+	_ = fsutil.AtomicWrite(a.path("extra-file"), []byte("owned data"), 0600)
 	_ = fsutil.AtomicWrite(a.Platform.(*platform.UFIAdapter).BootPath, []byte("other-plugin start\n"+a.Platform.(*platform.UFIAdapter).BootLine()+"\n"), 0644)
 	other := filepath.Join(filepath.Dir(a.Root), "other-plugin")
 	_ = os.WriteFile(other, []byte("untouched"), 0600)

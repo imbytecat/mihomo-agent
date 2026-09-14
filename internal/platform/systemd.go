@@ -63,7 +63,7 @@ func NewSystemd(config Config, env Environment) *SystemdAdapter {
 }
 func (a *SystemdAdapter) Config() Config { return a.deployment }
 func (a *SystemdAdapter) Capabilities() Capabilities {
-	return Capabilities{CoreInstall: true, AgentUpdate: true, Autostart: true}
+	return Capabilities{}
 }
 func (a *SystemdAdapter) Policy() Policy {
 	return Policy{a.deployment.ListenAddress, a.deployment.ListenAddress, "127.0.0.1"}

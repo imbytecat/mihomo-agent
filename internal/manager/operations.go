@@ -30,18 +30,16 @@ func (a *Manager) Install(githubProxy string) error {
 	if a.running() {
 		return errors.New("请先停止代理")
 	}
-	if a.Platform.Capabilities().AgentUpdate {
-		self, err := os.Executable()
-		if err != nil {
-			return err
-		}
-		data, err := os.ReadFile(self)
-		if err != nil {
-			return err
-		}
-		if err := fsutil.AtomicWrite(a.Executable, data, 0700); err != nil {
-			return err
-		}
+	self, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(self)
+	if err != nil {
+		return err
+	}
+	if err := fsutil.AtomicWrite(a.Executable, data, 0700); err != nil {
+		return err
 	}
 	if err := a.installRuntime(githubProxy); err != nil {
 		return err
@@ -220,9 +218,6 @@ func (a *Manager) downloadCore(ctx context.Context, work string, phase func(stri
 	if a.running() {
 		return "", errors.New("请先停止代理")
 	}
-	if !a.Platform.Capabilities().CoreInstall {
-		return "", errors.New("该平台不支持内核安装")
-	}
 	assetPlatform, arch, err := coreTarget(a.Platform.Config().Kind, runtime.GOARCH)
 	if err != nil {
 		return "", err
@@ -256,9 +251,6 @@ func (a *Manager) downloadCore(ctx context.Context, work string, phase func(stri
 }
 
 func (a *Manager) installCore(ctx context.Context, archive, work, digest string, phase func(string)) error {
-	if !a.Platform.Capabilities().CoreInstall {
-		return errors.New("该平台不支持内核安装")
-	}
 	f, err := os.Open(archive)
 	if err != nil {
 		return err

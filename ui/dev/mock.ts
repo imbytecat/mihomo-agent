@@ -39,9 +39,6 @@ const scenarios: Record<string, DeviceState> = {
     ...ready,
     platform: 'linux',
     capabilities: {
-      coreInstall: true,
-      agentUpdate: true,
-      autostart: true,
       interfaces: false,
       capture: false,
     },
@@ -283,7 +280,8 @@ Object.assign(globalThis, {
           case 'job':
             result = jobs[args[2]!];
             break;
-          case 'stop':
+          case 'task':
+            if (args[2] !== 'stop') throw new Error('未知操作');
             result = submit({
               id: crypto.randomUUID().replaceAll('-', ''),
               action: 'stop',
@@ -329,7 +327,7 @@ Object.assign(globalThis, {
             );
             break;
           case 'job-log':
-            result = 'F50 任务日志';
+            result = '设备任务日志';
             break;
           case 'logs':
             result = 'core.log\n代理运行正常';

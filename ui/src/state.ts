@@ -1,10 +1,7 @@
 import { z } from 'zod';
 
-export const protocol = 3;
-export const capabilitiesSchema = z.object({
-  coreInstall: z.boolean(),
-  agentUpdate: z.boolean(),
-  autostart: z.boolean(),
+export const protocol = 4;
+const capabilitiesSchema = z.object({
   interfaces: z.boolean(),
   capture: z.boolean(),
 });
@@ -66,7 +63,6 @@ export const updatesSchema = z.object({
   core: componentUpdateSchema,
   dashboard: componentUpdateSchema,
 });
-export type Updates = z.infer<typeof updatesSchema>;
 
 const stateSchema = z.object({
   protocol: z.literal(protocol),
@@ -104,7 +100,7 @@ const stateSchema = z.object({
     ready: z.boolean(),
     version: z.string(),
   }),
-});
+}).refine((state) => !state.service || state.controller !== null);
 
 export type DeviceState = z.infer<typeof stateSchema> & { agent: boolean };
 export const emptyState: DeviceState = {
@@ -124,9 +120,6 @@ export const emptyState: DeviceState = {
   protocol,
   platform: 'ufi',
   capabilities: {
-    coreInstall: true,
-    agentUpdate: true,
-    autostart: true,
     interfaces: true,
     capture: true,
   },
@@ -150,7 +143,7 @@ export type Action =
 export function parseState(text: string): DeviceState {
   const result = stateSchema.safeParse(JSON.parse(text));
   if (!result.success)
-    throw new Error('Mihomo Agent 协议不匹配，请更新 Mihomo Agent');
+    throw new Error('设备状态不完整或协议不匹配');
   return { ...result.data, agent: true };
 }
 export function parseJob(value: unknown): DeviceJob {
@@ -210,16 +203,6 @@ export function disabledReason(
   if (action === 'logs' || action === 'diagnose')
     return state.agent ? '' : '请先安装 Mihomo Agent';
   if (state.locked) return '设备正在安装或更新，请等待完成后刷新';
-  if (
-    (action === 'download' && !state.capabilities.coreInstall) ||
-    (action === 'update-agent' && !state.capabilities.agentUpdate)
-  )
-    return '该平台不支持此操作';
-  if (
-    (action === 'boot-on' || action === 'boot-off') &&
-    !state.capabilities.autostart
-  )
-    return '该平台不支持自启管理';
   if (action === 'save-interfaces' && !state.capabilities.interfaces)
     return '由系统网络配置管理';
   if (action === 'uninstall') return state.agent ? '' : 'Mihomo 服务未安装';
@@ -230,17 +213,6 @@ export function disabledReason(
         ? '请先停止代理'
         : '';
   if (!state.service) return '请先安装 Mihomo 服务';
-  if (
-    [
-      'save-controller',
-      'download-dashboard',
-      'view-secret',
-      'open-dashboard',
-      'update',
-    ].includes(action) &&
-    !state.controller
-  )
-    return '请先更新 Mihomo Agent';
   if (
     action === 'save-controller' ||
     action === 'download-dashboard' ||

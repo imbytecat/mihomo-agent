@@ -9,7 +9,6 @@ import {
 import type { GatewayModel } from '../use-gateway';
 import {
   ActionButton,
-  Button,
   Hint,
   Input,
   Row,

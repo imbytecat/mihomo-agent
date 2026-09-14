@@ -83,7 +83,7 @@ export async function checkUpdates() {
   return updatesSchema.parse(await agent(['check-updates'], 45_000));
 }
 export async function stopAgent() {
-  return parseJob(await agent(['stop']));
+  return parseJob(await agent(['task', 'stop']));
 }
 export async function readDeviceState() {
   const output = await shell(`

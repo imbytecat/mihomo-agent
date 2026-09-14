@@ -10,8 +10,8 @@
 ## 修改前定位
 
 - 设备入口：cmd/mihomo-agent 只处理进程入口，internal/cli 用 Cobra 装配平台、CLI 和 UFI 上传 Adapter。机器响应是 JSON；错误不得混入 usage。
-- 共享 Module：internal/manager 管请求校验、持久任务、订阅、下载校验、配置事务与回滚。CLI 与解密后的 UFI 请求都调用 Submit；不能依赖浏览器串联关键步骤。
-- 平台 Module：internal/platform 管 UFI 守护 / 网络桥接及 systemd 运行时。Adapter 配置由数据库持久化，worker、boot、supervise 都重新读取；已有安装不能通过环境或旗标换平台。
+- 共享 Module：internal/manager 管请求校验、持久任务、订阅、下载校验、配置事务与回滚。CLI 与解密后的 UFI 请求都调用 Submit；不能依赖浏览器串联关键步骤。设备操作统一使用 task ACTION，UFI 自启也调用 task start。
+- 平台 Module：internal/platform 管 UFI 守护 / 网络桥接及 systemd 运行时。Adapter 配置由数据库持久化，worker、supervise 和自启任务都重新读取；已有安装不能通过环境或旗标换平台。
 - 存储 Module：internal/storage 使用 sqlc + database/sql + modernc SQLite，拥有类型化状态表；YAML、日志和运行文件留在文件系统。fsutil、host、download、redact 是共享基础实现。
 - 前端：ui/src/transport/ufi 只处理 UFI 通信和引导；gateway.ts 处理任务观察与展示；use-gateway.ts 管草稿和交互；components/ 管视图。CSS 仅留主题与宿主隔离，其余用 Tailwind className。
 - 无样式交互组件统一使用 Base UI。Tailwind 4 使用官方 Vite 插件、ufi: 前缀和容器内的无 layer utilities；不加载 preflight，避免宿主样式覆盖插件或插件样式外溢。
@@ -35,7 +35,7 @@
 - UFI 使用自己的链、mark 和路由，不清空系统防火墙或全局路由。启动内核前建立监听保护；等待 LAN 时仍保留保护，内核退出后才撤掉。
 - UFI 自动接口识别只接受共享入口，排除蜂窝、上游和 VPN；未知固件保留手动接口配置。能力标识不保证任意硬件已支持 TPROXY。
 - Linux 使用 go-systemd 的 D-Bus 客户端和 unit 序列化；unit 源文件位于私有目录，通过 D-Bus 注册。操作前核对源文件、FragmentPath、有效 Id、ExecStart / argv、WorkingDirectory、KillMode 和命名空间设置；拒绝外部同名 unit、mask 和 drop-in，链接及启用不使用 force。ExecStart 使用 : 禁用环境变量展开，路径中的 % 仍需转义。
-- 两平台均由 Agent 管理私有目录内的自身二进制和 Mihomo；共用下载、校验与更新流程，按平台和架构选择官方资产，不支持外部内核模式或旧状态迁移。Linux 的 service 安装、自启和卸载由 CLI 调用 systemd 完成；先停止、禁用并移除 unit，确认不再引用配置，再删除 Agent 数据。
+- 两平台均由 Agent 管理私有目录内的自身二进制和 Mihomo；下载、更新、自启为共有功能，能力标识仅表达 interfaces / capture 平台差异；共用下载、校验与更新流程，按平台和架构选择官方资产，不支持外部内核模式或旧状态迁移。Linux 的 service 安装、自启和卸载由 CLI 调用 systemd 完成；先停止、禁用并移除 unit，确认不再引用配置，再删除 Agent 数据。
 - Linux 默认 loopback；显式 LAN 地址必须是本机 IPv4 私网地址。管理 API 仍绑定 loopback，额外 listeners / tunnels 不接受。私网地址绑定不证明入口隔离；network/capture 不得虚报就绪。
 - systemd 启动提交或健康检查失败时，用新的有界 context 验证并停止本 unit，再进行配置回滚。不能遗留一次失败启动创建的监听。
 - 平台依赖限于必要适配：Linux 用 systemd 托管进程、自启；网络与故障策略仍由用户配置。卸载仅清理本安装拥有的文件及 service 链接，不删除其他 unit、软件包或网络规则。
