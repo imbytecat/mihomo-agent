@@ -3,7 +3,7 @@ import sodium from 'libsodium-wrappers';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { parse } from 'shell-quote';
-const version = 'v0.5.0';
+const version = 'v1.0.0';
 import {
   emptyState,
   type DeviceState,

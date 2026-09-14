@@ -5,7 +5,7 @@
 - **UFI-TOOLS / Android**：提供插件界面，管理守护、自启及热点 / USB 共享。F50 是适用设备之一，不代表所有 UFI 硬件均已验证。
 - **Linux**：CLI 自动安装和清理 systemd service、设置自启；网络规则由用户配置，详见 [Linux 使用说明](docs/linux.md)。
 
-[下载](https://github.com/imbytecat/mihomo-agent/releases/latest) · [反馈](https://github.com/imbytecat/mihomo-agent/issues)
+[发行版](https://github.com/imbytecat/mihomo-agent/releases) · [反馈](https://github.com/imbytecat/mihomo-agent/issues)
 
 ## UFI 安装
 
