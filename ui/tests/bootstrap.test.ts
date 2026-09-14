@@ -25,7 +25,7 @@ test('bootstrap verifies bytes before execution and reports failures without los
     { mode: 0o700 },
   );
   const source = (await readFile('src/transport/ufi-bootstrap.sh', 'utf8'))
-    .replace('BASE=/data/mihomo-agent-bootstrap', 'BASE=' + quote(base))
+    .replace('BASE=/data/mihomoctl-bootstrap', 'BASE=' + quote(base))
     .replace(
       'CURL=/data/data/com.minikano.f50_sms/files/curl',
       'CURL=' + quote(curl),
@@ -40,7 +40,7 @@ test('bootstrap verifies bytes before execution and reports failures without los
         mode,
         id,
         'https://mirror.invalid/cache',
-        'https://fixture.invalid/agent',
+        'https://fixture.invalid/mihomoctl',
         digest,
         '',
         '',
@@ -71,9 +71,9 @@ test('bootstrap verifies bytes before execution and reports failures without los
     expect(existsSync(marker)).toBe(false);
     expect((await run('worker', digest)).code).toBe(0);
     expect(await readFile(marker, 'utf8')).toBe('verified');
-    expect(await readFile(join(base, 'curl-args'), 'utf8')).toContain('https://mirror.invalid/cache/https://fixture.invalid/agent');
+    expect(await readFile(join(base, 'curl-args'), 'utf8')).toContain('https://mirror.invalid/cache/https://fixture.invalid/mihomoctl');
     expect(JSON.parse((await run('status')).output).state).toBe('succeeded');
-    expect(existsSync(join(job, 'agent'))).toBe(false);
+    expect(existsSync(join(job, 'mihomoctl'))).toBe(false);
     const stale = JSON.stringify({
       id,
       action: 'bootstrap',
@@ -98,8 +98,8 @@ test('initial metadata honors the selected proxy and rejects malformed releases'
     draft: false,
     prerelease: false,
     assets: ['arm64', 'armv7'].map((arch) => ({
-      name: `mihomo-agent-linux-${arch}`,
-      browser_download_url: `https://github.com/imbytecat/mihomo-agent/releases/download/v9.8.7/mihomo-agent-linux-${arch}`,
+      name: `mihomoctl-linux-${arch}`,
+      browser_download_url: `https://github.com/imbytecat/mihomoctl/releases/download/v9.8.7/mihomoctl-linux-${arch}`,
       digest: 'sha256:' + 'a'.repeat(64),
     })),
   };
@@ -109,7 +109,7 @@ test('initial metadata honors the selected proxy and rejects malformed releases'
   expect(assets.arm64.url).toContain('/v9.8.7/');
   expect(assets.armv7.sha256).toBe('a'.repeat(64));
   expect((fetch.mock.calls[0]![0] as Request).url).toBe(
-    'https://api.github.com/repos/imbytecat/mihomo-agent/releases/latest',
+    'https://api.github.com/repos/imbytecat/mihomoctl/releases/latest',
   );
   expect(
     (fetch.mock.calls[0]![0] as Request).headers.has('Authorization'),
@@ -117,7 +117,7 @@ test('initial metadata honors the selected proxy and rejects malformed releases'
   fetch.mockResolvedValueOnce(Response.json(release));
   await latestAgentAssets('https://mirror.invalid/cache/');
   const proxied = fetch.mock.calls[1]![0] as Request;
-  expect(proxied.url).toBe('https://mirror.invalid/cache/https://api.github.com/repos/imbytecat/mihomo-agent/releases/latest');
+  expect(proxied.url).toBe('https://mirror.invalid/cache/https://api.github.com/repos/imbytecat/mihomoctl/releases/latest');
   expect(proxied.headers.has('Authorization')).toBe(false);
   fetch.mockResolvedValueOnce(Response.json({ ...release, prerelease: true }));
   await expect(latestAgentAssets()).rejects.toThrow('预期格式');
@@ -125,7 +125,7 @@ test('initial metadata honors the selected proxy and rejects malformed releases'
   fetch.mockResolvedValueOnce(Response.json(release));
   await expect(latestAgentAssets()).rejects.toThrow('SHA-256');
   release.assets[0]!.digest = 'sha256:' + 'a'.repeat(64);
-  release.assets[0]!.browser_download_url = 'https://proxy.invalid/agent';
+  release.assets[0]!.browser_download_url = 'https://proxy.invalid/mihomoctl';
   fetch.mockResolvedValueOnce(Response.json(release));
   await expect(latestAgentAssets()).rejects.toThrow('官方版本缺少');
 });

@@ -14,9 +14,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/imbytecat/mihomo-agent/internal/fsutil"
-	"github.com/imbytecat/mihomo-agent/internal/host"
-	"github.com/imbytecat/mihomo-agent/internal/redact"
+	"github.com/imbytecat/mihomoctl/internal/fsutil"
+	"github.com/imbytecat/mihomoctl/internal/host"
+	"github.com/imbytecat/mihomoctl/internal/redact"
 )
 
 //go:embed network_ufi.sh
@@ -301,7 +301,7 @@ func (a *UFIAdapter) Supervise() error {
 }
 
 func (a *UFIAdapter) BootLine() string {
-	return "'" + strings.ReplaceAll(a.path("agent"), "'", "'\\''") + "' task start --root '" + strings.ReplaceAll(a.Root, "'", "'\\''") + "' # mihomo-agent"
+	return "'" + strings.ReplaceAll(a.path("mihomoctl"), "'", "'\\''") + "' start --no-wait --root '" + strings.ReplaceAll(a.Root, "'", "'\\''") + "' # mihomoctl"
 }
 func (a *UFIAdapter) SetBoot(_ context.Context, enabled bool) error {
 	data, err := os.ReadFile(a.BootPath)

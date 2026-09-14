@@ -83,7 +83,7 @@ test('input validation and shell results preserve the trust boundary', async () 
 });
 
 test('network setup refuses foreign table and scopes interception to LAN', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'mihomo-agent-network-'));
+  const dir = await mkdtemp(join(tmpdir(), 'mihomoctl-network-'));
   temporary.push(dir);
   await writeFile(join(dir, 'interfaces'), 'wlan0 rndis0\n');
   for (const name of [
@@ -156,7 +156,7 @@ network_start`;
 });
 
 test('startup and missing-LAN states keep listener guards without capturing traffic', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'mihomo-agent-guards-'));
+  const dir = await mkdtemp(join(tmpdir(), 'mihomoctl-guards-'));
   temporary.push(dir);
   for (const name of [
     'routes',
@@ -208,19 +208,19 @@ test('startup and missing-LAN states keep listener guards without capturing traf
 });
 
 test('built plugin is one classic script with HTML-safe boundaries', async () => {
-  const output = await readFile('dist/mihomo-agent-ufi.js', 'utf8');
+  const output = await readFile('dist/mihomoctl-ufi.js', 'utf8');
   expect(output.startsWith('//<script>')).toBe(true);
   expect(output.trimEnd().endsWith('//</script>')).toBe(true);
   expect(output.match(/<\/script\s*>/gi)?.length).toBe(1);
   expect(output.length).toBeLessThan(5 * 1024 * 1024);
-  expect(await readdir('dist')).toEqual(['mihomo-agent-ufi.js']);
+  expect(await readdir('dist')).toEqual(['mihomoctl-ufi.js']);
   expect(output).not.toContain('mockDeviceState');
   expect(output).not.toContain('react_dom_client');
   expect(() => new Function(output)).not.toThrow();
 });
 
 test('auto LAN selection excludes cellular, VPN, upstream Wi-Fi and inactive links', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'mihomo-agent-auto-'));
+  const dir = await mkdtemp(join(tmpdir(), 'mihomoctl-auto-'));
   temporary.push(dir);
   const source = await networkFunctions();
   const addresses = `1: lo inet 127.0.0.1/8 scope host lo
@@ -266,7 +266,7 @@ resolve_interfaces`;
 });
 
 test('network refresh tracks LAN changes and waits without restarting core', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'mihomo-agent-sync-'));
+  const dir = await mkdtemp(join(tmpdir(), 'mihomoctl-sync-'));
   temporary.push(dir);
   const source = await networkFunctions();
   const script = `DIR=${quote(dir)}\n${source}
@@ -293,7 +293,7 @@ desired=wlan0; network_sync`;
 });
 
 test('listener readiness requires all four core-owned sockets, not foreign listeners', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'mihomo-agent-listeners-'));
+  const dir = await mkdtemp(join(tmpdir(), 'mihomoctl-listeners-'));
   temporary.push(dir);
   const procdir = join(dir, 'proc');
   await mkdir(join(procdir, '123/fd'), { recursive: true });
@@ -359,7 +359,7 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
   expect(lifecycleAction(emptyState)).toBe('install');
   expect(lifecycleAction(installed)).toBe('uninstall');
   expect(disabledReason('install', installed)).toContain('已安装');
-  expect(disabledReason('update-agent', installed)).toBe('');
+  expect(disabledReason('self-update', installed)).toBe('');
   expect(disabledReason('uninstall', null)).not.toBe('');
   expect(disabledReason('uninstall', installed, true)).not.toBe('');
   for (const action of ['start', 'restart', 'update', 'boot-on'] as const)
@@ -394,7 +394,7 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
     expect(() => parseState(JSON.stringify(incomplete))).toThrow('协议不匹配');
   }
   expect(() => parseState(JSON.stringify({ ...ready, controller: null }))).toThrow('协议不匹配');
-  expect(disabledReason('update-agent', null)).not.toBe('');
+  expect(disabledReason('self-update', null)).not.toBe('');
   expect(disabledReason('stop', null)).toBe('');
   expect(lifecycleAction({ ...emptyState, agent: true })).toBe('uninstall');
   expect(disabledReason('uninstall', { ...emptyState, agent: true })).toBe('');

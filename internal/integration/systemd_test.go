@@ -18,21 +18,21 @@ import (
 
 // Enabled only in an isolated Linux CI runner; never mutates the developer's host.
 func TestSystemdDeployment(t *testing.T) {
-	if os.Getenv("MIHOMO_SYSTEMD_TEST") != "1" {
+	if os.Getenv("MIHOMOCTL_SYSTEMD_TEST") != "1" {
 		t.Skip("requires isolated systemd CI runner")
 	}
 	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
 		t.Fatal("integration requires root on Linux")
 	}
-	agent, fixture := os.Getenv("MIHOMO_TEST_AGENT"), os.Getenv("MIHOMO_TEST_CORE")
+	agent, fixture := os.Getenv("MIHOMOCTL_TEST_EXECUTABLE"), os.Getenv("MIHOMOCTL_TEST_CORE")
 	if !filepath.IsAbs(agent) || !filepath.IsAbs(fixture) {
 		t.Fatal("explicit fixture paths required")
 	}
-	base, err := os.MkdirTemp("/var/lib", "mihomo-agent-ci-")
+	base, err := os.MkdirTemp("/var/lib", "mihomoctl-ci-")
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := filepath.Join(base, "${MIHOMO_UNSET} % path", "mihomo-agent")
+	root := filepath.Join(base, "${MIHOMOCTL_UNSET} % path", "mihomoctl")
 	core := filepath.Join(base, "core")
 	data, err := os.ReadFile(fixture)
 	if err != nil {
@@ -54,7 +54,7 @@ func TestSystemdDeployment(t *testing.T) {
 		}
 		release.Do(func() { close(hold) })
 		for _, id := range tasks {
-			_ = exec.Command("systemctl", "stop", "mihomo-agent-task-"+id+".scope").Run()
+			_ = exec.Command("systemctl", "stop", "mihomoctl-task-"+id+".scope").Run()
 		}
 		_ = exec.Command("systemctl", "stop", name).Run()
 		_ = exec.Command("systemctl", "disable", name).Run()
@@ -74,8 +74,8 @@ func TestSystemdDeployment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("install: %s %v", output, err)
 	}
-	executable = filepath.Join(root, "agent")
-	if output, err = run("", "inspect"); err != nil {
+	executable = filepath.Join(root, "mihomoctl")
+	if output, err = run("", "status"); err != nil {
 		t.Fatalf("inspect before core download: %s %v", output, err)
 	}
 	// Stand in for the verified download; the fixture only opens loopback ports.
@@ -94,7 +94,7 @@ func TestSystemdDeployment(t *testing.T) {
 	}))
 	defer func() { release.Do(func() { close(hold) }); server.Close() }()
 	payload, _ := json.Marshal(map[string]string{"url": server.URL + "/?token=private-fixture"})
-	output, err = run(string(payload), "task", "update", "--input", "-")
+	output, err = run(string(payload), "update", "--input", "-", "--no-wait")
 	if err != nil {
 		t.Fatalf("submit: %s %v", output, err)
 	}
@@ -103,7 +103,7 @@ func TestSystemdDeployment(t *testing.T) {
 		t.Fatal(err)
 	}
 	tasks = append(tasks, task.ID)
-	if output, err = exec.Command("systemctl", "show", "--property=ActiveState", "--value", "mihomo-agent-task-"+task.ID+".scope").CombinedOutput(); err != nil || strings.TrimSpace(string(output)) != "active" {
+	if output, err = exec.Command("systemctl", "show", "--property=ActiveState", "--value", "mihomoctl-task-"+task.ID+".scope").CombinedOutput(); err != nil || strings.TrimSpace(string(output)) != "active" {
 		t.Fatalf("task did not survive its caller: %s %v", output, err)
 	}
 	release.Do(func() { close(hold) })
@@ -124,10 +124,10 @@ func TestSystemdDeployment(t *testing.T) {
 	if task.State != "succeeded" {
 		t.Fatal("detached task did not finish")
 	}
-	if output, err = run("", "task", "start", "--wait"); err != nil {
+	if output, err = run("", "start"); err != nil {
 		t.Fatalf("start: %s %v", output, err)
 	}
-	output, err = run("", "inspect")
+	output, err = run("", "status")
 	if err != nil {
 		t.Fatalf("inspect: %s %v", output, err)
 	}
@@ -144,13 +144,13 @@ func TestSystemdDeployment(t *testing.T) {
 		t.Fatal(err)
 	}
 	source.Store("proxies: []\nfixture-exit: true\n")
-	if output, err = run("{}", "task", "update", "--input", "-", "--wait"); err == nil {
+	if output, err = run("{}", "update", "--input", "-"); err == nil {
 		t.Fatalf("bad runtime config accepted: %s", output)
 	}
 	if current, _ := os.Readlink(filepath.Join(root, "runtime/current")); current != previous {
 		t.Fatal("rollback lost previous config")
 	}
-	output, err = run("", "inspect")
+	output, err = run("", "status")
 	if err != nil {
 		t.Fatal(string(output), err)
 	}
@@ -159,7 +159,7 @@ func TestSystemdDeployment(t *testing.T) {
 		t.Fatal("rollback did not restore service")
 	}
 	for _, action := range []string{"boot-on", "boot-off", "restart"} {
-		if output, err = run("", "task", action, "--wait"); err != nil {
+		if output, err = run("", action); err != nil {
 			t.Fatalf("%s: %s %v", action, output, err)
 		}
 		if action == "boot-on" {
@@ -174,7 +174,7 @@ func TestSystemdDeployment(t *testing.T) {
 			}
 		}
 	}
-	if output, err = run("", "task", "uninstall", "--wait"); err != nil {
+	if output, err = run("", "uninstall"); err != nil {
 		t.Fatalf("uninstall: %s %v", output, err)
 	}
 	if _, err = os.Stat(root); !os.IsNotExist(err) {

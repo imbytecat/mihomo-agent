@@ -10,7 +10,7 @@ test('install, encrypted subscription, runtime, autostart and uninstall', async 
   await expect.poll(() => evaluate('mockDeviceState.service')).toBeTruthy();
   await idle();
   expect(evaluate('mockRequests.filter(u => u.includes("api.github.com"))')).toEqual([
-    'https://before-install.example/https://api.github.com/repos/imbytecat/mihomo-agent/releases/latest',
+    'https://before-install.example/https://api.github.com/repos/imbytecat/mihomoctl/releases/latest',
   ]);
   await expect
     .element(app.getByCSS('[data-setting=githubProxy]'))
@@ -142,7 +142,7 @@ test('Linux exposes shared capabilities without claiming network capture', async
     .element(app.getByCSS('body'))
     .toMatchTextContent('网络由系统管理');
   await expect
-    .element(app.getByCSS('[data-action=update-agent]'))
+    .element(app.getByCSS('[data-action=self-update]'))
     .toBeDisabled();
   await expect
     .element(app.getByCSS('[data-group=maintenance] [data-action=download]'))
@@ -154,7 +154,7 @@ test('Linux exposes shared capabilities without claiming network capture', async
   await app.getByCSS('[data-action=stop]').click();
   await idle();
   await expect
-    .element(app.getByCSS('[data-action=update-agent]'))
+    .element(app.getByCSS('[data-action=self-update]'))
     .toBeEnabled();
   await expect
     .element(app.getByCSS('[data-group=maintenance] [data-action=download]'))

@@ -45,7 +45,7 @@ func (r Request) validate() error {
 	p := r.Params
 	allowProxy, allowInterfaces, allowURL, allowController := false, false, false, false
 	switch r.Action {
-	case "install", "download", "download-dashboard", "update-agent":
+	case "install", "download", "download-dashboard", "self-update":
 		allowProxy = true
 	case "save-github-proxy":
 		allowProxy = true

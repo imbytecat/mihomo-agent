@@ -112,9 +112,9 @@ function advance() {
           intent.params.githubProxy ?? state.settings.githubProxy;
         job.result = 'Mihomo 服务已安装';
         break;
-      case 'update-agent':
+      case 'self-update':
         state.version = 'v9.8.7';
-        job.result = 'Mihomo Agent 已是最新版本';
+        job.result = 'mihomoctl 已是最新版本';
         break;
       case 'save-github-proxy':
         state.settings.githubProxy =
@@ -256,8 +256,8 @@ Object.assign(globalThis, {
       );
       if (inner.includes('ufi-uninstall-status'))
         result = state.agent ? state.task : null;
-      else if (inner.includes(' inspect')) result = state.agent ? state : null;
-      else if (args[0] === '/data/mihomo-agent/agent') {
+      else if (inner.includes('/data/mihomoctl/mihomoctl status')) result = state.agent ? state : null;
+      else if (args[0] === '/data/mihomoctl/mihomoctl') {
         switch (args[1]) {
           case 'submit': {
             const uploaded = uploads.find((x) => x.name === args[2]);
@@ -280,8 +280,7 @@ Object.assign(globalThis, {
           case 'job':
             result = jobs[args[2]!];
             break;
-          case 'task':
-            if (args[2] !== 'stop') throw new Error('未知操作');
+          case 'stop':
             result = submit({
               id: crypto.randomUUID().replaceAll('-', ''),
               action: 'stop',
@@ -291,7 +290,7 @@ Object.assign(globalThis, {
           case 'check-updates':
             state.updates = updatesSchema.parse({
               checkedAt: new Date().toISOString(),
-              agent: {
+              self: {
                 current: state.version,
                 latest: 'v9.8.7',
                 state: flags.mockUpdateFailure
@@ -372,8 +371,8 @@ const mockFetch = async (
         : input.url;
   requests.push(url);
   if ([
-    'https://api.github.com/repos/imbytecat/mihomo-agent/releases/latest',
-    'https://before-install.example/https://api.github.com/repos/imbytecat/mihomo-agent/releases/latest',
+    'https://api.github.com/repos/imbytecat/mihomoctl/releases/latest',
+    'https://before-install.example/https://api.github.com/repos/imbytecat/mihomoctl/releases/latest',
   ].includes(url)) {
     // Credential behavior is tested in Chromium; Bun does not model browser cookies.
     if ((input instanceof Request ? input.credentials : init?.credentials) !== 'omit')
@@ -383,8 +382,8 @@ const mockFetch = async (
       draft: false,
       prerelease: false,
       assets: ['arm64', 'armv7'].map((arch) => ({
-        name: `mihomo-agent-linux-${arch}`,
-        browser_download_url: `https://github.com/imbytecat/mihomo-agent/releases/download/v9.8.7/mihomo-agent-linux-${arch}`,
+        name: `mihomoctl-linux-${arch}`,
+        browser_download_url: `https://github.com/imbytecat/mihomoctl/releases/download/v9.8.7/mihomoctl-linux-${arch}`,
         digest: 'sha256:' + 'a'.repeat(64),
       })),
     });

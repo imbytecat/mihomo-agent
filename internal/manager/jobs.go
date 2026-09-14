@@ -16,8 +16,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/imbytecat/mihomo-agent/internal/redact"
-	"github.com/imbytecat/mihomo-agent/internal/storage"
+	"github.com/imbytecat/mihomoctl/internal/redact"
+	"github.com/imbytecat/mihomoctl/internal/storage"
 	"golang.org/x/crypto/nacl/box"
 )
 

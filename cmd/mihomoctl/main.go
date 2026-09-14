@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"os"
 
-	"github.com/imbytecat/mihomo-agent/internal/cli"
-	"github.com/imbytecat/mihomo-agent/internal/redact"
+	"github.com/imbytecat/mihomoctl/internal/cli"
+	"github.com/imbytecat/mihomoctl/internal/redact"
 )
 
 var version = "dev"

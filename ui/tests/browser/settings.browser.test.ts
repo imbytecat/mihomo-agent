@@ -13,11 +13,11 @@ test('autosave preserves newer drafts and validates download settings', async ()
     .not.toBeInTheDocument();
   await expect
     .element(
-      app.getByCSS('[data-group=maintenance] [data-action=update-agent]'),
+      app.getByCSS('[data-group=maintenance] [data-action=self-update]'),
     )
     .toBeInTheDocument();
   await expect
-    .element(app.getByCSS('[data-action=update-agent]'))
+    .element(app.getByCSS('[data-action=self-update]'))
     .toHaveTextContent('更新');
   await expect
     .element(app.getByCSS('[data-group=maintenance] [data-action=download]'))
@@ -25,11 +25,11 @@ test('autosave preserves newer drafts and validates download settings', async ()
   await expect
     .element(app.getByCSS('[data-action=download-dashboard]'))
     .toHaveTextContent('安装');
-  await app.getByCSS('[data-action=update-agent]').click();
+  await app.getByCSS('[data-action=self-update]').click();
   await expect
     .poll(() =>
       evaluate(
-        'mockDeviceState.task?.action === "update-agent" && mockDeviceState.task?.state === "succeeded"',
+        'mockDeviceState.task?.action === "self-update" && mockDeviceState.task?.state === "succeeded"',
       ),
     )
     .toBeTruthy();
@@ -208,7 +208,7 @@ test('update checks show component results without submitting mutations or clear
   await app.getByRole('button', { name: '检查更新', exact: true }).click();
   await idle();
   await expect
-    .element(app.getByCSS('[data-update=agent]'))
+    .element(app.getByCSS('[data-update=self]'))
     .toHaveTextContent('可更新至 v9.8.7');
   await expect
     .element(app.getByCSS('[data-update=core]'))
@@ -230,7 +230,7 @@ test('update checks show component results without submitting mutations or clear
   await app.getByRole('button', { name: '检查更新', exact: true }).click();
   await idle();
   await expect
-    .element(app.getByCSS('[data-update=agent]'))
+    .element(app.getByCSS('[data-update=self]'))
     .toHaveTextContent('检查失败');
   await expect
     .element(app.getByCSS('[data-update=core]'))
@@ -249,13 +249,13 @@ test('update checks show component results without submitting mutations or clear
   await idle();
   await app.getByCSS('[data-settings] > summary').click();
   await expect
-    .element(app.getByCSS('[data-update=agent]'))
+    .element(app.getByCSS('[data-update=self]'))
     .toHaveTextContent('可更新至 v9.8.7');
   expect(evaluate('mockCommands.some(c => c.includes("check-updates"))')).toBe(false);
-  await app.getByCSS('[data-action=update-agent]').click();
+  await app.getByCSS('[data-action=self-update]').click();
   await idle();
   await expect
-    .element(app.getByCSS('[data-update=agent]'))
+    .element(app.getByCSS('[data-update=self]'))
     .not.toBeInTheDocument();
   await expect
     .element(app.getByCSS('[data-update=core]'))

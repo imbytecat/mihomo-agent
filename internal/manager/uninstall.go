@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/imbytecat/mihomo-agent/internal/storage"
+	"github.com/imbytecat/mihomoctl/internal/storage"
 )
 
 func (a *Manager) uninstall(phase func(string)) error {
-	if filepath.Base(a.Root) != "mihomo-agent" {
+	if filepath.Base(a.Root) != "mihomoctl" {
 		return errors.New("卸载目录无效")
 	}
 	if err := a.requireIdentity(); err != nil {

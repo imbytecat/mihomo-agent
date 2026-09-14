@@ -69,8 +69,8 @@ export async function waitTask(
 }
 export function describeTask(job: DeviceJob) {
   const names: Record<DeviceJob['action'], string> = {
-    'update-agent': '更新 Mihomo Agent',
-    bootstrap: '安装 Mihomo Agent',
+    'self-update': '更新 mihomoctl',
+    bootstrap: '安装 mihomoctl',
     install: '安装 Mihomo 服务',
     download: '安装 / 更新 Mihomo 内核',
     update: '更新订阅',

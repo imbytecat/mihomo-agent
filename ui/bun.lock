@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "mihomo-agent",
+      "name": "mihomoctl",
       "dependencies": {
         "@base-ui/react": "^1.8.0",
         "@noble/hashes": "^2.4.0",

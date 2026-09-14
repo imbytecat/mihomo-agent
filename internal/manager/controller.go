@@ -8,7 +8,7 @@ import (
 	"errors"
 	"os"
 
-	"github.com/imbytecat/mihomo-agent/internal/storage"
+	"github.com/imbytecat/mihomoctl/internal/storage"
 
 	"golang.org/x/crypto/nacl/box"
 )

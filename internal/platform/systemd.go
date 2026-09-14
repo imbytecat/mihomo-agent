@@ -13,7 +13,7 @@ import (
 
 	systemdbus "github.com/coreos/go-systemd/v22/dbus"
 	"github.com/godbus/dbus/v5"
-	"github.com/imbytecat/mihomo-agent/internal/host"
+	"github.com/imbytecat/mihomoctl/internal/host"
 )
 
 type Bus interface {
@@ -121,7 +121,7 @@ func (a *SystemdAdapter) properties(ctx context.Context, bus Bus) (map[string]an
 		return nil, errors.New("systemd unit 不属于本安装")
 	}
 	if drops, ok := p["DropInPaths"].([]string); !ok || len(drops) != 0 {
-		return nil, errors.New("Agent 托管的 systemd unit 不接受 drop-in")
+		return nil, errors.New("mihomoctl 托管的 systemd unit 不接受 drop-in")
 	}
 	if err := a.checkUnitFile(); err != nil {
 		return nil, err
@@ -254,8 +254,8 @@ func (a *SystemdAdapter) AttachTask(ctx context.Context, pid int, id string) err
 	}
 	defer bus.Close()
 	done := make(chan string, 1)
-	_, err = bus.StartTransientUnitContext(ctx, "mihomo-agent-task-"+id+".scope", "fail", []systemdbus.Property{
-		systemdbus.PropDescription("Mihomo Agent task"), systemdbus.PropSlice("system.slice"),
+	_, err = bus.StartTransientUnitContext(ctx, "mihomoctl-task-"+id+".scope", "fail", []systemdbus.Property{
+		systemdbus.PropDescription("mihomoctl task"), systemdbus.PropSlice("system.slice"),
 		{Name: "PIDs", Value: dbus.MakeVariant([]uint32{uint32(pid)})},
 		{Name: "CollectMode", Value: dbus.MakeVariant("inactive-or-failed")},
 	}, done)

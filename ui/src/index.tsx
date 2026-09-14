@@ -4,16 +4,16 @@ import styleText from './style.css?inline';
 
 function mount() {
   const anchor = document.querySelector('.functions-container');
-  if (!anchor || document.getElementById('mihomo-agent')) return;
+  if (!anchor || document.getElementById('mihomoctl')) return;
   const style = document.createElement('style');
-  style.id = 'mihomo-agent-style';
+  style.id = 'mihomoctl-style';
   style.textContent = styleText;
   document.head.append(style);
   const container = document.createElement('div');
-  container.id = 'mihomo-agent';
+  container.id = 'mihomoctl';
   anchor.after(container);
   const portals = document.createElement('div');
-  portals.id = 'mihomo-agent-portals';
+  portals.id = 'mihomoctl-portals';
   document.body.append(portals);
   createRoot(container).render(<Gateway container={portals} />);
 }

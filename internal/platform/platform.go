@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/imbytecat/mihomo-agent/internal/host"
-	"github.com/imbytecat/mihomo-agent/internal/storage"
+	"github.com/imbytecat/mihomoctl/internal/host"
+	"github.com/imbytecat/mihomoctl/internal/storage"
 )
 
 const UFI = "ufi"
@@ -74,9 +74,9 @@ func DefaultKind() string {
 }
 func DefaultRoot(kind string) string {
 	if kind == UFI {
-		return "/data/mihomo-agent"
+		return "/data/mihomoctl"
 	}
-	return "/var/lib/mihomo-agent"
+	return "/var/lib/mihomoctl"
 }
 
 var unitName = regexp.MustCompile(`^[A-Za-z0-9_.@-]+[.]service$`)
@@ -126,7 +126,7 @@ func Load(root string, requested Config) (Config, error) {
 	}
 	if requested.Kind == Linux {
 		if requested.Unit == "" {
-			requested.Unit = "mihomo-agent-core.service"
+			requested.Unit = "mihomoctl-core.service"
 		}
 		if requested.ListenAddress == "" {
 			requested.ListenAddress = "127.0.0.1"

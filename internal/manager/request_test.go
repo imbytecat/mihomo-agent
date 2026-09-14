@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/imbytecat/mihomo-agent/internal/platform"
-	"github.com/imbytecat/mihomo-agent/internal/storage"
+	"github.com/imbytecat/mihomoctl/internal/platform"
+	"github.com/imbytecat/mihomoctl/internal/storage"
 	"go.yaml.in/yaml/v3"
 )
 

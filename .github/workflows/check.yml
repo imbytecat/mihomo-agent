@@ -28,7 +28,7 @@ jobs:
       - name: Verify real systemd lifecycle on the isolated runner
         run: just test-systemd
         env:
-          MIHOMO_SYSTEMD_TEST: '1'
+          MIHOMOCTL_SYSTEMD_TEST: '1'
       - run: just browser-install
       - run: just test-ui
       - name: Upload browser failure evidence
@@ -41,6 +41,6 @@ jobs:
           retention-days: 7
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: mihomo-agent-ufi
-          path: ui/dist/mihomo-agent-ufi.js
+          name: mihomoctl-ufi
+          path: ui/dist/mihomoctl-ufi.js
           if-no-files-found: error

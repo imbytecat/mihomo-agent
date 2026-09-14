@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/imbytecat/mihomo-agent/internal/fsutil"
+	"github.com/imbytecat/mihomoctl/internal/fsutil"
 
 	"github.com/google/renameio/v2"
 )

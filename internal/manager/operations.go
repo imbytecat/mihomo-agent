@@ -13,9 +13,9 @@ import (
 	"runtime"
 	"strconv"
 
-	"github.com/imbytecat/mihomo-agent/internal/fsutil"
-	"github.com/imbytecat/mihomo-agent/internal/platform"
-	"github.com/imbytecat/mihomo-agent/internal/storage"
+	"github.com/imbytecat/mihomoctl/internal/fsutil"
+	"github.com/imbytecat/mihomoctl/internal/platform"
+	"github.com/imbytecat/mihomoctl/internal/storage"
 )
 
 func (a *Manager) Install(githubProxy string) error {
@@ -143,7 +143,7 @@ func (a *Manager) execute(ctx context.Context, request Request, phase func(strin
 		return a.updateConfig(ctx, request, work, phase)
 	case "save-controller":
 		return a.saveController(ctx, request, phase)
-	case "update-agent":
+	case "self-update":
 		if err := a.applyDownloadSettings(params.GitHubProxy); err != nil {
 			return "", err
 		}

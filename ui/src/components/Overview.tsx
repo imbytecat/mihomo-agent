@@ -25,13 +25,11 @@ export function stageOf(model: GatewayModel) {
       ? 'agent'
       : !device.service
         ? 'service'
-        : !device.controller
-          ? 'upgrade'
-          : !device.core
-            ? 'core'
-            : !device.config
-              ? 'subscription'
-              : 'ready';
+        : !device.core
+          ? 'core'
+          : !device.config
+            ? 'subscription'
+            : 'ready';
 }
 
 export function runtimeTitle(model: GatewayModel) {
@@ -149,11 +147,9 @@ export function Overview({
                 ? '添加订阅后即可启动'
                 : stage === 'agent' || stage === 'service'
                   ? '请先安装 Mihomo 服务'
-                  : stage === 'upgrade'
-                    ? '请先更新 Mihomo Agent'
-                    : device.running
-                      ? '可在更多菜单中查看日志'
-                      : '随时可以启动'}
+                  : device.running
+                    ? '可在更多菜单中查看日志'
+                    : '随时可以启动'}
       </p>
       {stage === 'unknown' ? (
         <ActionButton
@@ -176,14 +172,6 @@ export function Overview({
           model={model}
           action="install"
           label="安装 Mihomo 服务"
-          icon={Download}
-          primary
-        />
-      ) : stage === 'upgrade' ? (
-        <ActionButton
-          model={model}
-          action="update-agent"
-          label="更新 Mihomo Agent"
           icon={Download}
           primary
         />

@@ -39,7 +39,7 @@ jobs:
       - name: Verify real systemd lifecycle on the isolated runner
         run: just test-systemd
         env:
-          MIHOMO_SYSTEMD_TEST: '1'
+          MIHOMOCTL_SYSTEMD_TEST: '1'
       - run: just browser-install
       - run: just test-ui
       - name: Upload browser failure evidence
@@ -58,7 +58,7 @@ jobs:
         run: |
           verify_dir=$(mktemp -d)
           trap 'rm -rf "$verify_dir"' EXIT
-          release_url="https://github.com/imbytecat/mihomo-agent/releases/download/$RELEASE_TAG"
+          release_url="https://github.com/imbytecat/mihomoctl/releases/download/$RELEASE_TAG"
           curl --fail --silent --show-error --location --retry 3 "$release_url/SHA256SUMS" -o "$verify_dir/SHA256SUMS"
           cmp "$verify_dir/SHA256SUMS" .release/SHA256SUMS
           while read -r _digest name; do

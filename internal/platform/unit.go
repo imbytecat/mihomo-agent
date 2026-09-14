@@ -18,7 +18,7 @@ func (a *SystemdAdapter) Unit() (string, error) {
 	escape := func(value string) string { return strings.ReplaceAll(value, "%", "%%") }
 	// The ":" command prefix keeps ${...} in paths literal; % still needs escaping.
 	options := []*unit.UnitOption{
-		unit.NewUnitOption("Unit", "Description", "Mihomo with Agent-managed configuration"),
+		unit.NewUnitOption("Unit", "Description", "Mihomo managed by mihomoctl"),
 		unit.NewUnitOption("Unit", "Wants", "network-online.target"),
 		unit.NewUnitOption("Unit", "After", "network-online.target"),
 		unit.NewUnitOption("Unit", "ConditionPathExists", escape(a.runtime("current", "config.yaml"))),

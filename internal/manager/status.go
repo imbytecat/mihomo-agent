@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/imbytecat/mihomo-agent/internal/platform"
+	"github.com/imbytecat/mihomoctl/internal/platform"
 )
 
 type Status struct {

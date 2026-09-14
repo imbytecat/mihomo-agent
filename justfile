@@ -7,7 +7,7 @@ default:
 
 # Build the native CLI without frontend dependencies.
 build:
-    CGO_ENABLED=0 go build -o .build/mihomo-agent ./cmd/mihomo-agent
+    CGO_ENABLED=0 go build -o .build/mihomoctl ./cmd/mihomoctl
 
 # Install frontend and browser-test dependencies from the lockfile.
 deps:
@@ -53,13 +53,13 @@ browser-install: deps
 test-ui: deps
     bun run --cwd ui test:ui
 
-# Run only in isolated Linux CI with MIHOMO_SYSTEMD_TEST=1.
+# Run only in isolated Linux CI with MIHOMOCTL_SYSTEMD_TEST=1.
 test-systemd:
-    test "${MIHOMO_SYSTEMD_TEST:-}" = 1 && test "$(uname -s)" = Linux
-    go build -o .build/mihomo-agent-ci ./cmd/mihomo-agent
+    test "${MIHOMOCTL_SYSTEMD_TEST:-}" = 1 && test "$(uname -s)" = Linux
+    go build -o .build/mihomoctl-ci ./cmd/mihomoctl
     go build -o .build/mihomo-core-fixture ./internal/integration/testdata/core
     go test -c -o .build/systemd-integration ./internal/integration
-    sudo env MIHOMO_SYSTEMD_TEST=1 MIHOMO_TEST_AGENT="$PWD/.build/mihomo-agent-ci" MIHOMO_TEST_CORE="$PWD/.build/mihomo-core-fixture" .build/systemd-integration -test.v -test.timeout=4m
+    sudo env MIHOMOCTL_SYSTEMD_TEST=1 MIHOMOCTL_TEST_EXECUTABLE="$PWD/.build/mihomoctl-ci" MIHOMOCTL_TEST_CORE="$PWD/.build/mihomo-core-fixture" .build/systemd-integration -test.v -test.timeout=4m
 
 # Generate typed SQLite queries after editing schema.sql or queries.sql.
 generate:

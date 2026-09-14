@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/imbytecat/mihomo-agent/internal/platform"
+	"github.com/imbytecat/mihomoctl/internal/platform"
 )
 
 type releasePlatform struct {
@@ -121,7 +121,7 @@ func TestReleaseVersionRejectsProductPrefixes(t *testing.T) {
 func TestAgentUpdateUsesSemverAndVerifiedGitHubAsset(t *testing.T) {
 	a := testAgent(t)
 	a.Version = "v1.10.0"
-	_ = os.WriteFile(a.path("agent"), []byte("previous agent"), 0700)
+	_ = os.WriteFile(a.path("mihomoctl"), []byte("previous agent"), 0700)
 	payload := []byte("new agent fixture")
 	sum := sha256.Sum256(payload)
 	tag, digest, downloads, probes := "v1.9.9", hex.EncodeToString(sum[:]), 0, 0
@@ -129,7 +129,7 @@ func TestAgentUpdateUsesSemverAndVerifiedGitHubAsset(t *testing.T) {
 	if arch == "arm" {
 		arch = "armv7"
 	}
-	name := "mihomo-agent-linux-" + arch
+	name := "mihomoctl-linux-" + arch
 	if err := a.applyDownloadSettings(ptr("https://mirror.invalid/cache")); err != nil {
 		t.Fatal(err)
 	}
@@ -138,8 +138,8 @@ func TestAgentUpdateUsesSemverAndVerifiedGitHubAsset(t *testing.T) {
 			http.Error(w, "direct GitHub blocked", 403)
 			return
 		}
-		if r.URL.Path == "/cache/https://api.github.com/repos/imbytecat/mihomo-agent/releases/latest" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"tag_name": tag, "draft": false, "prerelease": false, "assets": []map[string]string{{"name": name, "browser_download_url": "https://github.com/imbytecat/mihomo-agent/releases/download/" + tag + "/" + name, "digest": "sha256:" + digest}}})
+		if r.URL.Path == "/cache/https://api.github.com/repos/imbytecat/mihomoctl/releases/latest" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"tag_name": tag, "draft": false, "prerelease": false, "assets": []map[string]string{{"name": name, "browser_download_url": "https://github.com/imbytecat/mihomoctl/releases/download/" + tag + "/" + name, "digest": "sha256:" + digest}}})
 		} else {
 			downloads++
 			_, _ = w.Write(payload)
@@ -163,14 +163,14 @@ func TestAgentUpdateUsesSemverAndVerifiedGitHubAsset(t *testing.T) {
 	if _, err := a.updateAgent(context.Background(), t.TempDir(), func(string) {}); err == nil || probes != 0 {
 		t.Fatal("executed unverified update")
 	}
-	if data, _ := os.ReadFile(a.path("agent")); string(data) != "previous agent" {
+	if data, _ := os.ReadFile(a.path("mihomoctl")); string(data) != "previous agent" {
 		t.Fatal("changed executable on failure")
 	}
 	digest = hex.EncodeToString(sum[:])
 	if _, err := a.updateAgent(context.Background(), t.TempDir(), func(string) {}); err != nil {
 		t.Fatal(err)
 	}
-	if data, _ := os.ReadFile(a.path("agent")); string(data) != string(payload) || probes != 1 {
+	if data, _ := os.ReadFile(a.path("mihomoctl")); string(data) != string(payload) || probes != 1 {
 		t.Fatal("verified update not installed")
 	}
 }

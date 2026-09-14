@@ -1,5 +1,5 @@
 {
-  "name": "mihomo-agent-ufi",
+  "name": "mihomoctl-ufi",
   "private": true,
   "type": "module",
   "scripts": {

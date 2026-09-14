@@ -20,12 +20,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imbytecat/mihomo-agent/internal/fsutil"
-	"github.com/imbytecat/mihomo-agent/internal/host"
-	"github.com/imbytecat/mihomo-agent/internal/platform"
-	"github.com/imbytecat/mihomo-agent/internal/redact"
-	"github.com/imbytecat/mihomo-agent/internal/storage"
-	ufitransport "github.com/imbytecat/mihomo-agent/internal/transport/ufi"
+	"github.com/imbytecat/mihomoctl/internal/fsutil"
+	"github.com/imbytecat/mihomoctl/internal/host"
+	"github.com/imbytecat/mihomoctl/internal/platform"
+	"github.com/imbytecat/mihomoctl/internal/redact"
+	"github.com/imbytecat/mihomoctl/internal/storage"
+	ufitransport "github.com/imbytecat/mihomoctl/internal/transport/ufi"
 
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/crypto/nacl/box"
@@ -68,7 +68,7 @@ func TestMain(m *testing.M) {
 func testAgent(t *testing.T) *Manager {
 	t.Helper()
 	base := t.TempDir()
-	root := filepath.Join(base, "mihomo-agent")
+	root := filepath.Join(base, "mihomoctl")
 	uploads := filepath.Join(base, "uploads")
 	if err := os.Mkdir(uploads, 0700); err != nil {
 		t.Fatal(err)
@@ -184,7 +184,7 @@ func TestTaskRetainsLockAfterSubmitterReturns(t *testing.T) {
 }
 
 func TestUnmanagedDataAndInvalidRequestsArePreserved(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "mihomo-agent")
+	root := filepath.Join(t.TempDir(), "mihomoctl")
 	_ = os.Mkdir(root, 0700)
 	_ = os.WriteFile(filepath.Join(root, "keep"), []byte("data"), 0600)
 	a, _ := testManager(root)
@@ -377,7 +377,7 @@ func TestUninstallPreservesRuntimeOnCleanupFailure(t *testing.T) {
 func TestDetachedUninstallDeletesAllOwnedFiles(t *testing.T) {
 	a := testAgent(t)
 	_ = fsutil.AtomicWrite(a.path("tasks", randomID(), "work", "config.yaml"), []byte("staged config"), 0600)
-	_ = fsutil.AtomicWrite(filepath.Join(a.Root+"-bootstrap", "jobs", "old", "agent"), []byte("staging"), 0600)
+	_ = fsutil.AtomicWrite(filepath.Join(a.Root+"-bootstrap", "jobs", "old", "mihomoctl"), []byte("staging"), 0600)
 	_ = fsutil.AtomicWrite(a.path("runtime", "core.log"), []byte("core log"), 0600)
 	_ = fsutil.AtomicWrite(a.path("extra-file"), []byte("owned data"), 0600)
 	_ = fsutil.AtomicWrite(a.Platform.(*platform.UFIAdapter).BootPath, []byte("other-plugin start\n"+a.Platform.(*platform.UFIAdapter).BootLine()+"\n"), 0644)
@@ -461,7 +461,7 @@ var ufiPolicy = platform.Policy{Bind: "*", DNS: "0.0.0.0", Controller: "0.0.0.0"
 func ptr[T any](value T) *T       { return &value }
 func uploadDir(a *Manager) string { return filepath.Join(filepath.Dir(a.Root), "uploads") }
 func testManager(root string) (*Manager, error) {
-	p := platform.NewUFI(platform.Environment{Root: root, Executable: filepath.Join(root, "agent")})
+	p := platform.NewUFI(platform.Environment{Root: root, Executable: filepath.Join(root, "mihomoctl")})
 	p.BootPath = filepath.Join(filepath.Dir(root), "boot.sh")
 	a, err := New(root, "test", p)
 	if err != nil {

@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/imbytecat/mihomo-agent/internal/fsutil"
+	"github.com/imbytecat/mihomoctl/internal/fsutil"
 )
 
 func (a *SystemdAdapter) unitPath() string { return a.path(a.deployment.Unit) }
@@ -18,7 +18,7 @@ func (a *SystemdAdapter) checkUnitFile() error {
 		return err
 	}
 	if !info.Mode().IsRegular() {
-		return errors.New("Agent unit 文件必须是普通文件")
+		return errors.New("mihomoctl unit 文件必须是普通文件")
 	}
 	want, err := a.Unit()
 	if err != nil {
@@ -29,7 +29,7 @@ func (a *SystemdAdapter) checkUnitFile() error {
 		return err
 	}
 	if string(data) != want {
-		return errors.New("Agent unit 文件已被外部修改")
+		return errors.New("mihomoctl unit 文件已被外部修改")
 	}
 	return nil
 }
@@ -70,7 +70,7 @@ func (a *SystemdAdapter) Prepare() error {
 		return err
 	}
 	if p["LoadState"] != "loaded" {
-		return errors.New("Agent systemd unit 未加载")
+		return errors.New("mihomoctl systemd unit 未加载")
 	}
 	return nil
 }

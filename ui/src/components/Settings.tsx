@@ -87,11 +87,6 @@ function PanelSettings({ model }: { model: GatewayModel }) {
               : '已保存'}
         </span>
       </h3>
-      {!device?.controller && (
-        <div className="ufi:px-4">
-          <Hint>请先更新 Mihomo Agent</Hint>
-        </div>
-      )}
       <fieldset
         hidden={!device?.controller}
         disabled={!!busy || !device?.controller || device.locked}
@@ -242,11 +237,11 @@ function Installation({
       {(
         [
           [
-            'agent',
-            'Mihomo Agent',
+            'self',
+            'mihomoctl',
             device?.agent,
             device?.version,
-            'update-agent',
+            'self-update',
           ],
           [
             'core',
@@ -307,7 +302,7 @@ function Installation({
             <ActionButton
               model={model}
               action={
-                action === 'update-agent' && installed === false
+                action === 'self-update' && installed === false
                   ? 'install'
                   : action
               }

@@ -29,9 +29,9 @@ const exec = promisify(execFile);
 
 test('sealed browser intents run in a detached native worker; failed updates preserve config', async () => {
   const folder = await mkdtemp(join(tmpdir(), 'ufi-native-'));
-  const root = join(folder, 'mihomo-agent'),
+  const root = join(folder, 'mihomoctl'),
     uploads = join(folder, 'uploads'),
-    binary = join(folder, 'agent');
+    binary = join(folder, 'mihomoctl-installer');
   await mkdir(uploads);
   let source =
     'proxies: []\nrules: ["MATCH,DIRECT"]\nexternal-controller: 127.0.0.1:9999\n';
@@ -46,7 +46,7 @@ test('sealed browser intents run in a detached native worker; failed updates pre
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   try {
-    await exec('go', ['build', '-o', binary, './cmd/mihomo-agent'], {
+    await exec('go', ['build', '-o', binary, './cmd/mihomoctl'], {
       cwd: '..',
       env: { ...process.env, CGO_ENABLED: '0' },
       timeout: 45_000,
@@ -69,7 +69,7 @@ test('sealed browser intents run in a detached native worker; failed updates pre
     }
     await cli('install');
     const inspect = () =>
-      cli('inspect').then((value) => parseState(JSON.stringify(value)));
+      cli('status').then((value) => parseState(JSON.stringify(value)));
     const initial = await inspect();
     expect(initial.service).toBe(true);
     expect(initial.publicKey).toHaveLength(44);
@@ -179,13 +179,11 @@ test('sealed browser intents run in a detached native worker; failed updates pre
             [
               '--root',
               root,
-              'task',
               'update',
               '--id',
               localID,
               '--input',
               '-',
-              '--wait',
             ],
             { timeout: 10_000 },
             (error, stdout) => {

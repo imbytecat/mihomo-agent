@@ -11,7 +11,7 @@ import (
 
 	systemdbus "github.com/coreos/go-systemd/v22/dbus"
 	"github.com/coreos/go-systemd/v22/unit"
-	"github.com/imbytecat/mihomo-agent/internal/fsutil"
+	"github.com/imbytecat/mihomoctl/internal/fsutil"
 )
 
 type fakeBus struct {
@@ -101,8 +101,8 @@ func (b *fakeBus) ReloadContext(context.Context) error {
 
 func systemdFixture(t *testing.T) (*SystemdAdapter, *fakeBus) {
 	t.Helper()
-	root := filepath.Join(t.TempDir(), "mihomo-agent")
-	config := Config{Kind: Linux, Unit: "mihomo-agent-core.service", ListenAddress: "127.0.0.1"}
+	root := filepath.Join(t.TempDir(), "mihomoctl")
+	config := Config{Kind: Linux, Unit: "mihomoctl-core.service", ListenAddress: "127.0.0.1"}
 	p := NewSystemd(config, Environment{Root: root})
 	core := p.CorePath()
 	if err := fsutil.AtomicWrite(core, []byte("fixture"), 0700); err != nil {
@@ -309,7 +309,7 @@ func TestSystemdManagedInstallAndBootFailures(t *testing.T) {
 }
 func TestPlatformSelectionAndListenPolicy(t *testing.T) {
 	for _, value := range []string{"0.0.0.0", "8.8.8.8", "::1", "not-an-address"} {
-		c := Config{Kind: Linux, Unit: "mihomo-agent-core.service", ListenAddress: value}
+		c := Config{Kind: Linux, Unit: "mihomoctl-core.service", ListenAddress: value}
 		if c.Validate() == nil {
 			t.Fatal("accepted unsafe listen address", value)
 		}
@@ -326,7 +326,7 @@ func TestPlatformSelectionAndListenPolicy(t *testing.T) {
 
 func TestUnitUsesLibrarySerialization(t *testing.T) {
 	p, _ := systemdFixture(t)
-	p.Root = filepath.Join(t.TempDir(), "${MIHOMO_UNSET} % path", "mihomo-agent")
+	p.Root = filepath.Join(t.TempDir(), "${MIHOMOCTL_UNSET} % path", "mihomoctl")
 	text, err := p.Unit()
 	if err != nil {
 		t.Fatal(err)
@@ -342,7 +342,7 @@ func TestUnitUsesLibrarySerialization(t *testing.T) {
 	if values["Service/KillMode"] != "control-group" || values["Service/WorkingDirectory"] != strings.ReplaceAll(p.runtime(), "%", "%%") || !strings.Contains(values["Service/ExecStart"], "config.yaml") {
 		t.Fatal("unit does not bind the managed deployment")
 	}
-	if !strings.HasPrefix(values["Service/ExecStart"], ":") || !strings.Contains(values["Service/ExecStart"], "${MIHOMO_UNSET} %% path") {
+	if !strings.HasPrefix(values["Service/ExecStart"], ":") || !strings.Contains(values["Service/ExecStart"], "${MIHOMOCTL_UNSET} %% path") {
 		t.Fatal("unit permits environment or specifier expansion in paths")
 	}
 }

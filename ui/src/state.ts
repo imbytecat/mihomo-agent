@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const protocol = 4;
+export const protocol = 5;
 const capabilitiesSchema = z.object({
   interfaces: z.boolean(),
   capture: z.boolean(),
@@ -22,7 +22,7 @@ export const jobSchema = z.object({
   action: z.enum([
     'bootstrap',
     'install',
-    'update-agent',
+    'self-update',
     'download',
     'update',
     'start',
@@ -59,7 +59,7 @@ const componentUpdateSchema = z.object({
 });
 export const updatesSchema = z.object({
   checkedAt: z.string(),
-  agent: componentUpdateSchema,
+  self: componentUpdateSchema,
   core: componentUpdateSchema,
   dashboard: componentUpdateSchema,
 });
@@ -174,7 +174,7 @@ export function installationTask(action: string): boolean {
   return [
     'bootstrap',
     'install',
-    'update-agent',
+    'self-update',
     'download',
     'download-dashboard',
     'uninstall',
@@ -199,9 +199,9 @@ export function disabledReason(
   if (action === 'refresh') return '';
   if (!state) return action === 'stop' ? '' : '尚未确认设备状态，请刷新状态';
   if (action === 'check-updates')
-    return state.agent ? '' : '请先安装 Mihomo Agent';
+    return state.agent ? '' : '请先安装 mihomoctl';
   if (action === 'logs' || action === 'diagnose')
-    return state.agent ? '' : '请先安装 Mihomo Agent';
+    return state.agent ? '' : '请先安装 mihomoctl';
   if (state.locked) return '设备正在安装或更新，请等待完成后刷新';
   if (action === 'save-interfaces' && !state.capabilities.interfaces)
     return '由系统网络配置管理';
@@ -233,7 +233,7 @@ export function disabledReason(
   if (
     action === 'save-interfaces' ||
     action === 'download' ||
-    action === 'update-agent'
+    action === 'self-update'
   ) {
     if (state.running) return '请先停止代理';
     return '';

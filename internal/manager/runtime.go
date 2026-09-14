@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imbytecat/mihomo-agent/internal/host"
-	"github.com/imbytecat/mihomo-agent/internal/platform"
-	"github.com/imbytecat/mihomo-agent/internal/redact"
+	"github.com/imbytecat/mihomoctl/internal/host"
+	"github.com/imbytecat/mihomoctl/internal/platform"
+	"github.com/imbytecat/mihomoctl/internal/redact"
 )
 
 func (a *Manager) run(ctx context.Context, name string, args ...string) ([]byte, error) {

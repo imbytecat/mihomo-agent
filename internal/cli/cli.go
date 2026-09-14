@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/imbytecat/mihomo-agent/internal/manager"
-	"github.com/imbytecat/mihomo-agent/internal/platform"
-	ufitransport "github.com/imbytecat/mihomo-agent/internal/transport/ufi"
+	"github.com/imbytecat/mihomoctl/internal/manager"
+	"github.com/imbytecat/mihomoctl/internal/platform"
+	ufitransport "github.com/imbytecat/mihomoctl/internal/transport/ufi"
 	"github.com/spf13/cobra"
 )
 
@@ -21,8 +21,8 @@ func New(version string) *cobra.Command {
 	var root string
 	var config platform.Config
 	var githubProxy, uploads, input, id string
-	var wait bool
-	command := &cobra.Command{Use: "mihomo-agent", Short: "Manage Mihomo independently of its user interface", Version: version, SilenceUsage: true, SilenceErrors: true}
+	var noWait bool
+	command := &cobra.Command{Use: "mihomoctl", Short: "Manage Mihomo independently of its user interface", Version: version, SilenceUsage: true, SilenceErrors: true}
 	command.PersistentFlags().StringVar(&root, "root", "", "State directory (platform default when omitted)")
 	command.PersistentFlags().StringVar(&config.Kind, "platform", "", "Platform: ufi or linux (saved deployment when installed)")
 	open := func() (*manager.Manager, error) {
@@ -42,7 +42,7 @@ func New(version string) *cobra.Command {
 		if err != nil {
 			return nil, err
 		}
-		executable := filepath.Join(directory, "agent")
+		executable := filepath.Join(directory, "mihomoctl")
 		adapter, err := platform.New(deployment, platform.Environment{Root: directory, Executable: executable})
 		if err != nil {
 			return nil, err
@@ -52,22 +52,23 @@ func New(version string) *cobra.Command {
 	command.AddCommand(&cobra.Command{Use: "version", Short: "Print version and protocol as JSON", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{"version": version, "protocol": manager.Protocol})
 	}})
-	for _, entry := range []struct {
+	type commandEntry struct {
 		use, short string
 		args       cobra.PositionalArgs
 		hidden     bool
 		run        func(*cobra.Command, *manager.Manager, []string) (any, error)
-	}{
+	}
+	entries := []commandEntry{
 		{"install", "Initialize this platform deployment", cobra.NoArgs, false, func(_ *cobra.Command, m *manager.Manager, _ []string) (any, error) {
 			return map[string]any{"ok": true, "executable": m.Executable}, m.Install(githubProxy)
 		}},
-		{"inspect", "Print platform, capabilities and runtime state", cobra.NoArgs, false, func(_ *cobra.Command, m *manager.Manager, _ []string) (any, error) { return m.Inspect() }},
+		{"status", "Print platform, capabilities and runtime state", cobra.NoArgs, false, func(_ *cobra.Command, m *manager.Manager, _ []string) (any, error) { return m.Inspect() }},
 		{"check-updates", "Check official component releases and cache the comparison", cobra.NoArgs, false, func(cmd *cobra.Command, m *manager.Manager, _ []string) (any, error) {
 			return m.CheckUpdates(cmd.Context())
 		}},
 		{"submit UPLOAD SHA256", "Accept an encrypted UFI upload", cobra.ExactArgs(2), false, func(_ *cobra.Command, m *manager.Manager, args []string) (any, error) {
 			if m.Platform.Config().Kind != platform.UFI {
-				return nil, errors.New("该命令仅用于 UFI 上传；本地调用请使用 task")
+				return nil, errors.New("该命令仅用于 UFI 上传；本地调用请直接使用操作命令")
 			}
 			file, err := ufitransport.ReadUpload(uploads, args[0], args[1])
 			if err != nil {
@@ -79,38 +80,6 @@ func New(version string) *cobra.Command {
 			}
 			return job, file.Consume()
 		}},
-		{"task ACTION", "Submit an operation; read params JSON from --input, never secret argv", cobra.ExactArgs(1), false, func(cmd *cobra.Command, m *manager.Manager, args []string) (any, error) {
-			params := manager.Params{}
-			if input != "" {
-				var reader io.Reader = cmd.InOrStdin()
-				if input != "-" {
-					file, err := os.Open(input)
-					if err != nil {
-						return nil, err
-					}
-					defer file.Close()
-					reader = file
-				}
-				data, err := io.ReadAll(io.LimitReader(reader, 48*1024+1))
-				if err != nil || len(data) > 48*1024 {
-					return nil, errors.New("输入过大或不可读")
-				}
-				raw, _ := json.Marshal(map[string]any{"id": "00000000000000000000000000000000", "action": args[0], "params": json.RawMessage(data)})
-				parsed, err := manager.DecodeRequest(raw)
-				if err != nil {
-					return nil, err
-				}
-				params = parsed.Params
-			}
-			job, err := m.Submit(manager.Request{ID: id, Action: args[0], Params: params})
-			if err != nil {
-				return nil, err
-			}
-			if wait {
-				return awaitTask(cmd.Context(), m, job)
-			}
-			return job, nil
-		}},
 		{"job ID", "Print task state", cobra.ExactArgs(1), false, func(_ *cobra.Command, m *manager.Manager, args []string) (any, error) { return m.Job(args[0]) }},
 		{"job-log ID", "Print sanitized task logs", cobra.ExactArgs(1), false, func(_ *cobra.Command, m *manager.Manager, args []string) (any, error) { return m.JobLog(args[0]) }},
 		{"controller-secret PUBLIC_KEY", "Encrypt the API key for the supplied public key", cobra.ExactArgs(1), false, func(_ *cobra.Command, m *manager.Manager, args []string) (any, error) {
@@ -120,7 +89,58 @@ func New(version string) *cobra.Command {
 		{"diagnose", "Print network diagnostics", cobra.NoArgs, false, func(_ *cobra.Command, m *manager.Manager, _ []string) (any, error) { return m.Diagnose() }},
 		{"worker ID", "Execute an accepted task with inherited descriptors", cobra.ExactArgs(1), true, func(_ *cobra.Command, m *manager.Manager, args []string) (any, error) { return nil, m.Worker(args[0]) }},
 		{"supervise", "Run the UFI runtime supervisor", cobra.NoArgs, true, func(_ *cobra.Command, m *manager.Manager, _ []string) (any, error) { return nil, m.Supervise() }},
-	} {
+	}
+	operations := map[string]string{
+		"download":           "Install or update the Mihomo core",
+		"download-dashboard": "Install or update Zashboard",
+		"update":             "Fetch and apply the subscription configuration",
+		"save-controller":    "Save and apply controller settings",
+		"save-github-proxy":  "Save the GitHub mirror prefix",
+		"save-interfaces":    "Save UFI shared network interfaces",
+		"start":              "Start Mihomo",
+		"stop":               "Stop Mihomo",
+		"restart":            "Restart Mihomo",
+		"boot-on":            "Enable startup at boot",
+		"boot-off":           "Disable startup at boot",
+		"uninstall":          "Remove this installation and its data",
+		"self-update":        "Update mihomoctl",
+	}
+	runOperation := func(cmd *cobra.Command, m *manager.Manager, _ []string) (any, error) {
+		params := manager.Params{}
+		if input != "" {
+			var reader io.Reader = cmd.InOrStdin()
+			if input != "-" {
+				file, err := os.Open(input)
+				if err != nil {
+					return nil, err
+				}
+				defer file.Close()
+				reader = file
+			}
+			data, err := io.ReadAll(io.LimitReader(reader, 48*1024+1))
+			if err != nil || len(data) > 48*1024 {
+				return nil, errors.New("输入过大或不可读")
+			}
+			raw, _ := json.Marshal(map[string]any{"id": "00000000000000000000000000000000", "action": cmd.Name(), "params": json.RawMessage(data)})
+			parsed, err := manager.DecodeRequest(raw)
+			if err != nil {
+				return nil, err
+			}
+			params = parsed.Params
+		}
+		job, err := m.Submit(manager.Request{ID: id, Action: cmd.Name(), Params: params})
+		if err != nil {
+			return nil, err
+		}
+		if !noWait {
+			return awaitTask(cmd.Context(), m, job)
+		}
+		return job, nil
+	}
+	for name, short := range operations {
+		entries = append(entries, commandEntry{name, short, cobra.NoArgs, false, runOperation})
+	}
+	for _, entry := range entries {
 		child := &cobra.Command{Use: entry.use, Short: entry.short, Args: entry.args, Hidden: entry.hidden, RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := open()
 			if err != nil {
@@ -140,10 +160,11 @@ func New(version string) *cobra.Command {
 			child.Flags().StringVar(&config.ListenAddress, "listen-address", "", "Local IPv4 listen address (Linux; loopback by default)")
 		case "submit":
 			child.Flags().StringVar(&uploads, "uploads", platform.UFIUploads, "UFI public upload directory")
-		case "task":
+		}
+		if _, ok := operations[child.Name()]; ok {
 			child.Flags().StringVar(&input, "input", "", "Params JSON file, or - for stdin")
 			child.Flags().StringVar(&id, "id", "", "Stable task ID for retry/reconnection")
-			child.Flags().BoolVar(&wait, "wait", false, "Observe until finished; disconnecting does not cancel the task")
+			child.Flags().BoolVar(&noWait, "no-wait", false, "Return the accepted task immediately; it continues after this command exits")
 		}
 		command.AddCommand(child)
 	}
@@ -171,7 +192,7 @@ func awaitTask(ctx context.Context, m *manager.Manager, initial *manager.Job) (*
 			if removed {
 				task.State = "succeeded"
 				task.Phase = "done"
-				task.Result = "Mihomo Agent 数据已卸载"
+				task.Result = "mihomoctl 数据已卸载"
 				return task, nil
 			}
 		}

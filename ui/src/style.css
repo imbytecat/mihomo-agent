@@ -3,11 +3,11 @@
 @source "./";
 
 /* Unlayered, scoped utilities outrank the host's unlayered element styles. */
-:is(#mihomo-agent, #mihomo-agent-portals) {
+:is(#mihomoctl, #mihomoctl-portals) {
   @tailwind utilities;
 }
 
-:is(#mihomo-agent, #mihomo-agent-portals) {
+:is(#mihomoctl, #mihomoctl-portals) {
   --mh-text: var(--dark-text-color, #f5f5f7);
   --mh-bg: var(--dark-bg-color, #111114);
   --mh-group: var(--dark-btn-color, #1c1c1f);
@@ -19,14 +19,14 @@
     'Segoe UI',
     sans-serif;
 }
-#mihomo-agent {
+#mihomoctl {
   margin: 14px 0;
 }
-:is(#mihomo-agent, #mihomo-agent-portals) :where(button, input, textarea, select) {
+:is(#mihomoctl, #mihomoctl-portals) :where(button, input, textarea, select) {
   font-family: inherit;
 }
-:is(#mihomo-agent, #mihomo-agent-portals) *,
-:is(#mihomo-agent, #mihomo-agent-portals) *::before,
-:is(#mihomo-agent, #mihomo-agent-portals) *::after {
+:is(#mihomoctl, #mihomoctl-portals) *,
+:is(#mihomoctl, #mihomoctl-portals) *::before,
+:is(#mihomoctl, #mihomoctl-portals) *::after {
   box-sizing: border-box;
 }

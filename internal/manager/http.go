@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/imbytecat/mihomo-agent/internal/download"
+	"github.com/imbytecat/mihomoctl/internal/download"
 )
 
 func (a *Manager) deviceClient() *http.Client {
@@ -30,7 +30,7 @@ func (a *Manager) fetch(ctx context.Context, address, destination string, max in
 	if err != nil {
 		return errors.New("下载地址无效")
 	}
-	request.Header.Set("User-Agent", "mihomo-agent/"+a.Version)
+	request.Header.Set("User-Agent", "mihomoctl/"+a.Version)
 	client := a.deviceClient()
 	defer client.CloseIdleConnections()
 	response, err := client.Do(request)

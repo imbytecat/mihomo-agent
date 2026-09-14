@@ -433,15 +433,15 @@ func (q *Queries) SaveSettings(ctx context.Context, arg SaveSettingsParams) erro
 }
 
 const saveUpdates = `-- name: SaveUpdates :exec
-INSERT INTO update_checks(singleton,checked_at,agent_current,agent_latest,agent_state,agent_error,core_current,core_latest,core_state,core_error,dashboard_current,dashboard_latest,dashboard_state,dashboard_error) VALUES(1,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(singleton) DO UPDATE SET checked_at=excluded.checked_at,agent_current=excluded.agent_current,agent_latest=excluded.agent_latest,agent_state=excluded.agent_state,agent_error=excluded.agent_error,core_current=excluded.core_current,core_latest=excluded.core_latest,core_state=excluded.core_state,core_error=excluded.core_error,dashboard_current=excluded.dashboard_current,dashboard_latest=excluded.dashboard_latest,dashboard_state=excluded.dashboard_state,dashboard_error=excluded.dashboard_error
+INSERT INTO update_checks(singleton,checked_at,self_current,self_latest,self_state,self_error,core_current,core_latest,core_state,core_error,dashboard_current,dashboard_latest,dashboard_state,dashboard_error) VALUES(1,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(singleton) DO UPDATE SET checked_at=excluded.checked_at,self_current=excluded.self_current,self_latest=excluded.self_latest,self_state=excluded.self_state,self_error=excluded.self_error,core_current=excluded.core_current,core_latest=excluded.core_latest,core_state=excluded.core_state,core_error=excluded.core_error,dashboard_current=excluded.dashboard_current,dashboard_latest=excluded.dashboard_latest,dashboard_state=excluded.dashboard_state,dashboard_error=excluded.dashboard_error
 `
 
 type SaveUpdatesParams struct {
 	CheckedAt        string `json:"checkedAt"`
-	AgentCurrent     string `json:"agentCurrent"`
-	AgentLatest      string `json:"agentLatest"`
-	AgentState       string `json:"agentState"`
-	AgentError       string `json:"agentError"`
+	SelfCurrent      string `json:"selfCurrent"`
+	SelfLatest       string `json:"selfLatest"`
+	SelfState        string `json:"selfState"`
+	SelfError        string `json:"selfError"`
 	CoreCurrent      string `json:"coreCurrent"`
 	CoreLatest       string `json:"coreLatest"`
 	CoreState        string `json:"coreState"`
@@ -455,10 +455,10 @@ type SaveUpdatesParams struct {
 func (q *Queries) SaveUpdates(ctx context.Context, arg SaveUpdatesParams) error {
 	_, err := q.db.ExecContext(ctx, saveUpdates,
 		arg.CheckedAt,
-		arg.AgentCurrent,
-		arg.AgentLatest,
-		arg.AgentState,
-		arg.AgentError,
+		arg.SelfCurrent,
+		arg.SelfLatest,
+		arg.SelfState,
+		arg.SelfError,
 		arg.CoreCurrent,
 		arg.CoreLatest,
 		arg.CoreState,
@@ -565,15 +565,15 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (int64, 
 }
 
 const updates = `-- name: Updates :one
-SELECT checked_at,agent_current,agent_latest,agent_state,agent_error,core_current,core_latest,core_state,core_error,dashboard_current,dashboard_latest,dashboard_state,dashboard_error FROM update_checks WHERE singleton=1
+SELECT checked_at,self_current,self_latest,self_state,self_error,core_current,core_latest,core_state,core_error,dashboard_current,dashboard_latest,dashboard_state,dashboard_error FROM update_checks WHERE singleton=1
 `
 
 type UpdatesRow struct {
 	CheckedAt        string `json:"checkedAt"`
-	AgentCurrent     string `json:"agentCurrent"`
-	AgentLatest      string `json:"agentLatest"`
-	AgentState       string `json:"agentState"`
-	AgentError       string `json:"agentError"`
+	SelfCurrent      string `json:"selfCurrent"`
+	SelfLatest       string `json:"selfLatest"`
+	SelfState        string `json:"selfState"`
+	SelfError        string `json:"selfError"`
 	CoreCurrent      string `json:"coreCurrent"`
 	CoreLatest       string `json:"coreLatest"`
 	CoreState        string `json:"coreState"`
@@ -589,10 +589,10 @@ func (q *Queries) Updates(ctx context.Context) (UpdatesRow, error) {
 	var i UpdatesRow
 	err := row.Scan(
 		&i.CheckedAt,
-		&i.AgentCurrent,
-		&i.AgentLatest,
-		&i.AgentState,
-		&i.AgentError,
+		&i.SelfCurrent,
+		&i.SelfLatest,
+		&i.SelfState,
+		&i.SelfError,
 		&i.CoreCurrent,
 		&i.CoreLatest,
 		&i.CoreState,

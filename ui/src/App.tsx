@@ -15,7 +15,7 @@ export default function Gateway({ container }: { container: HTMLElement }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [uninstallOpen, setUninstallOpen] = useState(false);
   const subscription = useRef<HTMLDivElement>(null);
-  const setup = ['unknown', 'agent', 'service', 'core', 'upgrade'].includes(
+  const setup = ['unknown', 'agent', 'service', 'core'].includes(
     stageOf(model),
   );
   useEffect(() => {
@@ -39,7 +39,7 @@ export default function Gateway({ container }: { container: HTMLElement }) {
     <>
       {createPortal(
         <Toaster
-          id="mihomo-agent"
+          id="mihomoctl"
           position="top-center"
           theme="dark"
           richColors
@@ -114,7 +114,7 @@ export default function Gateway({ container }: { container: HTMLElement }) {
         open={uninstallOpen}
         onOpenChange={setUninstallOpen}
         title="卸载 Mihomo 服务？"
-        description="停止代理并关闭开机启动，删除本安装的 Agent、内核和全部数据，不可恢复。"
+        description="停止代理并关闭开机启动，删除本安装的 mihomoctl、内核和全部数据，不可恢复。"
         closeLabel="取消卸载"
       >
         <div className="ufi:flex ufi:justify-end ufi:gap-3">

@@ -8,5 +8,5 @@ CREATE TABLE configurations (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT 
 CREATE TABLE pending (singleton INTEGER PRIMARY KEY CHECK(singleton=1), previous TEXT NOT NULL, next TEXT NOT NULL REFERENCES configurations(id), was_running BOOLEAN NOT NULL);
 CREATE TABLE dashboards (id TEXT PRIMARY KEY, version TEXT NOT NULL);
 CREATE TABLE core_version (singleton INTEGER PRIMARY KEY CHECK(singleton=1), identity TEXT NOT NULL, version TEXT NOT NULL);
-CREATE TABLE update_checks (singleton INTEGER PRIMARY KEY CHECK(singleton=1), checked_at TEXT NOT NULL, agent_current TEXT NOT NULL, agent_latest TEXT NOT NULL, agent_state TEXT NOT NULL, agent_error TEXT NOT NULL, core_current TEXT NOT NULL, core_latest TEXT NOT NULL, core_state TEXT NOT NULL, core_error TEXT NOT NULL, dashboard_current TEXT NOT NULL, dashboard_latest TEXT NOT NULL, dashboard_state TEXT NOT NULL, dashboard_error TEXT NOT NULL);
-PRAGMA user_version=2;
+CREATE TABLE update_checks (singleton INTEGER PRIMARY KEY CHECK(singleton=1), checked_at TEXT NOT NULL, self_current TEXT NOT NULL, self_latest TEXT NOT NULL, self_state TEXT NOT NULL, self_error TEXT NOT NULL, core_current TEXT NOT NULL, core_latest TEXT NOT NULL, core_state TEXT NOT NULL, core_error TEXT NOT NULL, dashboard_current TEXT NOT NULL, dashboard_latest TEXT NOT NULL, dashboard_state TEXT NOT NULL, dashboard_error TEXT NOT NULL);
+PRAGMA user_version=3;

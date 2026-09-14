@@ -3,7 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/imbytecat/mihomo-agent/internal/manager"
+	"github.com/imbytecat/mihomoctl/internal/manager"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,13 +11,14 @@ import (
 )
 
 func TestCommandsValidateArgumentsBeforeDeviceAccess(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "mihomo-agent")
+	root := filepath.Join(t.TempDir(), "mihomoctl")
 	for _, args := range [][]string{
-		{"install", "unexpected"}, {"inspect", "unexpected"}, {"check-updates", "unexpected"}, {"submit", "only-upload"},
+		{"install", "unexpected"}, {"status", "unexpected"}, {"check-updates", "unexpected"}, {"submit", "only-upload"},
 		{"job"}, {"controller-secret"}, {"worker"}, {"supervise", "unexpected"},
-		{"start"}, {"stop"}, {"boot"}, {"boot-off"},
+		{"start", "unexpected"}, {"stop", "unexpected"}, {"boot"}, {"boot-off", "unexpected"},
+		{"task", "start"}, {"start", "--wait"}, {"self-update", "unexpected"},
 		{"logs", "unexpected"}, {"diagnose", "unexpected"}, {"version", "unexpected"},
-		{"job-log", "id", "unexpected"}, {"inspect", "--github-proxy", "https://example.com"},
+		{"job-log", "id", "unexpected"}, {"status", "--github-proxy", "https://example.com"},
 		{"install", "--unknown"}, {"install", "--core", "/usr/bin/mihomo"}, {"unit"}, {"unknown"},
 	} {
 		cmd := New("test")
@@ -37,8 +38,8 @@ func TestCommandsValidateArgumentsBeforeDeviceAccess(t *testing.T) {
 }
 
 func TestHelpAndVersionDoNotInitializeDevice(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "mihomo-agent")
-	for _, args := range [][]string{{"--help"}, {"install", "--help"}, {"version"}, {"--version"}} {
+	root := filepath.Join(t.TempDir(), "mihomoctl")
+	for _, args := range [][]string{{"--help"}, {"install", "--help"}, {"start", "--help"}, {"self-update", "--help"}, {"version"}, {"--version"}} {
 		cmd := New("test")
 		cmd.SetArgs(append([]string{"--platform", "ufi", "--root", root}, args...))
 		var output bytes.Buffer
@@ -54,7 +55,7 @@ func TestHelpAndVersionDoNotInitializeDevice(t *testing.T) {
 			if json.Unmarshal(output.Bytes(), &info) != nil || info.Version != "test" || info.Protocol != manager.Protocol {
 				t.Fatal("version JSON changed", output.String())
 			}
-		} else if !strings.Contains(output.String(), "mihomo-agent") {
+		} else if !strings.Contains(output.String(), "mihomoctl") {
 			t.Fatal("missing command help", output.String())
 		}
 	}

@@ -53,8 +53,8 @@ const settingAction = {
 } as const;
 const settingLabel = { githubProxy: 'GitHub Proxy', interfaces: '接口' };
 const notification = {
-  id: 'mihomo-agent-operation',
-  toasterId: 'mihomo-agent',
+  id: 'mihomoctl-operation',
+  toasterId: 'mihomoctl',
 };
 
 export function useGateway() {
@@ -211,7 +211,7 @@ export function useGateway() {
       setSaved({ ...savedRef.current });
       if (form.getValues(name) === snapshot)
         form.resetField(name, { defaultValue: value === 'auto' ? '' : value });
-      toast.dismiss(`mihomo-agent-${name}`);
+      toast.dismiss(`mihomoctl-${name}`);
     } catch (error) {
       form.setError(name, { type: 'server', message: '保存失败，点此重试' });
       throw error;
@@ -234,8 +234,8 @@ export function useGateway() {
             message: '保存失败，点此重试',
           });
           toast.error(`${settingLabel[name]}保存失败`, {
-            id: `mihomo-agent-${name}`,
-            toasterId: 'mihomo-agent',
+            id: `mihomoctl-${name}`,
+            toasterId: 'mihomoctl',
             description: (error instanceof Error
               ? error.message
               : String(error)
@@ -293,9 +293,9 @@ export function useGateway() {
             );
             result = 'Mihomo 服务已安装';
             break;
-          case 'update-agent':
+          case 'self-update':
             result = await waitTask(
-              await submitTask('update-agent', {
+              await submitTask('self-update', {
                 githubProxy: githubProxyURL(snapshot.githubProxy),
               }),
               observe,
@@ -383,7 +383,7 @@ export function useGateway() {
               await persist('githubProxy', snapshot.githubProxy);
             const checked = await checkUpdates();
             if (
-              [checked.agent, checked.core, checked.dashboard].some(
+              [checked.self, checked.core, checked.dashboard].some(
                 (item) => item.state === 'error',
               )
             )

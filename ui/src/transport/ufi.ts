@@ -23,9 +23,9 @@ declare const runShellWithRoot: (
 ) => Promise<{ success: boolean; content?: string }>;
 declare const KANO_baseURL: string;
 declare const common_headers: HeadersInit;
-export const DIR = '/data/mihomo-agent';
-const AGENT = DIR + '/agent';
-const BOOT = '/data/mihomo-agent-bootstrap';
+export const DIR = '/data/mihomoctl';
+const AGENT = DIR + '/mihomoctl';
+const BOOT = '/data/mihomoctl-bootstrap';
 export const quote = (value: string) => shellQuote([value]);
 const uploadResponse = z.object({
   url: z
@@ -84,14 +84,14 @@ export async function checkUpdates() {
   return updatesSchema.parse(await agent(['check-updates'], 45_000));
 }
 export async function stopAgent() {
-  return parseJob(await agent(['task', 'stop']));
+  return parseJob(await agent(['stop', '--no-wait']));
 }
 export async function readDeviceState() {
   const output = await shell(`
     [ "$(id -u)" = 0 ] || { echo '请开启 UFI 高级功能'; exit 1; }
     [ ! -L ${DIR} ] || { echo '设备目录异常'; exit 1; }
-    if [ -x ${AGENT} ]; then exec ${AGENT} inspect; fi
-    [ ! -e ${DIR} ] || { echo '安装目录仍存在，但 Agent 不可读；请等待安装或卸载完成后刷新'; exit 1; }
+    if [ -x ${AGENT} ]; then exec ${AGENT} status; fi
+    [ ! -e ${DIR} ] || { echo '安装目录仍存在，但 mihomoctl 不可读；请等待安装或卸载完成后刷新'; exit 1; }
     printf null
   `);
   const task = await readBootstrap();
@@ -152,7 +152,7 @@ export function taskID() {
 export async function submitTask(action: TaskAction, params: TaskParams = {}) {
   const state = await readDeviceState();
   if (!state.agent || !state.publicKey)
-    throw new Error('请先安装 Mihomo Agent');
+    throw new Error('请先安装 mihomoctl');
   const id = taskID();
   const sealed = await sealRequest(state.publicKey, { id, action, params });
   const name = await uploadBytes(sealed.bytes);
@@ -272,10 +272,10 @@ const agentReleaseSchema = z.object({
 export async function latestAgentAssets(githubProxy = '') {
   const prefix = githubProxyURL(githubProxy);
   const official =
-    'https://api.github.com/repos/imbytecat/mihomo-agent/releases/latest';
+    'https://api.github.com/repos/imbytecat/mihomoctl/releases/latest';
   const address = prefix ? `${prefix}/${official}` : official;
   const context = {
-    step: '检查 Agent 最新版本',
+    step: '检查 mihomoctl 最新版本',
     target: address,
     hint: '检查 GitHub Proxy 是否支持 GitHub API 和浏览器跨域；留空时直连。',
   };
@@ -286,9 +286,9 @@ export async function latestAgentAssets(githubProxy = '') {
     agentReleaseSchema,
   );
   const asset = (arch: string) => {
-    const name = `mihomo-agent-linux-${arch}`;
+    const name = `mihomoctl-linux-${arch}`;
     const value = release.assets.find((entry) => entry.name === name);
-    const url = `https://github.com/imbytecat/mihomo-agent/releases/download/${encodeURIComponent(release.tag_name)}/${name}`;
+    const url = `https://github.com/imbytecat/mihomoctl/releases/download/${encodeURIComponent(release.tag_name)}/${name}`;
     if (
       value?.browser_download_url !== url ||
       !/^sha256:[a-f0-9]{64}$/i.test(value.digest || '')

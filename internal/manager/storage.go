@@ -12,11 +12,11 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/imbytecat/mihomo-agent/internal/platform"
-	"github.com/imbytecat/mihomo-agent/internal/storage"
+	"github.com/imbytecat/mihomoctl/internal/platform"
+	"github.com/imbytecat/mihomoctl/internal/storage"
 )
 
-const Protocol = 4
+const Protocol = 5
 
 type Manager struct {
 	Root, Version, Executable string
@@ -31,8 +31,8 @@ func New(root, version string, adapter platform.Adapter) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	if filepath.Base(absolute) != "mihomo-agent" || strings.ContainsAny(absolute, "\x00\r\n") {
-		return nil, errors.New("state directory must be named mihomo-agent")
+	if filepath.Base(absolute) != "mihomoctl" || strings.ContainsAny(absolute, "\x00\r\n") {
+		return nil, errors.New("state directory must be named mihomoctl")
 	}
 	if info, err := os.Lstat(absolute); err == nil && info.Mode()&os.ModeSymlink != 0 {
 		return nil, errors.New("state directory cannot be a symlink")
@@ -40,7 +40,7 @@ func New(root, version string, adapter platform.Adapter) (*Manager, error) {
 	if adapter == nil {
 		return nil, errors.New("platform adapter is required")
 	}
-	executable := filepath.Join(absolute, "agent")
+	executable := filepath.Join(absolute, "mihomoctl")
 	db, err := storage.Open(absolute)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
@@ -113,7 +113,7 @@ func (a *Manager) installed() bool {
 func (a *Manager) requireIdentity() error {
 	identity, err := a.identity()
 	if err != nil || identity.Protocol != Protocol {
-		return fmt.Errorf("Mihomo Agent 未初始化或协议不匹配")
+		return fmt.Errorf("mihomoctl 未初始化或协议不匹配")
 	}
 	deployment, err := a.store.Deployment()
 	if err != nil || deployment != storage.Deployment(a.Platform.Config()) {

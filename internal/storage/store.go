@@ -13,13 +13,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/imbytecat/mihomo-agent/internal/storage/db"
+	"github.com/imbytecat/mihomoctl/internal/storage/db"
 	_ "modernc.org/sqlite"
 )
 
 const Filename = "state.db"
 const Lockfile = "state.lock"
-const schemaVersion = 2
+const schemaVersion = 3
 
 type Store struct {
 	db      *sql.DB
@@ -335,7 +335,7 @@ type ComponentUpdate struct {
 }
 type Updates struct {
 	CheckedAt string          `json:"checkedAt"`
-	Agent     ComponentUpdate `json:"agent"`
+	Self      ComponentUpdate `json:"self"`
 	Core      ComponentUpdate `json:"core"`
 	Dashboard ComponentUpdate `json:"dashboard"`
 }
@@ -347,15 +347,15 @@ func (s *Store) Updates() (*Updates, error) {
 	}
 	return &Updates{
 		CheckedAt: value.CheckedAt,
-		Agent:     ComponentUpdate{Current: value.AgentCurrent, Latest: value.AgentLatest, State: value.AgentState, Error: value.AgentError},
+		Self:      ComponentUpdate{Current: value.SelfCurrent, Latest: value.SelfLatest, State: value.SelfState, Error: value.SelfError},
 		Core:      ComponentUpdate{Current: value.CoreCurrent, Latest: value.CoreLatest, State: value.CoreState, Error: value.CoreError},
 		Dashboard: ComponentUpdate{Current: value.DashboardCurrent, Latest: value.DashboardLatest, State: value.DashboardState, Error: value.DashboardError},
 	}, err
 }
 func (s *Store) SaveUpdates(u Updates) error {
 	return s.queries.SaveUpdates(context.Background(), db.SaveUpdatesParams{
-		CheckedAt:    u.CheckedAt,
-		AgentCurrent: u.Agent.Current, AgentLatest: u.Agent.Latest, AgentState: u.Agent.State, AgentError: u.Agent.Error,
+		CheckedAt:   u.CheckedAt,
+		SelfCurrent: u.Self.Current, SelfLatest: u.Self.Latest, SelfState: u.Self.State, SelfError: u.Self.Error,
 		CoreCurrent: u.Core.Current, CoreLatest: u.Core.Latest, CoreState: u.Core.State, CoreError: u.Core.Error,
 		DashboardCurrent: u.Dashboard.Current, DashboardLatest: u.Dashboard.Latest, DashboardState: u.Dashboard.State, DashboardError: u.Dashboard.Error,
 	})

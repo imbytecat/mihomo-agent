@@ -33,11 +33,11 @@ func TestCheckUpdatesComparesSemverWithoutCreatingTasks(t *testing.T) {
 			r.URL.Path = strings.TrimPrefix(r.URL.Path, "/cache/https://api.github.com")
 		}
 		versions := map[string]string{
-			"/repos/imbytecat/mihomo-agent/releases/latest": "v1.10.0",
-			"/repos/MetaCubeX/mihomo/releases/latest":       "v1.19.30",
-			"/repos/Zephyruso/zashboard/releases/latest":    "v3.26.0",
+			"/repos/imbytecat/mihomoctl/releases/latest": "v1.10.0",
+			"/repos/MetaCubeX/mihomo/releases/latest":    "v1.19.30",
+			"/repos/Zephyruso/zashboard/releases/latest": "v3.26.0",
 		}
-		if invalid.Load() && r.URL.Path == "/repos/imbytecat/mihomo-agent/releases/latest" {
+		if invalid.Load() && r.URL.Path == "/repos/imbytecat/mihomoctl/releases/latest" {
 			_, _ = w.Write([]byte("null"))
 			return
 		}
@@ -46,7 +46,7 @@ func TestCheckUpdatesComparesSemverWithoutCreatingTasks(t *testing.T) {
 	defer server.Close()
 	a.httpTransport = localTransport{server.URL}
 	result, err := a.CheckUpdates(context.Background())
-	if err != nil || result.Agent.State != "available" || result.Agent.Latest != "v1.10.0" || result.Core.State != "up-to-date" || result.Dashboard.State != "not-installed" || result.CheckedAt == "" {
+	if err != nil || result.Self.State != "available" || result.Self.Latest != "v1.10.0" || result.Core.State != "up-to-date" || result.Dashboard.State != "not-installed" || result.CheckedAt == "" {
 		t.Fatal(result, err)
 	}
 	if err := a.Close(); err != nil {
@@ -59,7 +59,7 @@ func TestCheckUpdatesComparesSemverWithoutCreatingTasks(t *testing.T) {
 	}
 	a.Version = "development"
 	state, err = a.Inspect()
-	if err != nil || state.Version != "development" || state.Updates.Agent.Current != "v1.9.9" || requests.Load() != 3 {
+	if err != nil || state.Version != "development" || state.Updates.Self.Current != "v1.9.9" || requests.Load() != 3 {
 		t.Fatal("cached comparison replaced installed version", state, err)
 	}
 	if err := a.applyDownloadSettings(ptr("https://mirror.invalid/cache")); err != nil {
@@ -67,12 +67,12 @@ func TestCheckUpdatesComparesSemverWithoutCreatingTasks(t *testing.T) {
 	}
 	mirrored.Store(true)
 	result, err = a.CheckUpdates(context.Background())
-	if err != nil || result.Agent.State != "unknown" {
+	if err != nil || result.Self.State != "unknown" {
 		t.Fatal("unknown versions must not claim to be current", result, err)
 	}
 	invalid.Store(true)
 	result, err = a.CheckUpdates(context.Background())
-	if err != nil || result.Agent.State != "error" || result.Agent.Error == "" || result.Core.State != "up-to-date" {
+	if err != nil || result.Self.State != "error" || result.Self.Error == "" || result.Core.State != "up-to-date" {
 		t.Fatal("one failed query must not discard the others", result, err)
 	}
 	if err := a.applyDownloadSettings(ptr("")); err != nil {

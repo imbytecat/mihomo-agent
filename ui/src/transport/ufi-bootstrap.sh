@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # Only provisions the native binary. All device mutations after that use Go/flock.
 set -u
-BASE=/data/mihomo-agent-bootstrap
+BASE=/data/mihomoctl-bootstrap
 CURL=/data/data/com.minikano.f50_sms/files/curl
 umask 077
 mode=$1
@@ -47,7 +47,7 @@ fi
 cleanup() {
   code=$?
   if [ "$code" != 0 ]; then state failed failed; fi
-  rm -f "$job/agent" "$job/ca.pem"
+  rm -f "$job/mihomoctl" "$job/ca.pem"
 }
 trap cleanup EXIT
 trap '' HUP
@@ -68,14 +68,14 @@ for cert in /system/etc/security/cacerts/* /apex/com.android.conscrypt/cacerts/*
 done > "$job/ca.pem"
 set --
 [ ! -s "$job/ca.pem" ] || set -- --cacert "$job/ca.pem"
-"$CURL" -q -fL "$@" --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 300 --max-filesize 33554432 "$address" -o "$job/agent" || exit 1
+"$CURL" -q -fL "$@" --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 300 --max-filesize 33554432 "$address" -o "$job/mihomoctl" || exit 1
 state running verify
-actual=$(sha256sum "$job/agent") || exit 1
-[ "${actual%% *}" = "$digest" ] || { echo 'Mihomo Agent 文件校验失败'; exit 1; }
-chmod 700 "$job/agent" || exit 1
+actual=$(sha256sum "$job/mihomoctl") || exit 1
+[ "${actual%% *}" = "$digest" ] || { echo 'mihomoctl 文件校验失败'; exit 1; }
+chmod 700 "$job/mihomoctl" || exit 1
 case "$protocol" in ''|*[!0-9]*) exit 1;; esac
-info=$("$job/agent" version) || exit 1
-printf '%s' "$info" | grep -Eq "\"protocol\"[[:space:]]*:[[:space:]]*$protocol([[:space:]]*[,}])" || { echo 'Agent 协议已变化，请更新 UFI 插件'; exit 1; }
+info=$("$job/mihomoctl" version) || exit 1
+printf '%s' "$info" | grep -Eq "\"protocol\"[[:space:]]*:[[:space:]]*$protocol([[:space:]]*[,}])" || { echo 'mihomoctl 协议已变化，请更新 UFI 插件'; exit 1; }
 state running installing
-"$job/agent" --platform ufi install --github-proxy "$githubProxy" || exit 1
+"$job/mihomoctl" --platform ufi install --github-proxy "$githubProxy" || exit 1
 state succeeded "done"

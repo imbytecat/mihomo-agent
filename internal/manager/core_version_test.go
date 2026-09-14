@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/imbytecat/mihomo-agent/internal/fsutil"
+	"github.com/imbytecat/mihomoctl/internal/fsutil"
 )
 
 func TestInstalledCoreVersionAndCacheInvalidation(t *testing.T) {

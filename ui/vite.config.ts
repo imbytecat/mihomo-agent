@@ -35,9 +35,9 @@ export default defineConfig(({ mode }) => ({
     sourcemap: false,
     lib: {
       entry: fileURLToPath(new URL('./src/index.tsx', import.meta.url)),
-      name: 'MihomoAgentUfi',
+      name: 'MihomoctlUfi',
       formats: ['iife'],
-      fileName: () => 'mihomo-agent-ufi.js',
+      fileName: () => 'mihomoctl-ufi.js',
     },
   },
 }));

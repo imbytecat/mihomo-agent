@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/imbytecat/mihomo-agent/internal/redact"
-	"github.com/imbytecat/mihomo-agent/internal/storage"
+	"github.com/imbytecat/mihomoctl/internal/redact"
+	"github.com/imbytecat/mihomoctl/internal/storage"
 )
 
 type ComponentUpdate = storage.ComponentUpdate
@@ -18,7 +18,7 @@ func (a *Manager) CheckUpdates(ctx context.Context) (Updates, error) {
 	if err := a.requireIdentity(); err != nil {
 		return result, err
 	}
-	result.Agent = ComponentUpdate{Current: a.Version, State: "unknown"}
+	result.Self = ComponentUpdate{Current: a.Version, State: "unknown"}
 	result.Core.State = "not-installed"
 	if a.coreInstalled() {
 		result.Core = ComponentUpdate{Current: a.coreVersion(), State: "unknown"}
@@ -34,7 +34,7 @@ func (a *Manager) CheckUpdates(ctx context.Context) (Updates, error) {
 		owner, repo string
 		update      *ComponentUpdate
 	}{
-		{"imbytecat", "mihomo-agent", &result.Agent},
+		{"imbytecat", "mihomoctl", &result.Self},
 		{"MetaCubeX", "mihomo", &result.Core},
 		{"Zephyruso", "zashboard", &result.Dashboard},
 	} {

@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/imbytecat/mihomo-agent/internal/platform"
+	"github.com/imbytecat/mihomoctl/internal/platform"
 
 	"github.com/google/renameio/v2"
 	"go.yaml.in/yaml/v3"

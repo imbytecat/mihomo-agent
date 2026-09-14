@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/imbytecat/mihomo-agent/internal/fsutil"
+	"github.com/imbytecat/mihomoctl/internal/fsutil"
 
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/crypto/nacl/box"

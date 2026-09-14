@@ -25,7 +25,7 @@
     <script type="module">
       import '../../dev/mock.ts';
       // Vite publicDir serves the exact production bytes without transforming them.
-      const response = await fetch('/mihomo-agent-ufi.js');
+      const response = await fetch('/mihomoctl-ufi.js');
       if (!response.ok) throw new Error('Production plugin is missing; build it first');
       const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
       for (const script of doc.querySelectorAll('script')) {

@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/imbytecat/mihomo-agent/internal/fsutil"
-	"github.com/imbytecat/mihomo-agent/internal/host"
+	"github.com/imbytecat/mihomoctl/internal/fsutil"
+	"github.com/imbytecat/mihomoctl/internal/host"
 )
 
 func TestAtomicWritesReplaceWithoutFollowingLinks(t *testing.T) {

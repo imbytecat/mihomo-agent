@@ -1,4 +1,4 @@
-module github.com/imbytecat/mihomo-agent
+module github.com/imbytecat/mihomoctl
 
 go 1.27.0
 

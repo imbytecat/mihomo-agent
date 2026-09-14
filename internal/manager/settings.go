@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/imbytecat/mihomo-agent/internal/storage"
+	"github.com/imbytecat/mihomoctl/internal/storage"
 )
 
 type Settings = storage.Settings
