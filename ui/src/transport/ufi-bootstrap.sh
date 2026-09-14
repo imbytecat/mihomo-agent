@@ -52,16 +52,13 @@ cleanup() {
 trap cleanup EXIT
 trap '' HUP
 state running download
-protocol=$8
-githubProxy=$3
-case "$githubProxy" in '') ;; https://*) ;; *) echo '无效 GitHub Proxy'; exit 1;; esac
+protocol=$7
 case "$(getprop ro.product.cpu.abi)" in
-  arm64-v8a) address=$4; digest=$5;;
-  armeabi-v7a|armeabi) address=$6; digest=$7;;
+  arm64-v8a) address=$3; digest=$4;;
+  armeabi-v7a|armeabi) address=$5; digest=$6;;
   *) echo '不支持的设备架构'; exit 1;;
 esac
 [ -x "$CURL" ] || { echo 'UFI 缺少 curl，请更新 UFI'; exit 1; }
-[ -z "$githubProxy" ] || address="${githubProxy%/}/$address"
 # The app's curl may not know Android's CA location. Never disable TLS verification.
 for cert in /system/etc/security/cacerts/* /apex/com.android.conscrypt/cacerts/*; do
   if [ -f "$cert" ]; then cat "$cert"; printf '\n'; fi
@@ -77,5 +74,5 @@ case "$protocol" in ''|*[!0-9]*) exit 1;; esac
 info=$("$job/mihomoctl" version) || exit 1
 printf '%s' "$info" | grep -Eq "\"protocol\"[[:space:]]*:[[:space:]]*$protocol([[:space:]]*[,}])" || { echo 'mihomoctl 协议已变化，请更新 UFI 插件'; exit 1; }
 state running installing
-"$job/mihomoctl" --platform ufi install --github-proxy "$githubProxy" || exit 1
+"$job/mihomoctl" --platform ufi install || exit 1
 state succeeded "done"

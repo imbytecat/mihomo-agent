@@ -96,10 +96,10 @@ test('sealed browser intents run in a detached native worker; failed updates pre
       throw new Error('Worker did not finish');
     };
     expect(
-      (await submit('save-github-proxy', { githubProxy: 'https://mirror.example.com' }))
+      (await submit('save-interfaces', { interfaces: 'wlan0' }))
         .state,
     ).toBe('succeeded');
-    expect((await inspect()).settings.githubProxy).toBe('https://mirror.example.com');
+    expect((await inspect()).settings.interfaces).toEqual(['wlan0']);
     // Fake only mihomo validation; real Go performs HTTP, YAML, storage and job lifecycle.
     await writeFile(
       join(root, 'runtime/mihomo'),

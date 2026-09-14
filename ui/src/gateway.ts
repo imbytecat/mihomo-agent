@@ -80,7 +80,6 @@ export function describeTask(job: DeviceJob) {
     'boot-on': '启用开机启动',
     'boot-off': '关闭开机启动',
     uninstall: '卸载 Mihomo 服务',
-    'save-github-proxy': '保存 GitHub Proxy',
     'save-interfaces': '保存接口',
     'save-controller': '应用面板设置',
     'download-dashboard': '安装 / 更新 Zashboard',

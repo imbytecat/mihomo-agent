@@ -1,13 +1,12 @@
 import { z } from 'zod';
 
-export const protocol = 5;
+export const protocol = 6;
 const capabilitiesSchema = z.object({
   interfaces: z.boolean(),
   capture: z.boolean(),
 });
 export type TaskParams = {
   url?: string;
-  githubProxy?: string;
   interfaces?: string;
   controller?: {
     enabled: boolean;
@@ -31,7 +30,6 @@ export const jobSchema = z.object({
     'boot-on',
     'boot-off',
     'uninstall',
-    'save-github-proxy',
     'save-interfaces',
     'save-controller',
     'download-dashboard',
@@ -83,7 +81,6 @@ const stateSchema = z.object({
   capture: z.boolean(),
   coreVersion: z.string(),
   settings: z.object({
-    githubProxy: z.string(),
     interfaces: z.array(z.string()),
   }),
   task: jobSchema.nullable(),
@@ -125,7 +122,7 @@ export const emptyState: DeviceState = {
   },
   version: '',
   publicKey: '',
-  settings: { githubProxy: '', interfaces: [] },
+  settings: { interfaces: [] },
   task: null,
   updates: null,
   controller: null,
@@ -229,7 +226,6 @@ export function disabledReason(
   if (action === 'stop')
     return state.running || state.capture ? '' : '代理已停止';
   if (action === 'boot-off') return state.boot ? '' : '开机启动已关闭';
-  if (action === 'save-github-proxy') return '';
   if (
     action === 'save-interfaces' ||
     action === 'download' ||

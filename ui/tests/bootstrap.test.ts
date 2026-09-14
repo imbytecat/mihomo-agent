@@ -39,7 +39,6 @@ test('bootstrap verifies bytes before execution and reports failures without los
         script,
         mode,
         id,
-        'https://mirror.invalid/cache',
         'https://fixture.invalid/mihomoctl',
         digest,
         '',
@@ -71,7 +70,7 @@ test('bootstrap verifies bytes before execution and reports failures without los
     expect(existsSync(marker)).toBe(false);
     expect((await run('worker', digest)).code).toBe(0);
     expect(await readFile(marker, 'utf8')).toBe('verified');
-    expect(await readFile(join(base, 'curl-args'), 'utf8')).toContain('https://mirror.invalid/cache/https://fixture.invalid/mihomoctl');
+    expect(await readFile(join(base, 'curl-args'), 'utf8')).toContain('https://fixture.invalid/mihomoctl');
     expect(JSON.parse((await run('status')).output).state).toBe('succeeded');
     expect(existsSync(join(job, 'mihomoctl'))).toBe(false);
     const stale = JSON.stringify({
@@ -92,7 +91,7 @@ test('bootstrap verifies bytes before execution and reports failures without los
   }
 });
 
-test('initial metadata honors the selected proxy and rejects malformed releases', async () => {
+test('initial metadata uses official GitHub and rejects malformed releases', async () => {
   const release = {
     tag_name: 'v9.8.7',
     draft: false,
@@ -114,18 +113,13 @@ test('initial metadata honors the selected proxy and rejects malformed releases'
   expect(
     (fetch.mock.calls[0]![0] as Request).headers.has('Authorization'),
   ).toBe(false);
-  fetch.mockResolvedValueOnce(Response.json(release));
-  await latestAgentAssets('https://mirror.invalid/cache/');
-  const proxied = fetch.mock.calls[1]![0] as Request;
-  expect(proxied.url).toBe('https://mirror.invalid/cache/https://api.github.com/repos/imbytecat/mihomoctl/releases/latest');
-  expect(proxied.headers.has('Authorization')).toBe(false);
   fetch.mockResolvedValueOnce(Response.json({ ...release, prerelease: true }));
   await expect(latestAgentAssets()).rejects.toThrow('预期格式');
   release.assets[0]!.digest = '';
   fetch.mockResolvedValueOnce(Response.json(release));
   await expect(latestAgentAssets()).rejects.toThrow('SHA-256');
   release.assets[0]!.digest = 'sha256:' + 'a'.repeat(64);
-  release.assets[0]!.browser_download_url = 'https://proxy.invalid/mihomoctl';
+  release.assets[0]!.browser_download_url = 'https://untrusted.invalid/mihomoctl';
   fetch.mockResolvedValueOnce(Response.json(release));
   await expect(latestAgentAssets()).rejects.toThrow('官方版本缺少');
 });

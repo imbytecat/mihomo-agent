@@ -12,128 +12,45 @@ test('unsaved drafts cancel navigation with the current browser event API', asyn
   expect(canLeave()).toBe(true);
 });
 
-test('autosave preserves newer drafts and validates download settings', async () => {
+test('interface autosave preserves newer drafts and handles failures', async () => {
   await open('ready');
   await app.getByCSS('[data-settings] > summary').click();
-  await expect
-    .element(app.getByCSS('[data-group=runtime] [data-boot]'))
-    .toBeInTheDocument();
-  await expect
-    .element(app.getByCSS('[data-group=subscription] [data-boot]'))
-    .not.toBeInTheDocument();
-  await expect
-    .element(
-      app.getByCSS('[data-group=maintenance] [data-action=self-update]'),
-    )
-    .toBeInTheDocument();
-  await expect
-    .element(app.getByCSS('[data-action=self-update]'))
-    .toHaveTextContent('更新');
-  await expect
-    .element(app.getByCSS('[data-group=maintenance] [data-action=download]'))
-    .toHaveTextContent('更新');
-  await expect
-    .element(app.getByCSS('[data-action=download-dashboard]'))
-    .toHaveTextContent('安装');
-  await app.getByCSS('[data-action=self-update]').click();
-  await expect
-    .poll(() =>
-      evaluate(
-        'mockDeviceState.task?.action === "self-update" && mockDeviceState.task?.state === "succeeded"',
-      ),
-    )
-    .toBeTruthy();
-  await idle();
-  await app.getByCSS('[data-setting=githubProxy]').fill('https://mirror.example.com/');
+  const input = app.getByCSS('[data-setting=interfaces]');
+  await input.fill('wlan0');
   await evaluate('window.mockUploadDelayMs = 900');
-  // The click itself blurs the input; it must survive the ensuing autosave render.
+  // Clicking download blurs the input; the queued save must complete first.
   await app.getByCSS('[data-group=maintenance] [data-action=download]').click();
-  await expect
-    .element(app.getByCSS('[data-version=core]'))
-    .toHaveTextContent('v9.8.7');
+  await expect.element(app.getByCSS('[data-version=core]')).toHaveTextContent('v9.8.7');
   await idle();
-  await expect
-    .poll(() =>
-      evaluate(
-        'mockDeviceState.settings.githubProxy === "https://mirror.example.com" && mockIntents.filter(x => x.action === "save-github-proxy").length === 1',
-      ),
-    )
-    .toBe(true);
+  expect(evaluate('mockDeviceState.settings.interfaces')).toEqual(['wlan0']);
+  expect(evaluate('mockIntents.filter(x => x.action === "save-interfaces").length')).toBe(1);
   await expect.element(app.getByCSS('[data-task]')).not.toBeInTheDocument();
-  await expect
-    .element(app.getByCSS('body'))
-    .not.toMatchTextContent('已安装，校验通过');
-  await expect
-    .element(app.getByCSS('[data-group=maintenance] [data-install-task]'))
-    .toBeInTheDocument();
+  await expect.element(app.getByCSS('[data-group=maintenance] [data-install-task]')).toBeInTheDocument();
 
-  await app
-    .getByCSS('[data-setting=githubProxy]')
-    .fill('https://first.example');
+  await input.fill('rndis0');
   await userEvent.tab();
-  await expect
-    .element(app.getByCSS('[data-save-status=githubProxy]'))
-    .toMatchTextContent('保存中');
-  await app
-    .getByCSS('[data-setting=githubProxy]')
-    .fill('https://second.example');
-  await expect
-    .poll(() =>
-      evaluate(
-        'mockDeviceState.settings.githubProxy === "https://first.example"',
-      ),
-    )
-    .toBeTruthy();
-  await expect
-    .element(app.getByCSS('[data-setting=githubProxy]'))
-    .toHaveValue('https://second.example');
+  await expect.element(app.getByCSS('[data-save-status=interfaces]')).toMatchTextContent('保存中');
+  await input.fill('usb0');
+  await expect.poll(() => evaluate('mockDeviceState.settings.interfaces.join(" ")')).toBe('rndis0');
+  await expect.element(input).toHaveValue('usb0');
   await userEvent.tab();
-  await expect
-    .poll(() =>
-      evaluate(
-        'mockDeviceState.settings.githubProxy === "https://second.example"',
-      ),
-    )
-    .toBeTruthy();
+  await expect.poll(() => evaluate('mockDeviceState.settings.interfaces.join(" ")')).toBe('usb0');
 
-  await evaluate(
-    'window.mockUploadDelayMs = 0; window.mockUploadFailure = true',
-  );
-  await app
-    .getByCSS('[data-setting=githubProxy]')
-    .fill('https://retry.example');
+  await evaluate('window.mockUploadDelayMs = 0; window.mockUploadFailure = true');
+  await input.fill('br-lan');
   await userEvent.tab();
-  await expect
-    .element(app.getByText('重试保存', { exact: true }).first())
-    .toBeVisible();
-  await expect
-    .poll(() =>
-      evaluate(
-        'mockDeviceState.settings.githubProxy === "https://second.example"',
-      ),
-    )
-    .toBe(true);
+  await expect.element(app.getByText('重试保存', { exact: true }).first()).toBeVisible();
+  expect(evaluate('mockDeviceState.settings.interfaces')).toEqual(['usb0']);
   await evaluate('window.mockUploadFailure = false');
   await app.getByRole('button', { name: '重试保存', exact: true }).click();
-  await expect
-    .poll(() =>
-      evaluate(
-        'mockDeviceState.settings.githubProxy === "https://retry.example"',
-      ),
-    )
-    .toBeTruthy();
-  await app
-    .getByCSS('[data-setting=githubProxy]')
-    .fill('http://invalid.example');
-  await app.getByCSS('[data-group=maintenance] [data-action=download]').click();
-  await idle();
-  await expect
-    .poll(() =>
-      evaluate(
-        'mockDeviceState.settings.githubProxy === "https://retry.example" && mockIntents.filter(x => x.action === "download").length === 1',
-      ),
-    )
-    .toBe(true);
+  await expect.poll(() => evaluate('mockDeviceState.settings.interfaces.join(" ")')).toBe('br-lan');
+
+  const submitted = evaluate('mockIntents.length');
+  await input.fill('rmnet_data0');
+  await userEvent.tab();
+  await expect.element(input).toHaveAttribute('aria-invalid', 'true');
+  expect(evaluate('mockIntents.length')).toBe(submitted);
+  expect(evaluate('mockDeviceState.settings.interfaces')).toEqual(['br-lan']);
 });
 
 test('controller transactions, encrypted secrets and task details', async () => {

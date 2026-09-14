@@ -7,20 +7,38 @@
 
 [发行版](https://github.com/imbytecat/mihomoctl/releases) · [反馈](https://github.com/imbytecat/mihomoctl/issues)
 
+## 工作方式
+
+mihomoctl 是有持久状态的本机管理器。它管理内核下载更新、订阅、配置校验与回滚、启停和自启；**代理流量始终由 Mihomo 处理**。设备上没有独立的 mihomoctl Web API 服务。
+
+```mermaid
+flowchart TD
+  JS[UFI JS 插件] <-->|上传密文、查询任务| UFI[UFI API / Root Shell]
+  UFI --> CTL[mihomoctl 命令入口]
+  Terminal[本地终端] --> CTL
+  CTL --> DB[(SQLite 设置与任务状态)]
+  CTL --> Worker[mihomoctl worker]
+  Worker --> DB
+  Worker -->|Linux 启停| Systemd[systemd service]
+  Worker -->|Android 启停| Supervisor[mihomoctl supervise]
+  Systemd --> Core[Mihomo 内核]
+  Supervisor --> Core
+```
+
+- **UFI 插件负责交互**：首次安装引导下载并校验 mihomoctl。后续请求先用设备公钥加密，再通过 UFI 上传；Root Shell 只把上传引用和摘要交给 ctl。ctl 解密并校验请求，插件通过任务 ID 查询进度。订阅和密钥明文不会进入公开上传文件或 Root Shell 命令。
+- **ctl 负责完整操作**：本地 CLI 与 UFI 请求进入同一个 Manager。任务接收后写入 SQLite，并启动独立的 `mihomoctl worker`，由它完成下载、校验、配置切换、重启验证与失败回滚。终端或页面关闭不会取消已接收任务；重新连接后查询原任务。worker 执行结束便退出，进程意外中断会标记任务中断，不会自动重放请求。
+- **平台负责持续运行**：Linux 的 systemd service 直接运行 Mihomo，短期 worker 通过 systemd scope 托管；Android 上的 `mihomoctl supervise` 持续守护 Mihomo 并同步共享网络规则。自启分别交给 systemd 和 UFI 自启机制。CLI 命令退出后，内核仍能继续运行。
+
+发行查询与组件下载直接访问 GitHub 官方 API 和 Release 地址；订阅由设备访问用户提供的地址。
+
 ## UFI 安装
 
 需要 UFI-TOOLS 完整版、root / 高级功能，以及支持 TPROXY 的系统。插件界面使用 Chrome / Android System WebView 153 或以上版本。
 
 1. 已安装其他代理插件时，先在原界面卸载并关闭自启，再移除原插件。
 2. 下载 `mihomoctl-ufi.js`，在 UFI 插件管理导入、保存并刷新。
-3. 无法直连 GitHub 时，先填写 GitHub Proxy；再安装 mihomoctl / 服务和内核，粘贴完整 YAML 订阅，点击「保存并更新」。
+3. 安装 mihomoctl / 服务和内核，粘贴完整 YAML 订阅，点击「保存并更新」。
 4. 启动代理，确认客户端能正常上网后再开启自启；需要控制面板时安装 Zashboard。
-
-初装查询版本与下载 mihomoctl 都使用填写的 GitHub Proxy，安装后保存到 SQLite；后续检查更新、下载 mihomoctl / Mihomo / Zashboard 共用此设置。配置镜像后不再先尝试直连 GitHub；清空前缀才恢复直连。
-
-GitHub Proxy 必须是你信任的 HTTPS 镜像前缀，支持 `https://api.github.com/` 和 GitHub Release 文件；UFI 初装还要求镜像允许浏览器跨域请求。仅支持文件下载的服务不能用于版本查询。安装后失焦保存；订阅请求不经过这个镜像，订阅和面板设置需明确保存并应用。
-
-镜像可以看到公开发行查询和下载；UFI 登录信息、订阅和密钥不会交给它。SHA-256 校验保留，但镜像同时提供文件与摘要时，不能代替发布者签名或防止镜像同时篡改两者。
 
 ## Linux 安装
 
@@ -31,8 +49,6 @@ sha256sum --check --ignore-missing SHA256SUMS
 chmod +x mihomoctl-linux-amd64
 sudo ./mihomoctl-linux-amd64 install
 ```
-
-无法直连 GitHub 时，首次安装可加 `--github-proxy https://mirror.example.com`（替换成你信任且支持 API 的镜像前缀），后续 CLI 自动沿用。
 
 安装自动复制 mihomoctl 到 `/var/lib/mihomoctl/mihomoctl` 并注册 service；接下来通过 CLI 下载内核、保存订阅并启动。后续使用安装目录内的 mihomoctl，确保自更新生效，首次下载的安装文件可删除。同名 service 冲突时会拒绝覆盖，可用 `install --unit 自定义名称.service`。
 

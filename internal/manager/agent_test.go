@@ -78,7 +78,7 @@ func testAgent(t *testing.T) *Manager {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = a.Close() })
-	if err = a.Install(""); err != nil {
+	if err = a.Install(); err != nil {
 		t.Fatal(err)
 	}
 	a.runCommand = func(context.Context, string, ...string) ([]byte, error) {
@@ -125,9 +125,9 @@ func waitJob(t *testing.T, a *Manager, id string) *Job {
 
 func TestEncryptedSubmissionAndDurableCompletion(t *testing.T) {
 	a := testAgent(t)
-	request := Request{ID: randomID(), Action: "save-github-proxy", Params: Params{GitHubProxy: new("https://githubProxy.example")}}
+	request := Request{ID: randomID(), Action: "save-interfaces", Params: Params{Interfaces: new("wlan0")}}
 	name, digest, data := sealRequest(t, a, request)
-	if bytes.Contains(data, []byte(*request.Params.GitHubProxy)) {
+	if bytes.Contains(data, []byte(*request.Params.Interfaces)) {
 		t.Fatal("request is not encrypted")
 	}
 	job, err := submitUpload(a, name, digest)
@@ -142,7 +142,7 @@ func TestEncryptedSubmissionAndDurableCompletion(t *testing.T) {
 		t.Fatalf("%+v", finished)
 	}
 	settings, _ := a.settings()
-	if settings.GitHubProxy != *request.Params.GitHubProxy {
+	if strings.Join(settings.Interfaces, " ") != *request.Params.Interfaces {
 		t.Fatal(settings)
 	}
 	if err = fsutil.AtomicWrite(filepath.Join(uploadDir(a), name), data, 0600); err != nil {
@@ -188,14 +188,14 @@ func TestUnmanagedDataAndInvalidRequestsArePreserved(t *testing.T) {
 	_ = os.Mkdir(root, 0700)
 	_ = os.WriteFile(filepath.Join(root, "keep"), []byte("data"), 0600)
 	a, _ := testManager(root)
-	if a.Install("") == nil {
+	if a.Install() == nil {
 		t.Fatal("overwrote unmanaged directory")
 	}
 	if data, _ := os.ReadFile(filepath.Join(root, "keep")); string(data) != "data" {
 		t.Fatal("data changed")
 	}
 	a = testAgent(t)
-	name, _, _ := sealRequest(t, a, Request{ID: randomID(), Action: "save-github-proxy", Params: Params{GitHubProxy: new("https://example.com")}})
+	name, _, _ := sealRequest(t, a, Request{ID: randomID(), Action: "save-interfaces", Params: Params{Interfaces: new("wlan0")}})
 	if _, err := submitUpload(a, name, strings.Repeat("0", 64)); err == nil {
 		t.Fatal("accepted invalid digest")
 	}
@@ -362,12 +362,8 @@ func TestUninstallPreservesRuntimeOnCleanupFailure(t *testing.T) {
 	if data, _ := os.ReadFile(a.Platform.(*platform.UFIAdapter).BootPath); string(data) != "other-plugin start\n" {
 		t.Fatal("changed another plugin's boot entry")
 	}
-	initialProxy := "https://githubProxy.example"
-	if err := a.Install(initialProxy); err != nil {
+	if err := a.Install(); err != nil {
 		t.Fatal(err)
-	}
-	if settings, _ := a.settings(); settings.GitHubProxy != initialProxy {
-		t.Fatal("reinstallation ignored initial githubProxy")
 	}
 	if _, err := a.execute(context.Background(), Request{ID: randomID(), Action: "install"}, func(string) {}); err == nil {
 		t.Fatal("reinstalled an active installation")

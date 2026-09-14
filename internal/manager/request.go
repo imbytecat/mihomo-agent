@@ -15,10 +15,9 @@ type ControllerInput struct {
 	Reset   bool    `json:"reset,omitempty"`
 }
 type Params struct {
-	URL         string           `json:"url,omitempty"`
-	GitHubProxy *string          `json:"githubProxy,omitempty"`
-	Interfaces  *string          `json:"interfaces,omitempty"`
-	Controller  *ControllerInput `json:"controller,omitempty"`
+	URL        string           `json:"url,omitempty"`
+	Interfaces *string          `json:"interfaces,omitempty"`
+	Controller *ControllerInput `json:"controller,omitempty"`
 }
 type Request struct {
 	ID     string `json:"id"`
@@ -55,15 +54,8 @@ func (r Request) validate(provided map[string]bool) error {
 		return errors.New("无效任务 ID")
 	}
 	p := r.Params
-	allowProxy, allowInterfaces, allowURL, allowController := false, false, false, false
+	allowInterfaces, allowURL, allowController := false, false, false
 	switch r.Action {
-	case "install", "download", "download-dashboard", "self-update":
-		allowProxy = true
-	case "save-github-proxy":
-		allowProxy = true
-		if p.GitHubProxy == nil {
-			return errors.New("缺少 GitHub Proxy 参数")
-		}
 	case "save-interfaces":
 		allowInterfaces = true
 		if p.Interfaces == nil {
@@ -78,11 +70,11 @@ func (r Request) validate(provided map[string]bool) error {
 		if p.Controller == nil || p.Controller.Enabled == nil {
 			return errors.New("缺少控制面板参数")
 		}
-	case "stop", "restart", "boot-on", "boot-off", "uninstall":
+	case "install", "download", "download-dashboard", "self-update", "stop", "restart", "boot-on", "boot-off", "uninstall":
 	default:
 		return errors.New("未知设备操作")
 	}
-	if (provided["githubproxy"] || p.GitHubProxy != nil) && !allowProxy || (provided["interfaces"] || p.Interfaces != nil) && !allowInterfaces || (provided["url"] || p.URL != "") && !allowURL || (provided["controller"] || p.Controller != nil) && !allowController {
+	if (provided["interfaces"] || p.Interfaces != nil) && !allowInterfaces || (provided["url"] || p.URL != "") && !allowURL || (provided["controller"] || p.Controller != nil) && !allowController {
 		return errors.New("该操作不接受这些参数")
 	}
 	return nil

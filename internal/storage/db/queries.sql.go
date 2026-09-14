@@ -410,16 +410,11 @@ func (q *Queries) SavePending(ctx context.Context, arg SavePendingParams) error 
 }
 
 const saveSettings = `-- name: SaveSettings :exec
-UPDATE settings SET github_proxy=?,interfaces=? WHERE singleton=1
+UPDATE settings SET interfaces=? WHERE singleton=1
 `
 
-type SaveSettingsParams struct {
-	GitHubProxy string `json:"githubProxy"`
-	Interfaces  string `json:"interfaces"`
-}
-
-func (q *Queries) SaveSettings(ctx context.Context, arg SaveSettingsParams) error {
-	_, err := q.db.ExecContext(ctx, saveSettings, arg.GitHubProxy, arg.Interfaces)
+func (q *Queries) SaveSettings(ctx context.Context, interfaces string) error {
+	_, err := q.db.ExecContext(ctx, saveSettings, interfaces)
 	return err
 }
 
@@ -481,19 +476,14 @@ func (q *Queries) SetLatestTask(ctx context.Context, latestTask sql.NullString) 
 }
 
 const settings = `-- name: Settings :one
-SELECT github_proxy,interfaces FROM settings WHERE singleton=1
+SELECT interfaces FROM settings WHERE singleton=1
 `
 
-type SettingsRow struct {
-	GitHubProxy string `json:"githubProxy"`
-	Interfaces  string `json:"interfaces"`
-}
-
-func (q *Queries) Settings(ctx context.Context) (SettingsRow, error) {
+func (q *Queries) Settings(ctx context.Context) (string, error) {
 	row := q.db.QueryRowContext(ctx, settings)
-	var i SettingsRow
-	err := row.Scan(&i.GitHubProxy, &i.Interfaces)
-	return i, err
+	var interfaces string
+	err := row.Scan(&interfaces)
+	return interfaces, err
 }
 
 const task = `-- name: Task :one

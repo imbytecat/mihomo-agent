@@ -64,15 +64,8 @@ func TestCoreDownloadUsesPlatformAssetAndVerifiedReplacement(t *testing.T) {
 			sum := sha256.Sum256(archive.Bytes())
 			digest := hex.EncodeToString(make([]byte, 32))
 			name := "mihomo-" + target + "-" + arch + "-v1.2.3.gz"
-			if err := a.applyDownloadSettings(new("https://mirror.invalid/cache")); err != nil {
-				t.Fatal(err)
-			}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Host != "mirror.invalid" {
-					http.Error(w, "direct GitHub blocked", 403)
-					return
-				}
-				path := strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, "/cache/https://api.github.com"), "/cache/https://github.com")
+				path := r.URL.Path
 				switch path {
 				case "/repos/MetaCubeX/mihomo/releases/latest":
 					_ = json.NewEncoder(w).Encode(map[string]any{"tag_name": "v1.2.3", "draft": false, "prerelease": false, "assets": []map[string]string{{"name": name, "browser_download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.2.3/" + name, "digest": "sha256:" + digest}}})
@@ -131,15 +124,8 @@ func TestAgentUpdateUsesSemverAndVerifiedGitHubAsset(t *testing.T) {
 		arch = "armv7"
 	}
 	name := "mihomoctl-linux-" + arch
-	if err := a.applyDownloadSettings(new("https://mirror.invalid/cache")); err != nil {
-		t.Fatal(err)
-	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Host != "mirror.invalid" {
-			http.Error(w, "direct GitHub blocked", 403)
-			return
-		}
-		if r.URL.Path == "/cache/https://api.github.com/repos/imbytecat/mihomoctl/releases/latest" {
+		if r.URL.Path == "/repos/imbytecat/mihomoctl/releases/latest" {
 			_ = json.NewEncoder(w).Encode(map[string]any{"tag_name": tag, "draft": false, "prerelease": false, "assets": []map[string]string{{"name": name, "browser_download_url": "https://github.com/imbytecat/mihomoctl/releases/download/" + tag + "/" + name, "digest": "sha256:" + digest}}})
 		} else {
 			downloads++

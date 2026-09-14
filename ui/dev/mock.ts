@@ -100,26 +100,17 @@ function advance() {
   job.updated = new Date().toISOString();
   state.locked = false;
   if (!failure) {
-    if (intent.params.githubProxy !== undefined)
-      state.settings.githubProxy = intent.params.githubProxy;
     switch (intent.action) {
       case 'bootstrap':
       case 'install':
         state.agent = state.service = true;
         state.version = 'v9.8.7';
         state.controller = { enabled: true, port: 9090, applied: false };
-        state.settings.githubProxy =
-          intent.params.githubProxy ?? state.settings.githubProxy;
         job.result = 'Mihomo 服务已安装';
         break;
       case 'self-update':
         state.version = 'v9.8.7';
         job.result = 'mihomoctl 已是最新版本';
-        break;
-      case 'save-github-proxy':
-        state.settings.githubProxy =
-          intent.params.githubProxy ?? state.settings.githubProxy;
-        job.result = 'GitHub Proxy已保存';
         break;
       case 'save-interfaces':
         state.settings.interfaces =
@@ -131,8 +122,6 @@ function advance() {
       case 'download':
         state.core = true;
         state.coreVersion = 'v9.8.7';
-        state.settings.githubProxy =
-          intent.params.githubProxy ?? state.settings.githubProxy;
         job.result = '内核 v9.8.7 已安装，校验通过';
         break;
       case 'update':
@@ -342,7 +331,7 @@ Object.assign(globalThis, {
         result = submit({
           id: args[at + 1]!,
           action: 'bootstrap',
-          params: { githubProxy: args[at + 2]! },
+          params: {},
         });
       } else if (inner.includes('bootstrap.sh'))
         result = state.task?.action === 'bootstrap' ? state.task : null;
@@ -370,10 +359,7 @@ const mockFetch = async (
         ? input.href
         : input.url;
   requests.push(url);
-  if ([
-    'https://api.github.com/repos/imbytecat/mihomoctl/releases/latest',
-    'https://before-install.example/https://api.github.com/repos/imbytecat/mihomoctl/releases/latest',
-  ].includes(url)) {
+  if (url === 'https://api.github.com/repos/imbytecat/mihomoctl/releases/latest') {
     // Credential behavior is tested in Chromium; Bun does not model browser cookies.
     if ((input instanceof Request ? input.credentials : init?.credentials) !== 'omit')
       throw new Error('发行查询不得携带浏览器凭据');

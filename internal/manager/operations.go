@@ -18,10 +18,7 @@ import (
 	"github.com/imbytecat/mihomoctl/internal/storage"
 )
 
-func (a *Manager) Install(githubProxy string) error {
-	if _, err := validateURL(githubProxy, true); err != nil {
-		return err
-	}
+func (a *Manager) Install() error {
 	if err := a.initIdentity(); err != nil {
 		return err
 	}
@@ -44,28 +41,17 @@ func (a *Manager) Install(githubProxy string) error {
 	if err := fsutil.AtomicWrite(a.Executable, data, 0700); err != nil {
 		return err
 	}
-	if err := a.installRuntime(githubProxy); err != nil {
+	if err := a.installRuntime(); err != nil {
 		return err
 	}
 	return a.store.ClearLatest()
 }
 
-func (a *Manager) installRuntime(githubProxy string) error {
-	settings, err := a.settings()
-	if err != nil {
-		return err
-	}
-	settings.GitHubProxy, err = validateURL(githubProxy, true)
-	if err != nil {
-		return err
-	}
+func (a *Manager) installRuntime() error {
 	if err := os.MkdirAll(a.runtime(), 0700); err != nil {
 		return err
 	}
 	if err := a.Platform.Prepare(); err != nil {
-		return err
-	}
-	if err := a.store.SaveSettings(settings); err != nil {
 		return err
 	}
 	return a.store.SetInstalled()
@@ -76,10 +62,6 @@ func (a *Manager) execute(ctx context.Context, request Request, phase func(strin
 		return "", err
 	}
 	params := request.Params
-	githubProxy := ""
-	if params.GitHubProxy != nil {
-		githubProxy = *params.GitHubProxy
-	}
 	if request.Action == "uninstall" {
 		return "Mihomo 服务已卸载", a.uninstall(phase)
 	}
@@ -87,7 +69,7 @@ func (a *Manager) execute(ctx context.Context, request Request, phase func(strin
 		if a.running() || a.installed() {
 			return "", errors.New("Mihomo 服务已安装，请刷新状态")
 		}
-		return "Mihomo 服务已安装", a.installRuntime(githubProxy)
+		return "Mihomo 服务已安装", a.installRuntime()
 	}
 	if !a.installed() {
 		return "", errors.New("Mihomo 服务未安装")
@@ -107,18 +89,6 @@ func (a *Manager) execute(ctx context.Context, request Request, phase func(strin
 	}
 	defer os.RemoveAll(work)
 	switch request.Action {
-	case "save-github-proxy":
-		phase("saving")
-		value, err := validateURL(githubProxy, true)
-		if err != nil {
-			return "", err
-		}
-		settings, err := a.settings()
-		if err != nil {
-			return "", err
-		}
-		settings.GitHubProxy = value
-		return "GitHub Proxy 已保存", a.store.SaveSettings(settings)
 	case "save-interfaces":
 		phase("saving")
 		if a.running() {
@@ -138,23 +108,14 @@ func (a *Manager) execute(ctx context.Context, request Request, phase func(strin
 		if a.running() {
 			return "", errors.New("请先停止代理")
 		}
-		if err := a.applyDownloadSettings(params.GitHubProxy); err != nil {
-			return "", err
-		}
 		return a.downloadCore(ctx, work, phase)
 	case "update":
 		return a.updateConfig(ctx, request, work, phase)
 	case "save-controller":
 		return a.saveController(ctx, request, phase)
 	case "self-update":
-		if err := a.applyDownloadSettings(params.GitHubProxy); err != nil {
-			return "", err
-		}
 		return a.updateAgent(ctx, work, phase)
 	case "download-dashboard":
-		if err := a.applyDownloadSettings(params.GitHubProxy); err != nil {
-			return "", err
-		}
 		return a.downloadDashboard(ctx, request, work, phase)
 	case "start":
 		if a.running() {
@@ -234,10 +195,6 @@ func (a *Manager) downloadCore(ctx context.Context, work string, phase func(stri
 	if err != nil {
 		return "", err
 	}
-	address, err = a.githubURL(address)
-	if err != nil {
-		return "", err
-	}
 	phase("download")
 	archive := filepath.Join(work, "core.gz")
 	if err := a.fetch(ctx, address, archive, 64<<20); err != nil {
@@ -302,7 +259,7 @@ func (a *Manager) updateConfig(ctx context.Context, request Request, work string
 	if request.Params.URL != "" {
 		address = request.Params.URL
 	}
-	address, err = validateURL(address, false)
+	address, err = validateURL(address)
 	if err != nil {
 		return "", err
 	}
@@ -388,20 +345,4 @@ func (a *Manager) applyConfig(ctx context.Context, id string, source []byte, add
 		return err
 	}
 	return nil
-}
-
-func (a *Manager) applyDownloadSettings(value *string) error {
-	if value == nil {
-		return nil
-	}
-	normalized, err := validateURL(*value, true)
-	if err != nil {
-		return err
-	}
-	settings, err := a.settings()
-	if err != nil {
-		return err
-	}
-	settings.GitHubProxy = normalized
-	return a.store.SaveSettings(settings)
 }

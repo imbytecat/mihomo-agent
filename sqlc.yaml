@@ -12,7 +12,6 @@ sql:
         omit_unused_structs: true
         rename:
           url: URL
-          github_proxy: GitHubProxy
         overrides:
           - db_type: INTEGER
             go_type: int

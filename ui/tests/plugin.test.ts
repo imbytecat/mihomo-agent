@@ -17,7 +17,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { subscriptionURL, githubProxyURL, interfaces } from '../src/config';
+import { subscriptionURL, interfaces } from '../src/config';
 import { quote, shellCommand, shellResult } from '../src/transport/ufi';
 import {
   disabledReason,
@@ -54,23 +54,6 @@ test('input validation and shell results preserve the trust boundary', async () 
   expect(() => subscriptionURL('file:///etc/passwd')).toThrow();
   expect(() => subscriptionURL('https://example.com/\noutput=/bad')).toThrow();
   expect(subscriptionURL('https://example.com/?key=x')).toContain('key=x');
-  expect(githubProxyURL('')).toBe('');
-  expect(githubProxyURL('https://worker.example/')).toBe(
-    'https://worker.example',
-  );
-  expect(() => githubProxyURL('http://worker.example/')).toThrow();
-  expect(() => githubProxyURL('https://user:pass@worker.example/')).toThrow();
-  expect(githubProxyURL('https://mirror.example.com/')).toBe('https://mirror.example.com');
-  expect(() =>
-    githubProxyURL(
-      'https://github.com/MetaCubeX/mihomo/releases/download/v1/core.gz',
-    ),
-  ).toThrow('前缀');
-  expect(() =>
-    githubProxyURL(
-      'https://mirror.example.com/https://github.com/MetaCubeX/mihomo/releases/download/v1/core.gz',
-    ),
-  ).toThrow('前缀');
   const value = "a'b $(printf injected) `printf injected`\n中文";
   const proc = spawnSync(
     'sh',
@@ -367,9 +350,6 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
     expect(disabledReason(action, installed)).not.toBe('');
   expect(disabledReason('download', installed)).toBe('');
   expect(
-    disabledReason('save-github-proxy', { ...installed, running: true }),
-  ).toBe('');
-  expect(
     disabledReason('save-interfaces', { ...installed, running: true }),
   ).toContain('停止');
   const ready = { ...installed, core: true, config: true, subscription: true };
@@ -427,7 +407,7 @@ test('request errors identify network, timeout, HTTP and malformed response stag
   const context = {
     step: '查询最新版本',
     target: '管理浏览器 GET https://api.github.com/releases/latest',
-    hint: '检查 GitHub Proxy 是否支持版本查询',
+    hint: '检查网络是否可以访问 GitHub API',
   };
   const fetch = vi.spyOn(globalThis, 'fetch');
   try {
@@ -443,7 +423,7 @@ test('request errors identify network, timeout, HTTP and malformed response stag
     expect(error.message).toContain('查询最新版本失败');
     expect(error.message).toContain('api.github.com');
     expect(error.message).toContain('TypeError: Failed to fetch');
-    expect(error.message).toContain('检查 GitHub Proxy 是否支持版本查询');
+    expect(error.message).toContain('检查网络是否可以访问 GitHub API');
     fetch.mockRejectedValueOnce(new DOMException('aborted', 'AbortError'));
     await expect(
       requestJSON(

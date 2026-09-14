@@ -4,7 +4,7 @@ import { Switch as Toggle } from '@base-ui/react/switch';
 import { clsx } from 'clsx';
 import { LoaderCircle, X, type LucideIcon } from 'lucide-react';
 import { disabledReason } from '../state';
-import type { GatewayModel, Operation, Setting } from '../use-gateway';
+import type { GatewayModel, Operation } from '../use-gateway';
 
 export const focus =
   'ufi:focus-visible:outline ufi:focus-visible:outline-2 ufi:focus-visible:outline-offset-2 ufi:focus-visible:outline-[#0a84ff]';
@@ -161,17 +161,8 @@ export function Hint({
   ) : null;
 }
 
-export function SettingInput({
-  model,
-  name,
-  label,
-  placeholder,
-}: {
-  model: GatewayModel;
-  name: Setting;
-  label: string;
-  placeholder: string;
-}) {
+export function SettingInput({ model }: { model: GatewayModel }) {
+  const name = 'interfaces';
   const field = model.form.register(name, {
     validate: (value) => model.validate(name, value),
   });
@@ -179,9 +170,9 @@ export function SettingInput({
   return (
     <div className="ufi:border-0 ufi:border-t ufi:border-solid ufi:border-[var(--mh-line)] ufi:p-4">
       <div className="ufi:mb-2.5 ufi:flex ufi:items-center ufi:justify-between ufi:gap-2">
-        <label htmlFor={`ufi-${name}`}>{label}</label>
+        <label htmlFor={`ufi-${name}`}>共享接口</label>
         {error?.type === 'server' ? (
-          <Button onClick={() => model.autosave(name)}>重试保存</Button>
+          <Button onClick={() => model.autosave()}>重试保存</Button>
         ) : (
           <span
             data-save-status={name}
@@ -190,7 +181,7 @@ export function SettingInput({
               error ? 'ufi:text-[#ff6961]' : 'ufi:opacity-60',
             )}
           >
-            {model.saveStatus(name)}
+            {model.saveStatus()}
           </span>
         )}
       </div>
@@ -198,8 +189,8 @@ export function SettingInput({
         {...field}
         id={`ufi-${name}`}
         data-setting={name}
-        type={name === 'githubProxy' ? 'url' : 'text'}
-        placeholder={placeholder}
+        type="text"
+        placeholder="自动识别"
         autoCapitalize="none"
         autoComplete="off"
         spellCheck={false}
@@ -208,13 +199,12 @@ export function SettingInput({
         aria-describedby={`ufi-${name}-help`}
         disabled={
           !!model.busy ||
-          (name === 'interfaces' &&
-            (!!model.device?.running ||
-              model.device?.capabilities.interfaces === false))
+          !!model.device?.running ||
+          model.device?.capabilities.interfaces === false
         }
         onBlur={(event) => {
           void field.onBlur(event);
-          model.autosave(name);
+          model.autosave();
         }}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
@@ -225,13 +215,11 @@ export function SettingInput({
       />
       <Hint id={`ufi-${name}-help`} error={!!error}>
         {error?.message ||
-          (name === 'githubProxy'
-            ? `查询与下载均生效 · 留空直连 · ${model.device?.service ? '离开输入框自动保存' : '安装时保存'}`
-            : model.device?.capabilities.interfaces === false
-              ? '由系统网络配置管理'
-              : model.device?.running
-                ? '停止代理后可修改'
-                : '留空自动识别 · 离开输入框自动保存')}
+          (model.device?.capabilities.interfaces === false
+            ? '由系统网络配置管理'
+            : model.device?.running
+              ? '停止代理后可修改'
+              : '留空自动识别 · 离开输入框自动保存')}
       </Hint>
     </div>
   );

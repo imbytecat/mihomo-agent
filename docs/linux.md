@@ -13,7 +13,6 @@ mihomoctl 自行安装、校验和更新 Mihomo 与自身二进制，管理订�
 | `--root` | `/var/lib/mihomoctl` | 私有数据目录，末级名称必须为 `mihomoctl` |
 | `install --unit` | `mihomoctl-core.service` | 独立 service 名称，已有同名服务时拒绝覆盖 |
 | `install --listen-address` | `127.0.0.1` | 本机回环或 IPv4 私网地址 |
-| `install --github-proxy` | 空，直连 | GitHub 版本查询与下载共用的 HTTPS 镜像前缀 |
 
 例如安装到另一目录并监听本机 LAN 地址：
 
@@ -23,8 +22,6 @@ sudo ./mihomoctl-linux-amd64 --root /opt/mihomoctl install \
 ```
 
 自定义目录安装后，后续命令也传同一个 `--root`。下载会按架构选择官方 Linux 资产；AMD64 使用兼容版，不要求新 CPU 指令集。内核和 mihomoctl 更新均需先执行 `stop`，成功后用 `start` 启动。
-
-需要修改 GitHub Proxy 时，通过 `save-github-proxy --input 文件` 传入 `{"githubProxy":"https://mirror.example.com"}`（替换示例域名），空字符串恢复直连。镜像必须支持 GitHub API 和 Release 文件；订阅仍直接请求订阅地址。
 
 ## 监听与面板
 

@@ -46,12 +46,7 @@ function RuntimeSettings({ model }: { model: GatewayModel }) {
           }
         />
       </Row>
-      <SettingInput
-        model={model}
-        name="interfaces"
-        label="共享接口"
-        placeholder="自动识别"
-      />
+      <SettingInput model={model} />
     </section>
   );
 }
@@ -228,12 +223,6 @@ function Installation({
           })}
         </p>
       )}
-      <SettingInput
-        model={model}
-        name="githubProxy"
-        label="GitHub Proxy"
-        placeholder="https://mirror.example.com"
-      />
       {(
         [
           [

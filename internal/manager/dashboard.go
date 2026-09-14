@@ -115,10 +115,6 @@ func (a *Manager) downloadDashboard(ctx context.Context, request Request, work s
 	if err != nil {
 		return "", err
 	}
-	address, err = a.githubURL(address)
-	if err != nil {
-		return "", err
-	}
 	phase("download")
 	archive := filepath.Join(work, "dashboard.zip")
 	if err := a.fetch(ctx, address, archive, 16<<20); err != nil {

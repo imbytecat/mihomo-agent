@@ -199,14 +199,7 @@ func TestDashboardInstallVerifiesAndAppliesLocalUI(t *testing.T) {
 	_ = writer.Close()
 	sum := sha256.Sum256(data.Bytes())
 	version, tampered := "v3.26.0", false
-	if err := a.applyDownloadSettings(new("https://mirror.invalid/cache")); err != nil {
-		t.Fatal(err)
-	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Host != "mirror.invalid" || !strings.HasPrefix(r.URL.Path, "/cache/https://") {
-			http.Error(w, "direct GitHub blocked", 403)
-			return
-		}
 		if strings.HasSuffix(r.URL.Path, "/latest") {
 			_ = json.NewEncoder(w).Encode(map[string]any{"tag_name": version, "draft": false, "prerelease": false, "assets": []map[string]string{{
 				"name": "dist-no-fonts.zip", "browser_download_url": "https://github.com/Zephyruso/zashboard/releases/download/" + version + "/dist-no-fonts.zip", "digest": "sha256:" + hex.EncodeToString(sum[:]),

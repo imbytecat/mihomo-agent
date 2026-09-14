@@ -12,21 +12,6 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-func TestInvalidInstallParamsDoNotInitializeState(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "mihomoctl")
-	a, err := testManager(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer a.Close()
-	if err := a.Install("http://invalid.example"); err == nil {
-		t.Fatal("accepted insecure mirror")
-	}
-	if _, err := os.Stat(root); !os.IsNotExist(err) {
-		t.Fatal("invalid install created state", err)
-	}
-}
-
 func TestOldProtocolIsRejectedWithoutMigration(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "mihomoctl")
 	if err := os.Mkdir(root, 0700); err != nil {
@@ -46,7 +31,7 @@ func TestOldProtocolIsRejectedWithoutMigration(t *testing.T) {
 	if _, err := a.Submit(Request{Action: "stop"}); err == nil {
 		t.Fatal("accepted task for old protocol")
 	}
-	if err := a.Install(""); err == nil {
+	if err := a.Install(); err == nil {
 		t.Fatal("installed over old protocol")
 	}
 	if identity, err := a.store.Identity(); err != nil || identity.Protocol != Protocol-1 {
@@ -61,7 +46,7 @@ type failedLauncher struct {
 
 func (p failedLauncher) AttachTask(context.Context, int, string) error {
 	settings, err := p.manager.settings()
-	if err != nil || settings.GitHubProxy != "" {
+	if err != nil || len(settings.Interfaces) != 0 {
 		return errors.New("worker ran before attachment")
 	}
 	return errors.New("scope refused")
@@ -70,7 +55,7 @@ func TestWorkerGateAndTypedRequests(t *testing.T) {
 	a := testAgent(t)
 	a.Platform = failedLauncher{Adapter: a.Platform, manager: a}
 	id := randomID()
-	if _, err := a.Submit(Request{ID: id, Action: "save-github-proxy", Params: Params{GitHubProxy: new("https://example.com")}}); err == nil {
+	if _, err := a.Submit(Request{ID: id, Action: "save-interfaces", Params: Params{Interfaces: new("wlan0")}}); err == nil {
 		t.Fatal("ignored failed attachment")
 	}
 	job, err := a.Job(id)
@@ -81,7 +66,7 @@ func TestWorkerGateAndTypedRequests(t *testing.T) {
 		t.Fatal("failed launcher retained request", err)
 	}
 	settings, err := a.settings()
-	if err != nil || settings.GitHubProxy != "" {
+	if err != nil || len(settings.Interfaces) != 0 {
 		t.Fatal("unhosted worker changed settings", err)
 	}
 	for _, data := range []string{
@@ -91,7 +76,6 @@ func TestWorkerGateAndTypedRequests(t *testing.T) {
 		`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","action":"stop","params":{"url":"https://example.com"}}`,
 		`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","action":"stop","params":{"url":""}}`,
 		`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","action":"stop","params":{"URL":""}}`,
-		`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","action":"stop","params":{"githubProxy":null}}`,
 		`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","action":"stop","params":{"interfaces":null}}`,
 		`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","action":"stop","params":{"controller":null}}`,
 		`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","action":"save-controller","params":{"controller":{"enabled":true,"port":9090,"unknown":1}}}`,

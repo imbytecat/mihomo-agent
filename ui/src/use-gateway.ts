@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import PQueue from 'p-queue';
 import { toast } from 'sonner';
-import { subscriptionURL, githubProxyURL, interfaces } from './config';
+import { subscriptionURL, interfaces } from './config';
 import {
   bootstrapAgent,
   checkUpdates,
@@ -25,33 +25,21 @@ import {
 
 type Fields = {
   subscription: string;
-  githubProxy: string;
   interfaces: string;
   controlEnabled: boolean;
   controlPort: string;
   controlSecret: string;
   resetSecret: boolean;
 };
-export type Setting = 'githubProxy' | 'interfaces';
-export type Operation = Exclude<
-  Action,
-  'save-github-proxy' | 'save-interfaces' | 'open-dashboard'
->;
+export type Operation = Exclude<Action, 'save-interfaces' | 'open-dashboard'>;
 const defaults: Fields = {
   subscription: '',
-  githubProxy: '',
   interfaces: '',
   controlEnabled: true,
   controlPort: '9090',
   controlSecret: '',
   resetSecret: false,
 };
-const normalize = { githubProxy: githubProxyURL, interfaces };
-const settingAction = {
-  githubProxy: 'save-github-proxy',
-  interfaces: 'save-interfaces',
-} as const;
-const settingLabel = { githubProxy: 'GitHub Proxy', interfaces: '接口' };
 const notification = {
   id: 'mihomoctl-operation',
   toasterId: 'mihomoctl',
@@ -70,11 +58,8 @@ export function useGateway() {
   const [busy, setBusy] = useState<Action | null>(null);
   const busyRef = useRef(false);
   const pendingSaves = useRef(0);
-  const [saving, setSaving] = useState<Setting | null>(null);
-  const [saved, setSaved] = useState<Record<Setting, string | null>>({
-    githubProxy: null,
-    interfaces: null,
-  });
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
   const savedRef = useRef(saved);
   const loaded = useRef(false);
   const open = useRef(false);
@@ -101,8 +86,8 @@ export function useGateway() {
       const state = await readDeviceState();
       if (!state.service && loaded.current) {
         loaded.current = false;
-        savedRef.current = { githubProxy: null, interfaces: null };
-        setSaved({ ...savedRef.current });
+        savedRef.current = null;
+        setSaved(savedRef.current);
       }
       deviceRef.current = state;
       setDevice(state);
@@ -117,27 +102,21 @@ export function useGateway() {
     const state = await readState();
     if (state.service) {
       try {
-        for (const name of ['githubProxy', 'interfaces'] as const) {
-          const text =
-            name === 'githubProxy'
-              ? state.settings.githubProxy
-              : state.settings.interfaces.join(' ');
-          const value = normalize[name](text);
-          let current: string | null = null;
-          try {
-            current = normalize[name](form.getValues(name));
-          } catch {}
-          const replace =
-            !form.getFieldState(name).isDirty ||
-            current === savedRef.current[name] ||
-            current === value;
-          savedRef.current[name] = value;
-          if (replace)
-            form.resetField(name, {
-              defaultValue: value === 'auto' ? '' : value,
-            });
-        }
-        setSaved({ ...savedRef.current });
+        const value = interfaces(state.settings.interfaces.join(' '));
+        let current: string | null = null;
+        try {
+          current = interfaces(form.getValues('interfaces'));
+        } catch {}
+        const replace =
+          !form.getFieldState('interfaces').isDirty ||
+          current === savedRef.current ||
+          current === value;
+        savedRef.current = value;
+        if (replace)
+          form.resetField('interfaces', {
+            defaultValue: value === 'auto' ? '' : value,
+          });
+        setSaved(value);
         loaded.current = true;
         if (state.controller) {
           if (!form.getFieldState('controlEnabled').isDirty)
@@ -177,19 +156,20 @@ export function useGateway() {
     }
   };
 
-  function dirty(name: Setting) {
+  function dirty() {
     try {
-      return normalize[name](form.getValues(name)) !== savedRef.current[name];
+      return interfaces(form.getValues('interfaces')) !== savedRef.current;
     } catch {
       return true;
     }
   }
 
   // Called inside the queue. A completed save must not overwrite newer typing.
-  const persist = async (name: Setting, snapshot: string) => {
+  const persist = async (snapshot: string) => {
+    const name = 'interfaces';
     let value: string;
     try {
-      value = normalize[name](snapshot);
+      value = interfaces(snapshot);
     } catch (error) {
       form.setError(name, {
         type: 'validate',
@@ -197,18 +177,18 @@ export function useGateway() {
       });
       throw error;
     }
-    if (value === savedRef.current[name]) return;
+    if (value === savedRef.current) return;
     const state = await readState();
-    const reason = disabledReason(settingAction[name], state);
+    const reason = disabledReason('save-interfaces', state);
     if (reason) throw new Error(reason);
-    setSaving(name);
+    setSaving(true);
     try {
       await waitTask(
-        await submitTask(settingAction[name], { [name]: value }),
+        await submitTask('save-interfaces', { interfaces: value }),
         () => {},
       );
-      savedRef.current[name] = value;
-      setSaved({ ...savedRef.current });
+      savedRef.current = value;
+      setSaved(savedRef.current);
       if (form.getValues(name) === snapshot)
         form.resetField(name, { defaultValue: value === 'auto' ? '' : value });
       toast.dismiss(`mihomoctl-${name}`);
@@ -216,24 +196,25 @@ export function useGateway() {
       form.setError(name, { type: 'server', message: '保存失败，点此重试' });
       throw error;
     } finally {
-      setSaving(null);
+      setSaving(false);
       await readState();
     }
   };
 
-  const autosave = (name: Setting) => {
-    if (busyRef.current || !deviceRef.current?.service || !dirty(name)) return;
+  const autosave = () => {
+    const name = 'interfaces';
+    if (busyRef.current || !deviceRef.current?.service || !dirty()) return;
     const snapshot = form.getValues(name);
     pendingSaves.current++;
     void queue
-      .add(() => persist(name, snapshot))
+      .add(() => persist(snapshot))
       .catch((error) => {
         if (form.getFieldState(name).error?.type !== 'validate') {
           form.setError(name, {
             type: 'server',
             message: '保存失败，点此重试',
           });
-          toast.error(`${settingLabel[name]}保存失败`, {
+          toast.error('接口保存失败', {
             id: `mihomoctl-${name}`,
             toasterId: 'mihomoctl',
             description: (error instanceof Error
@@ -285,21 +266,11 @@ export function useGateway() {
           case 'install':
             result = await waitTask(
               !state?.agent
-                ? await bootstrapAgent(githubProxyURL(snapshot.githubProxy))
-                : await submitTask('install', {
-                    githubProxy: githubProxyURL(snapshot.githubProxy),
-                  }),
+                ? await bootstrapAgent()
+                : await submitTask('install'),
               observe,
             );
             result = 'Mihomo 服务已安装';
-            break;
-          case 'self-update':
-            result = await waitTask(
-              await submitTask('self-update', {
-                githubProxy: githubProxyURL(snapshot.githubProxy),
-              }),
-              observe,
-            );
             break;
           case 'stop':
             result = await waitTask(
@@ -309,9 +280,7 @@ export function useGateway() {
             break;
           case 'download':
             result = await waitTask(
-              await submitTask('download', {
-                githubProxy: githubProxyURL(snapshot.githubProxy),
-              }),
+              await submitTask('download'),
               observe,
             );
             loaded.current = false;
@@ -370,17 +339,7 @@ export function useGateway() {
             setSecret('');
             break;
           }
-          case 'download-dashboard':
-            result = await waitTask(
-              await submitTask('download-dashboard', {
-                githubProxy: githubProxyURL(snapshot.githubProxy),
-              }),
-              observe,
-            );
-            break;
           case 'check-updates': {
-            if (state?.service)
-              await persist('githubProxy', snapshot.githubProxy);
             const checked = await checkUpdates();
             if (
               [checked.self, checked.core, checked.dashboard].some(
@@ -399,8 +358,8 @@ export function useGateway() {
             result = await waitTask(await submitTask('uninstall'), observe);
             loaded.current = false;
             form.reset(defaults);
-            savedRef.current = { githubProxy: null, interfaces: null };
-            setSaved({ ...savedRef.current });
+            savedRef.current = null;
+            setSaved(savedRef.current);
             break;
           case 'diagnose':
             result = await deviceLogs(true);
@@ -497,9 +456,7 @@ export function useGateway() {
             'resetSecret',
           ] as const
         ).some((name) => form.getFieldState(name).isDirty) ||
-        (['githubProxy', 'interfaces'] as const).some(
-          (name) => form.getFieldState(name).isDirty && dirty(name),
-        )
+        (form.getFieldState('interfaces').isDirty && dirty())
       ) {
         event.preventDefault();
       }
@@ -512,7 +469,7 @@ export function useGateway() {
   }, []);
 
   const validate = (
-    name: 'subscription' | Setting | 'controlPort' | 'controlSecret',
+    name: 'subscription' | 'interfaces' | 'controlPort' | 'controlSecret',
     value: string,
   ) => {
     try {
@@ -530,24 +487,22 @@ export function useGateway() {
         );
       if (name === 'subscription') {
         if (value.trim()) subscriptionURL(value.trim());
-      } else normalize[name](value);
+      } else interfaces(value);
       return true;
     } catch (error) {
       return error instanceof Error ? error.message : '格式不正确';
     }
   };
-  const saveStatus = (name: Setting) => {
-    if (saving === name) return '保存中';
-    if (form.formState.errors[name])
-      return form.formState.errors[name]!.message!;
+  const saveStatus = () => {
+    if (saving) return '保存中';
+    if (form.formState.errors.interfaces)
+      return form.formState.errors.interfaces.message!;
     if (!device?.service) return '草稿';
-    if (saved[name] === null) return '读取中';
-    return dirty(name)
+    if (saved === null) return '读取中';
+    return dirty()
       ? '未保存'
-      : !form.getValues(name).trim()
-        ? name === 'githubProxy'
-          ? '直连'
-          : '自动'
+      : !form.getValues('interfaces').trim()
+        ? '自动'
         : '已保存';
   };
   return {

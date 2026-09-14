@@ -19,7 +19,7 @@ import (
 
 const Filename = "state.db"
 const Lockfile = "state.lock"
-const schemaVersion = 3
+const schemaVersion = 4
 
 type Store struct {
 	db      *sql.DB
@@ -36,8 +36,7 @@ type Identity struct {
 	Public, Private [32]byte
 }
 type Settings struct {
-	GitHubProxy string   `json:"githubProxy"`
-	Interfaces  []string `json:"interfaces"`
+	Interfaces []string `json:"interfaces"`
 }
 type Controller struct {
 	Enabled bool   `json:"enabled"`
@@ -235,10 +234,10 @@ func (s *Store) SetInstalled() error {
 }
 func (s *Store) Settings() (Settings, error) {
 	value, err := s.queries.Settings(context.Background())
-	return Settings{GitHubProxy: value.GitHubProxy, Interfaces: strings.Fields(value.Interfaces)}, err
+	return Settings{Interfaces: strings.Fields(value)}, err
 }
 func (s *Store) SaveSettings(p Settings) error {
-	return s.queries.SaveSettings(context.Background(), db.SaveSettingsParams{GitHubProxy: p.GitHubProxy, Interfaces: strings.Join(p.Interfaces, " ")})
+	return s.queries.SaveSettings(context.Background(), strings.Join(p.Interfaces, " "))
 }
 func (s *Store) Controller() (Controller, error) {
 	value, err := s.queries.Controller(context.Background())

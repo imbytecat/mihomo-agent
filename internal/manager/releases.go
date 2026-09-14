@@ -55,11 +55,7 @@ func (r release) asset(repo, name string) (string, string, string, error) {
 func (a *Manager) latestRelease(ctx context.Context, owner, repo string) (release, error) {
 	client := a.deviceClient()
 	defer client.CloseIdleConnections()
-	address, err := a.githubURL("https://api.github.com/")
-	if err != nil {
-		return release{}, err
-	}
-	api, err := github.NewClient(github.WithHTTPClient(client), github.WithURLs(&address, nil), github.WithUserAgent("mihomoctl/"+a.Version))
+	api, err := github.NewClient(github.WithHTTPClient(client), github.WithUserAgent("mihomoctl/"+a.Version))
 	if err != nil {
 		return release{}, err
 	}
@@ -97,10 +93,6 @@ func (a *Manager) updateAgent(ctx context.Context, work string, phase func(strin
 		arch = "armv7"
 	}
 	_, address, digest, err := r.asset("imbytecat/mihomoctl", "mihomoctl-linux-"+arch)
-	if err != nil {
-		return "", err
-	}
-	address, err = a.githubURL(address)
 	if err != nil {
 		return "", err
 	}

@@ -3,30 +3,17 @@ import { app, evaluate, idle, closeModal, open, reload } from './app';
 
 test('install, encrypted subscription, runtime, autostart and uninstall', async () => {
   await open('missing-service');
-  await app
-    .getByCSS('[data-setting=githubProxy]')
-    .fill('https://before-install.example');
   await app.getByCSS('[data-primary=true][data-action=install]').click();
   await expect.poll(() => evaluate('mockDeviceState.service')).toBeTruthy();
   await idle();
   expect(evaluate('mockRequests.filter(u => u.includes("api.github.com"))')).toEqual([
-    'https://before-install.example/https://api.github.com/repos/imbytecat/mihomoctl/releases/latest',
+    'https://api.github.com/repos/imbytecat/mihomoctl/releases/latest',
   ]);
-  await expect
-    .element(app.getByCSS('[data-setting=githubProxy]'))
-    .toHaveValue('https://before-install.example');
   await app.getByCSS('[data-group=maintenance] [data-action=download]').click();
   await expect
     .element(app.getByCSS('[data-version=core]'))
     .toHaveTextContent('v9.8.7');
   await idle();
-  await expect
-    .poll(() =>
-      evaluate(
-        'mockDeviceState.settings.githubProxy === "https://before-install.example"',
-      ),
-    )
-    .toBe(true);
   await app.getByCSS('[data-url]').fill('https://example.com/subscription');
   await app.getByRole('button', { name: '保存并更新', exact: true }).click();
   await expect

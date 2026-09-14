@@ -15,7 +15,6 @@ import {
   type TaskParams,
 } from '../state';
 import { requestJSON, requestFailure, transportFailure } from '../request';
-import { githubProxyURL } from '../config';
 
 declare const runShellWithRoot: (
   command: string,
@@ -269,15 +268,13 @@ const agentReleaseSchema = z.object({
     }),
   ),
 });
-export async function latestAgentAssets(githubProxy = '') {
-  const prefix = githubProxyURL(githubProxy);
-  const official =
+export async function latestAgentAssets() {
+  const address =
     'https://api.github.com/repos/imbytecat/mihomoctl/releases/latest';
-  const address = prefix ? `${prefix}/${official}` : official;
   const context = {
     step: '检查 mihomoctl 最新版本',
     target: address,
-    hint: '检查 GitHub Proxy 是否支持 GitHub API 和浏览器跨域；留空时直连。',
+    hint: '检查浏览器能否访问 GitHub API，以及网络和跨域请求是否可用。',
   };
   const release = await requestJSON(
     address,
@@ -299,8 +296,8 @@ export async function latestAgentAssets(githubProxy = '') {
   return { arm64: asset('arm64'), armv7: asset('armv7') };
 }
 
-export async function bootstrapAgent(githubProxy: string) {
-  const assets = await latestAgentAssets(githubProxy);
+export async function bootstrapAgent() {
+  const assets = await latestAgentAssets();
   await sodium.ready;
   const id = taskID();
   const data = sodium.from_string(bootstrapScript);
@@ -321,7 +318,7 @@ export async function bootstrapAgent(githubProxy: string) {
     hash=$(sha256sum ${folder}/bootstrap.sh)
     [ "\${hash%% *}" = ${quote(hash)} ] || { echo '安装脚本校验失败'; exit 1; }
     rm -f ${quote(source)}
-    sh ${folder}/bootstrap.sh submit ${quote(id)} ${quote(githubProxy)} ${quote(asset64.url)} ${quote(asset64.sha256)} ${quote(asset7.url)} ${quote(asset7.sha256)} ${protocol}
+    sh ${folder}/bootstrap.sh submit ${quote(id)} ${quote(asset64.url)} ${quote(asset64.sha256)} ${quote(asset7.url)} ${quote(asset7.sha256)} ${protocol}
   `);
   return parseJob(JSON.parse(result));
 }
