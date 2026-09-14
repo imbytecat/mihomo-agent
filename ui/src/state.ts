@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const protocol = 2;
+export const protocol = 3;
 export const capabilitiesSchema = z.object({
   coreInstall: z.boolean(),
   agentUpdate: z.boolean(),
@@ -48,6 +48,26 @@ export const jobSchema = z.object({
 });
 export type DeviceJob = z.infer<typeof jobSchema>;
 export type TaskAction = Exclude<DeviceJob['action'], 'bootstrap'>;
+const componentUpdateSchema = z.object({
+  current: z.string(),
+  latest: z.string(),
+  state: z.enum([
+    'not-installed',
+    'up-to-date',
+    'available',
+    'unknown',
+    'error',
+  ]),
+  error: z.string().default(''),
+});
+export const updatesSchema = z.object({
+  checkedAt: z.string(),
+  agent: componentUpdateSchema,
+  core: componentUpdateSchema,
+  dashboard: componentUpdateSchema,
+});
+export type Updates = z.infer<typeof updatesSchema>;
+
 const stateSchema = z.object({
   protocol: z.literal(protocol),
   platform: z.enum(['ufi', 'linux']),
@@ -71,6 +91,7 @@ const stateSchema = z.object({
     interfaces: z.array(z.string()),
   }),
   task: jobSchema.nullable(),
+  updates: updatesSchema.nullable(),
   controller: z
     .object({
       enabled: z.boolean(),
@@ -84,6 +105,7 @@ const stateSchema = z.object({
     version: z.string(),
   }),
 });
+
 export type DeviceState = z.infer<typeof stateSchema> & { agent: boolean };
 export const emptyState: DeviceState = {
   service: false,
@@ -112,11 +134,13 @@ export const emptyState: DeviceState = {
   publicKey: '',
   settings: { githubProxy: '', interfaces: [] },
   task: null,
+  updates: null,
   controller: null,
   dashboard: { installed: false, ready: false, version: '' },
 };
 export type Action =
   | TaskAction
+  | 'check-updates'
   | 'logs'
   | 'refresh'
   | 'diagnose'
@@ -180,10 +204,9 @@ export function disabledReason(
 ): string {
   if (busy) return '正在执行操作，请稍候';
   if (action === 'refresh') return '';
-  if (!state)
-    return action === 'update-agent' || action === 'stop'
-      ? ''
-      : '尚未确认设备状态，请刷新状态';
+  if (!state) return action === 'stop' ? '' : '尚未确认设备状态，请刷新状态';
+  if (action === 'check-updates')
+    return state.agent ? '' : '请先安装 Mihomo Agent';
   if (action === 'logs' || action === 'diagnose')
     return state.agent ? '' : '请先安装 Mihomo Agent';
   if (state.locked) return '设备正在安装或更新，请等待完成后刷新';

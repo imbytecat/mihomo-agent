@@ -25,7 +25,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -39,9 +40,6 @@ jobs:
         run: just test-systemd
         env:
           MIHOMO_SYSTEMD_TEST: '1'
-      - name: Build pinned binaries and plugin
-        run: just release "$RELEASE_TAG"
-      - run: git diff --exit-code -- ui/agent-bootstrap.json
       - run: just browser-install
       - run: just test-ui
       - name: Upload browser failure evidence
@@ -52,19 +50,19 @@ jobs:
           path: ui/test-results/
           if-no-files-found: ignore
           retention-days: 7
-      - name: Publish release assets
+      - name: Build and publish with GoReleaser
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: goreleaser release --clean
+      - name: Verify public assets against this build
         run: |
-          gh release create "$RELEASE_TAG" .release/mihomo-agent-linux-arm64 .release/mihomo-agent-linux-armv7 .release/mihomo-agent-linux-amd64 .release/mihomo-agent-ufi.js .release/SHA256SUMS --verify-tag --title "$RELEASE_TAG" --notes "使用与升级说明：https://github.com/imbytecat/mihomo-agent#readme" || true
-          # The API may return 5xx after committing the release. Public byte verification
-          # determines success; no existing tag or asset is ever overwritten.
           verify_dir=$(mktemp -d)
-          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = false
-          gh release download "$RELEASE_TAG" --pattern SHA256SUMS --dir "$verify_dir"
+          trap 'rm -rf "$verify_dir"' EXIT
+          release_url="https://github.com/imbytecat/mihomo-agent/releases/download/$RELEASE_TAG"
+          curl --fail --silent --show-error --location --retry 3 "$release_url/SHA256SUMS" -o "$verify_dir/SHA256SUMS"
           cmp "$verify_dir/SHA256SUMS" .release/SHA256SUMS
           while read -r _digest name; do
-            curl --fail --silent --show-error --location --retry 3 "https://github.com/imbytecat/mihomo-agent/releases/download/$RELEASE_TAG/$name" -o "$verify_dir/$name"
+            curl --fail --silent --show-error --location --retry 3 "$release_url/$name" -o "$verify_dir/$name"
           done < .release/SHA256SUMS
           cd "$verify_dir"
           sha256sum -c SHA256SUMS

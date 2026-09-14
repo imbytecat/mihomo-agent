@@ -56,6 +56,9 @@ func (a *Manager) latestRelease(ctx context.Context, owner, repo string) (releas
 	if err != nil {
 		return release{}, fmt.Errorf("查询 %s/%s 版本失败：%w", owner, repo, err)
 	}
+	if value == nil {
+		return release{}, errors.New("官方版本信息无效")
+	}
 	r := release{*value}
 	return r, r.validate()
 }

@@ -12,7 +12,7 @@
 - 设备入口：cmd/mihomo-agent 只处理进程入口，internal/cli 用 Cobra 装配平台、CLI 和 UFI 上传 Adapter。机器响应是 JSON；错误不得混入 usage。
 - 共享 Module：internal/manager 管请求校验、持久任务、订阅、下载校验、配置事务与回滚。CLI 与解密后的 UFI 请求都调用 Submit；不能依赖浏览器串联关键步骤。
 - 平台 Module：internal/platform 管 UFI 守护 / 网络桥接及 systemd 运行时。Adapter 配置由数据库持久化，worker、boot、supervise 都重新读取；已有安装不能通过环境或旗标换平台。
-- 存储 Module：internal/storage 使用 database/sql + modernc SQLite，拥有类型化状态表；YAML、日志和运行文件留在文件系统。fsutil、host、download、redact 是共享基础实现。
+- 存储 Module：internal/storage 使用 sqlc + database/sql + modernc SQLite，拥有类型化状态表；YAML、日志和运行文件留在文件系统。fsutil、host、download、redact 是共享基础实现。
 - 前端：ui/src/transport/ufi 只处理 UFI 通信和引导；gateway.ts 处理任务观察与展示；use-gateway.ts 管草稿和交互；components/ 管视图。CSS 仅留主题与宿主隔离，其余用 Tailwind className。
 - 无样式交互组件统一使用 Base UI。Tailwind 4 使用官方 Vite 插件、ufi: 前缀和容器内的无 layer utilities；不加载 preflight，避免宿主样式覆盖插件或插件样式外溢。
 - 修改加载协议时核对下方 UFI 官方来源；没有文档保证的行为不能从其他插件推断。
@@ -46,17 +46,18 @@
 - renameio 暂存必须同文件系统且初始私有，不沿用旧文件权限覆盖密钥。Android 公共自启文件的 chmod 可容忍 EPERM/EOPNOTSUPP，其余情况必须报错。
 - DoH 使用 net/http 与 x/net/dnsmessage，保留引导 IP、Android CA、取消、HTTPS 重定向限制与响应上限。解压使用标准库，调用方保留路径、类型和大小限制。
 - modernc.org/libc 必须与所用 modernc.org/sqlite 的 go.mod 匹配；保持 CGO_ENABLED=0 和 ARM64 / ARMv7 / AMD64 构建。
-- Go、Bun、Node、just 和检查工具的版本集中在 mise.toml，CI 通过 mise 安装；Vitest 与 Playwright 驱动是 ui/ 的锁定开发依赖，GitHub Actions 固定完整提交 SHA。
+- Go、Bun、just、sqlc、GoReleaser 和检查工具的版本集中在 mise.toml，CI 通过 mise 安装；Vitest 与 Playwright 驱动是 ui/ 的锁定开发依赖，GitHub Actions 固定完整提交 SHA。
+- SQLite 的 schema.sql 同时用于初始化与 sqlc；queries.sql 生成 internal/storage/db，生成文件随源码提交，just check 用 sqlc diff 校验。事务与状态锁归 storage，生成层不依赖 Manager；修改状态格式同步升级 schema 与协议，旧安装重装。
+- 版本检查快照持久化 SQLite；inspect 只读缓存，check-updates 显式联网并保存各组件结果。当前 Agent、内核和面板版本仍以实际安装为准；前端仅展示与当前版本一致的缓存比较。
 - 根目录为 Go module，前端包与测试独立位于 ui/。构建与验证入口见 justfile；Go 构建不能依赖 Bun 或前端资产；go.mod 用 ignore ./ui 排除前端依赖中附带的 Go 示例，保持 test/tidy 的边界。
-- 交互修改运行 just test-ui；ui/tests/browser 使用 Vitest Browser Mode 和 Playwright 驱动，通过真实 DOMParser 加载生产 IIFE，并验证窄屏布局与宿主隔离。ui/tests/native.test.ts 在 Vitest Node 中验证前端请求 → 纯 Go CLI；platform 测试替换 D-Bus；真实 systemd 验证仅在隔离 CI runner 通过 MIHOMO_SYSTEMD_TEST 显式启用。
+- 交互修改运行 just test-ui；ui/tests/browser 使用 Vitest Browser Mode 和 Playwright 驱动，通过真实 DOMParser 加载生产 IIFE，并验证窄屏布局与宿主隔离。ui/tests/native.test.ts 在 Bun 运行的 Vitest node 项目中验证前端请求 → 纯 Go CLI；platform 测试替换 D-Bus；真实 systemd 验证仅在隔离 CI runner 通过 MIHOMO_SYSTEMD_TEST 显式启用。
 - 浏览器测试通过官方 [frameLocator](https://vitest.dev/api/browser/context#framelocator) 操作同源应用 iframe；仅刷新应用 iframe，不导航 Vitest 运行器。同文件用例顺序执行，每例清理专属 sessionStorage 并收集应用异常；[失败截图和 trace](https://vitest.dev/guide/browser/playwright-traces) 由 Vitest 管理。
 - CI systemd fixture 只监听 loopback 测试端口，不发送代理流量或改路由 / 防火墙。不得把它描述为真实网关流量验证。
 
 ## 发布
 
-- 使用官方 Go，通过 mise exec -- just release vX.Y.Z 构建。Nix 修改标准库路径，同版本编译器也会产生不同摘要。
-- 构建资产与校验以 tools/release、mise.toml 与 workflows 为准；协议复用 Go 常量。提交生成的 ui/agent-bootstrap.json，再推送对应 v* 标签，不能覆盖已发布标签或资产。
-- ui/agent-bootstrap.json 仅为 UFI 初装信任锚，不参与正常版本比较；不能只信任同一下载代理同时提供的文件与摘要。
+- 使用 mise 的官方 Go 与 GoReleaser；构建环境、架构、资产及校验以 .goreleaser.yaml 为准，工具版本以 mise.toml 为准。just snapshot 用于预览，just release 从当前 Git 标签构建且不上传；Release workflow 完成检查后发布，已有标签和资产不可覆盖。
+- UFI 初装从 GitHub 官方 HTTPS API 获取最新正式版与资产 SHA-256；下载代理仅传输二进制，执行前校验摘要和协议。后续 Agent 更新统一走 Manager，不用前端引导覆盖已有安装。
 - 发布前通过 Check 和 Release CI；从公开地址下载所有资产，校验 SHA256SUMS 并与本地构建对比。插件保持单 JS，不增加 CDN / WASM 请求。
 - 项目与 Go module 统一命名为 mihomo-agent；UFI 插件资产为 mihomo-agent-ufi.js。只维护当前名称、目录和协议，不提供历史别名或状态迁移。
 

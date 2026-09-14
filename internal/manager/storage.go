@@ -16,7 +16,7 @@ import (
 	"github.com/imbytecat/mihomo-agent/internal/storage"
 )
 
-const Protocol = 2
+const Protocol = 3
 
 type Manager struct {
 	Root, Version, Executable string

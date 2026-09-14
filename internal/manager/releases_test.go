@@ -136,7 +136,7 @@ func TestAgentUpdateUsesSemverAndVerifiedGitHubAsset(t *testing.T) {
 			return []byte(`{"listeners":false,"network":false}`), nil
 		}
 		probes++
-		return []byte(`{"version":"v1.11.0","protocol":2}`), nil
+		return json.Marshal(map[string]any{"version": "v1.11.0", "protocol": Protocol})
 	}
 	if _, err := a.updateAgent(context.Background(), t.TempDir(), func(string) {}); err != nil || downloads != 0 {
 		t.Fatal("semver comparison failed", err)

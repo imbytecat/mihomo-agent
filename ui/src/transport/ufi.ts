@@ -3,10 +3,11 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { quote as shellQuote } from 'shell-quote';
 import { z } from 'zod';
-import manifest from '../../agent-bootstrap.json';
 import bootstrapScript from './ufi-bootstrap.sh?raw';
 import {
   emptyState,
+  protocol,
+  updatesSchema,
   parseState,
   parseJob,
   type DeviceJob,
@@ -71,9 +72,15 @@ export async function shell(command: string, timeout = 30_000) {
     throw requestFailure(context, result.content || 'Root 接口不可用');
   return shellResult(result.content || '', marker);
 }
-async function agent(args: string[]) {
-  const result = await shell([quote(AGENT), ...args.map(quote)].join(' '));
+async function agent(args: string[], timeout = 30_000) {
+  const result = await shell(
+    [quote(AGENT), ...args.map(quote)].join(' '),
+    timeout,
+  );
   return JSON.parse(result) as unknown;
+}
+export async function checkUpdates() {
+  return updatesSchema.parse(await agent(['check-updates'], 45_000));
 }
 export async function stopAgent() {
   return parseJob(await agent(['stop']));
@@ -249,7 +256,46 @@ export async function readBootstrap(id?: string): Promise<DeviceJob | null> {
   `);
   return output === 'null' ? null : parseJob(JSON.parse(output));
 }
+const agentReleaseSchema = z.object({
+  tag_name: z.string().min(1),
+  draft: z.literal(false),
+  prerelease: z.literal(false),
+  assets: z.array(
+    z.object({
+      name: z.string(),
+      browser_download_url: z.string(),
+      digest: z.string().nullable().optional(),
+    }),
+  ),
+});
+export async function latestAgentAssets() {
+  const context = {
+    step: '检查 Agent 最新版本',
+    target: 'GitHub 官方 API',
+    hint: '首次安装需要浏览器直连 GitHub API；GitHub Proxy 仅代理文件下载。',
+  };
+  const release = await requestJSON(
+    'https://api.github.com/repos/imbytecat/mihomo-agent/releases/latest',
+    {},
+    context,
+    agentReleaseSchema,
+  );
+  const asset = (arch: string) => {
+    const name = `mihomo-agent-linux-${arch}`;
+    const value = release.assets.find((entry) => entry.name === name);
+    const url = `https://github.com/imbytecat/mihomo-agent/releases/download/${encodeURIComponent(release.tag_name)}/${name}`;
+    if (
+      value?.browser_download_url !== url ||
+      !/^sha256:[a-f0-9]{64}$/i.test(value.digest || '')
+    )
+      throw requestFailure(context, `官方版本缺少 ${arch} 文件或有效 SHA-256`);
+    return { url, sha256: value.digest!.slice(7).toLowerCase() };
+  };
+  return { arm64: asset('arm64'), armv7: asset('armv7') };
+}
+
 export async function bootstrapAgent(githubProxy: string) {
+  const assets = await latestAgentAssets();
   await sodium.ready;
   const id = taskID();
   const data = sodium.from_string(bootstrapScript);
@@ -257,8 +303,8 @@ export async function bootstrapAgent(githubProxy: string) {
   const name = await uploadBytes(data);
   const source = '/data/data/com.minikano.f50_sms/files/uploads/' + name;
   const folder = BOOT + '/jobs/' + id;
-  const asset64 = manifest.assets.arm64,
-    asset7 = manifest.assets.armv7;
+  const asset64 = assets.arm64,
+    asset7 = assets.armv7;
   const result = await shell(`
     set -e
     umask 077
@@ -270,7 +316,7 @@ export async function bootstrapAgent(githubProxy: string) {
     hash=$(sha256sum ${folder}/bootstrap.sh)
     [ "\${hash%% *}" = ${quote(hash)} ] || { echo '安装脚本校验失败'; exit 1; }
     rm -f ${quote(source)}
-    sh ${folder}/bootstrap.sh submit ${quote(id)} ${quote(githubProxy)} ${quote(asset64.url)} ${quote(asset64.sha256)} ${quote(asset7.url)} ${quote(asset7.sha256)}
+    sh ${folder}/bootstrap.sh submit ${quote(id)} ${quote(githubProxy)} ${quote(asset64.url)} ${quote(asset64.sha256)} ${quote(asset7.url)} ${quote(asset7.sha256)} ${protocol}
   `);
   return parseJob(JSON.parse(result));
 }

@@ -8,6 +8,7 @@ import (
 )
 
 type Status struct {
+	Updates      *Updates              `json:"updates"`
 	Platform     string                `json:"platform"`
 	Capabilities platform.Capabilities `json:"capabilities"`
 	Protocol     int                   `json:"protocol"`
@@ -42,6 +43,10 @@ func (a *Manager) Inspect() (Status, error) {
 		return status, err
 	}
 	status.Service, err = a.store.Installed()
+	if err != nil {
+		return status, err
+	}
+	status.Updates, err = a.store.Updates()
 	if err != nil {
 		return status, err
 	}

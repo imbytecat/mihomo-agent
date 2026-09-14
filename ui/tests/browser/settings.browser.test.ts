@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { userEvent } from 'vitest/browser';
-import { app, evaluate, idle, closeModal, open } from './app';
+import { app, evaluate, idle, closeModal, open, reload } from './app';
 
 test('autosave preserves newer drafts and validates download settings', async () => {
   await open('ready');
@@ -199,4 +199,65 @@ test('controller transactions, encrypted secrets and task details', async () => 
   await idle();
   expect(evaluate('mockDeviceState.controller.port')).toBe(9191);
   await expect.element(app.getByCSS('#ufi-control-port')).toHaveValue('9292');
+});
+
+test('update checks show component results without submitting mutations or clearing drafts', async () => {
+  await open('ready');
+  await app.getByCSS('[data-settings] > summary').click();
+  await app.getByCSS('[data-url]').fill('https://draft.example/subscription');
+  await app.getByRole('button', { name: '检查更新', exact: true }).click();
+  await idle();
+  await expect
+    .element(app.getByCSS('[data-update=agent]'))
+    .toHaveTextContent('可更新至 v9.8.7');
+  await expect
+    .element(app.getByCSS('[data-update=core]'))
+    .toHaveTextContent('已是最新');
+  await expect
+    .element(app.getByCSS('[data-update=dashboard]'))
+    .toMatchTextContent('最新 v3.26.0');
+  await expect
+    .element(app.getByCSS('[data-update-checked]'))
+    .toMatchTextContent('上次检查');
+  await expect
+    .element(app.getByCSS('[data-group=maintenance] [data-action=download]'))
+    .toBeDisabled();
+  await expect
+    .element(app.getByCSS('[data-url]'))
+    .toHaveValue('https://draft.example/subscription');
+  expect(evaluate('mockIntents.length')).toBe(0);
+  await evaluate('window.mockUpdateFailure = true');
+  await app.getByRole('button', { name: '检查更新', exact: true }).click();
+  await idle();
+  await expect
+    .element(app.getByCSS('[data-update=agent]'))
+    .toHaveTextContent('检查失败');
+  await expect
+    .element(app.getByCSS('[data-update=core]'))
+    .toHaveTextContent('已是最新');
+  await evaluate('window.mockUpdateFailure = false');
+  await app.getByRole('button', { name: '检查更新', exact: true }).click();
+  await idle();
+  expect(evaluate('mockIntents.length')).toBe(0);
+  expect(
+    evaluate(
+      'mockRequests.every(u => new URL(u, location.href).origin === location.origin)',
+    ),
+  ).toBe(true);
+  await reload();
+  await app.getByCSS('[data-plugin] > summary').click();
+  await idle();
+  await app.getByCSS('[data-settings] > summary').click();
+  await expect
+    .element(app.getByCSS('[data-update=agent]'))
+    .toHaveTextContent('可更新至 v9.8.7');
+  expect(evaluate('mockCommands.some(c => c.includes("check-updates"))')).toBe(false);
+  await app.getByCSS('[data-action=update-agent]').click();
+  await idle();
+  await expect
+    .element(app.getByCSS('[data-update=agent]'))
+    .not.toBeInTheDocument();
+  await expect
+    .element(app.getByCSS('[data-update=core]'))
+    .toHaveTextContent('已是最新');
 });

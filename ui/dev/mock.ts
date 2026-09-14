@@ -3,13 +3,14 @@ import sodium from 'libsodium-wrappers';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { parse } from 'shell-quote';
-import { version } from '../agent-bootstrap.json';
+const version = 'v0.5.0';
 import {
   emptyState,
   type DeviceState,
   type DeviceJob,
   type TaskAction,
   type TaskParams,
+  updatesSchema,
 } from '../src/state';
 
 const ready = {
@@ -81,6 +82,7 @@ const uploads: { name: string; bytes: Uint8Array }[] = [];
 const keys = sodium.ready.then(() => sodium.crypto_box_keypair());
 const flags = globalThis as typeof globalThis & {
   mockProbeError?: boolean;
+  mockUpdateFailure?: boolean;
   mockUploadFailure?: boolean;
   mockUploadDelayMs?: number;
   mockTaskDelayMs?: number;
@@ -107,14 +109,14 @@ function advance() {
       case 'bootstrap':
       case 'install':
         state.agent = state.service = true;
-        state.version = version;
+        state.version = 'v9.8.7';
         state.controller = { enabled: true, port: 9090, applied: false };
         state.settings.githubProxy =
           intent.params.githubProxy ?? state.settings.githubProxy;
         job.result = 'Mihomo 服务已安装';
         break;
       case 'update-agent':
-        state.version = version;
+        state.version = 'v9.8.7';
         job.result = 'Mihomo Agent 已是最新版本';
         break;
       case 'save-github-proxy':
@@ -288,6 +290,35 @@ Object.assign(globalThis, {
               params: {},
             });
             break;
+          case 'check-updates':
+            state.updates = updatesSchema.parse({
+              checkedAt: new Date().toISOString(),
+              agent: {
+                current: state.version,
+                latest: 'v9.8.7',
+                state: flags.mockUpdateFailure
+                  ? 'error'
+                  : state.version === 'v9.8.7'
+                    ? 'up-to-date'
+                    : 'available',
+                error: flags.mockUpdateFailure ? '模拟查询失败' : '',
+              },
+              core: {
+                current: state.coreVersion,
+                latest: state.coreVersion || 'v1.19.30',
+                state: state.core ? 'up-to-date' : 'not-installed',
+              },
+              dashboard: {
+                current: state.dashboard.version,
+                latest: 'v3.26.0',
+                state: state.dashboard.installed
+                  ? 'up-to-date'
+                  : 'not-installed',
+              },
+            });
+            result = state.updates;
+            save();
+            break;
           case 'controller-secret':
             result = sodium.to_base64(
               sodium.crypto_box_seal(
@@ -342,6 +373,21 @@ const mockFetch = async (
         ? input.href
         : input.url;
   requests.push(url);
+  if (
+    url ===
+    'https://api.github.com/repos/imbytecat/mihomo-agent/releases/latest'
+  ) {
+    return Response.json({
+      tag_name: 'v9.8.7',
+      draft: false,
+      prerelease: false,
+      assets: ['arm64', 'armv7'].map((arch) => ({
+        name: `mihomo-agent-linux-${arch}`,
+        browser_download_url: `https://github.com/imbytecat/mihomo-agent/releases/download/v9.8.7/mihomo-agent-linux-${arch}`,
+        digest: 'sha256:' + 'a'.repeat(64),
+      })),
+    });
+  }
   if (new URL(url, location.href).origin !== location.origin)
     throw new Error('浏览器不应请求外网：' + url);
   if (new URL(url, location.href).pathname === '/api/upload_img') {

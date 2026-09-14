@@ -19,15 +19,17 @@ check: lint test-go check-ui
 # Check Go formatting, static analysis, shell scripts and CI syntax.
 lint:
     just --fmt --check
-    @files="$(gofmt -l cmd internal tools)"; if [[ -n "$files" ]]; then printf '%s\n' "$files"; exit 1; fi
+    @files="$(gofmt -l cmd internal)"; if [[ -n "$files" ]]; then printf '%s\n' "$files"; exit 1; fi
     go vet ./...
+    sqlc diff
+    goreleaser check
     shellcheck -x -s sh ui/src/transport/ufi-bootstrap.sh internal/platform/network_ufi.sh
     actionlint
 
 # Format Go source.
 fmt:
     just --fmt
-    gofmt -w cmd internal tools
+    gofmt -w cmd internal
 
 # Run Go tests with the race detector.
 test-go:
@@ -59,6 +61,14 @@ test-systemd:
     go test -c -o .build/systemd-integration ./internal/integration
     sudo env MIHOMO_SYSTEMD_TEST=1 MIHOMO_TEST_AGENT="$PWD/.build/mihomo-agent-ci" MIHOMO_TEST_CORE="$PWD/.build/mihomo-core-fixture" .build/systemd-integration -test.v -test.timeout=4m
 
-# Build release assets and update the UFI bootstrap manifest.
-release version: deps
-    go run ./tools/release -version "$1"
+# Generate typed SQLite queries after editing schema.sql or queries.sql.
+generate:
+    sqlc generate
+
+# Build assets from the current Git tag without publishing.
+release:
+    goreleaser release --clean --skip=publish
+
+# Preview all release assets without creating a tag or publishing.
+snapshot:
+    goreleaser release --snapshot --clean --skip=publish

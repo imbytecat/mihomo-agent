@@ -1,0 +1,18 @@
+version: '2'
+sql:
+  - engine: sqlite
+    schema: internal/storage/schema.sql
+    queries: internal/storage/queries.sql
+    gen:
+      go:
+        package: db
+        out: internal/storage/db
+        emit_json_tags: true
+        json_tags_case_style: camel
+        omit_unused_structs: true
+        rename:
+          url: URL
+          github_proxy: GitHubProxy
+        overrides:
+          - db_type: INTEGER
+            go_type: int

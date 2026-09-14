@@ -52,6 +52,7 @@ cleanup() {
 trap cleanup EXIT
 trap '' HUP
 state running download
+protocol=$8
 githubProxy=$3
 case "$githubProxy" in '') ;; https://*) ;; *) echo '无效 GitHub Proxy'; exit 1;; esac
 case "$(getprop ro.product.cpu.abi)" in
@@ -72,6 +73,9 @@ state running verify
 actual=$(sha256sum "$job/agent") || exit 1
 [ "${actual%% *}" = "$digest" ] || { echo 'Mihomo Agent 文件校验失败'; exit 1; }
 chmod 700 "$job/agent" || exit 1
+case "$protocol" in ''|*[!0-9]*) exit 1;; esac
+info=$("$job/agent" version) || exit 1
+printf '%s' "$info" | grep -Eq "\"protocol\"[[:space:]]*:[[:space:]]*$protocol([[:space:]]*[,}])" || { echo 'Agent 协议已变化，请更新 UFI 插件'; exit 1; }
 state running installing
 "$job/agent" --platform ufi install --github-proxy "$githubProxy" || exit 1
 state succeeded "done"

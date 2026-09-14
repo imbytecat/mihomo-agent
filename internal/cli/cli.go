@@ -62,6 +62,9 @@ func New(version string) *cobra.Command {
 			return map[string]any{"ok": true, "executable": m.Executable}, m.Install(githubProxy)
 		}},
 		{"inspect", "Print platform, capabilities and runtime state", cobra.NoArgs, false, func(_ *cobra.Command, m *manager.Manager, _ []string) (any, error) { return m.Inspect() }},
+		{"check-updates", "Compare installed components with official releases; changes nothing", cobra.NoArgs, false, func(cmd *cobra.Command, m *manager.Manager, _ []string) (any, error) {
+			return m.CheckUpdates(cmd.Context())
+		}},
 		{"submit UPLOAD SHA256", "Accept an encrypted UFI upload", cobra.ExactArgs(2), false, func(_ *cobra.Command, m *manager.Manager, args []string) (any, error) {
 			if m.Platform.Config().Kind != platform.UFI {
 				return nil, errors.New("该命令仅用于 UFI 上传；本地调用请使用 task")

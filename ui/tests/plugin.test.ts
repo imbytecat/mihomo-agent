@@ -396,7 +396,7 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
   expect(
     disabledReason('save-controller', { ...ready, controller: null }),
   ).toContain('更新 Mihomo Agent');
-  expect(disabledReason('update-agent', null)).toBe('');
+  expect(disabledReason('update-agent', null)).not.toBe('');
   expect(disabledReason('stop', null)).toBe('');
   expect(lifecycleAction({ ...emptyState, agent: true })).toBe('uninstall');
   expect(disabledReason('uninstall', { ...emptyState, agent: true })).toBe('');

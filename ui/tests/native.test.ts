@@ -216,8 +216,9 @@ test('sealed browser intents run in a detached native worker; failed updates pre
     expect(conflict.output).toContain('任务 ID 冲突');
     expect(requested).toBe(count);
   } finally {
+    const closed = promisify(server.close.bind(server))();
     server.closeAllConnections();
-    await promisify(server.close.bind(server))();
+    await closed;
     await rm(folder, { recursive: true, force: true });
   }
 }, 60_000);

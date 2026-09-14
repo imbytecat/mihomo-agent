@@ -16,6 +16,8 @@
 3. 安装 Mihomo Agent / 服务、Mihomo 内核，粘贴完整 YAML 订阅，点击「保存并更新」。
 4. 启动代理，确认客户端能正常上网后再开启自启；需要控制面板时安装 Zashboard。
 
+初装从 GitHub 官方 API 获取最新正式版与 SHA-256，校验后才执行；浏览器需能直连 GitHub API。后续更新由已安装的 Agent 完成。
+
 GitHub Proxy 留空直连，或填写 `https://ghfast.top` 这样的 HTTPS 前缀；失焦保存。订阅和面板设置需要明确保存并应用。订阅无需提供 API secret。
 
 ## Linux 安装
@@ -59,8 +61,11 @@ agent=/var/lib/mihomo-agent/agent
 | 更新内核 / Agent（先停止代理） | `task download --wait` / `task update-agent --wait` |
 | 关闭自启 | `task boot-off --wait` |
 | 安装或更新 Zashboard | `task download-dashboard --wait` |
+| 检查 Agent / 内核 / 面板更新 | `check-updates` |
 | 查看日志 / 网络诊断 | `logs` / `diagnose` |
 | 卸载 Agent、内核及全部数据 | `task uninstall --wait` |
+
+插件「安装与更新」中点击「检查更新」，查看各组件当前版本、最新版本及检查时间；不会自动升级。检查结果保存在设备 SQLite，刷新页面或执行 `inspect` 读取上次结果，手动检查才联网；组件版本变化后重新检查。
 
 去掉 `--wait` 会立即返回任务 ID，用 `job ID`、`job-log ID` 查询。终端或页面关闭不会取消已接收任务；丢失响应后查询原 ID，不要重复提交。
 
@@ -74,7 +79,7 @@ agent=/var/lib/mihomo-agent/agent
 
 ## 从源码构建
 
-根目录是 Go 模块；`ui/` 是可选的 UFI 前端。mise 固定 Go、Bun、Node 和开发工具版本；Node 用于 Vitest 测试，设备上的 Agent 和 Mihomo 均无需 JS 运行时。安装 [mise](https://mise.jdx.dev/) 后：
+根目录是 Go 模块；`ui/` 是可选的 UFI 前端。mise 统一固定 Go、Bun 和开发工具版本；Bun 同时负责包管理和前端工具运行，设备上的 Agent 和 Mihomo 均为独立 Go 二进制。安装 [mise](https://mise.jdx.dev/) 后：
 
 ```sh
 mise install
@@ -85,8 +90,10 @@ mise exec -- just browser-install
 mise exec -- just test-ui      # 真实浏览器回归
 ```
 
-运行 `mise exec -- just` 查看全部命令；启用 mise shell 集成后可直接使用 `just`。发布构建使用 `mise exec -- just release vX.Y.Z`。
+运行 `mise exec -- just` 查看全部命令；启用 mise shell 集成后可直接使用 `just`。GoReleaser 负责三架构构建、校验和发布：`just snapshot` 本地预览，`just release` 从当前 Git 标签构建且不上传；推送 `v*` 标签触发发布 CI，已有资产不会覆盖。
 
-前端使用 Vite + Tailwind 4，Bun 负责包管理和脚本。测试统一使用 Vitest：Node 项目验证源码与 Go CLI 集成；Browser Mode 使用 Playwright 驱动真实 Chromium，在同源 iframe 中验证生产插件加载、交互与刷新重连。失败截图和 trace 位于 `ui/test-results/`。
+前端使用 Vite + Tailwind 4，Bun 负责包管理和运行时。测试统一使用 Vitest：`node` 测试项目在 Bun 上验证源码与 Go CLI 集成；Browser Mode 使用 Playwright 驱动真实 Chromium，在同源 iframe 中验证生产插件加载、交互与刷新重连。失败截图和 trace 位于 `ui/test-results/`。
 
 源码测试可用 `cd ui && bun run test:watch` 持续运行；完整验证仍使用上面的 `just check` 和 `just test-ui`。
+
+SQLite 查询由 sqlc 生成，仍使用 `database/sql` + 纯 Go `modernc SQLite`。修改 SQL 后运行 `just generate` 并提交生成文件；`just check` 检查生成代码是否同步，正常 Go 构建无需 sqlc。

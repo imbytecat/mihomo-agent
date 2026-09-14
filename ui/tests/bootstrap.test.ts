@@ -1,11 +1,12 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { quote } from '../src/transport/ufi';
+import { quote, latestAgentAssets } from '../src/transport/ufi';
+import { protocol } from '../src/state';
 
 test('bootstrap verifies bytes before execution and reports failures without losing status', async () => {
   const base = await mkdtemp(join(tmpdir(), 'ufi-bootstrap-'));
@@ -16,7 +17,7 @@ test('bootstrap verifies bytes before execution and reports failures without los
     marker = join(base, 'executed'),
     curl = join(base, 'curl');
   const script = join(job, 'bootstrap.sh');
-  const binary = '#!/bin/sh\nprintf verified > "$UFI_TEST_EXEC_MARK"\n';
+  const binary = `#!/bin/sh\nif [ "$1" = version ]; then printf '{"protocol":${protocol}}'; exit 0; fi\nprintf verified > "$UFI_TEST_EXEC_MARK"\n`;
   await writeFile(fixture, binary);
   await writeFile(
     curl,
@@ -31,10 +32,20 @@ test('bootstrap verifies bytes before execution and reports failures without los
     )
     .replace('umask 077', 'getprop() { echo arm64-v8a; }\numask 077');
   await writeFile(script, source);
-  async function run(mode: string, digest = '') {
+  async function run(mode: string, digest = '', expectedProtocol = protocol) {
     const child = spawnSync(
       'sh',
-      [script, mode, id, '', 'https://fixture.invalid/agent', digest, '', ''],
+      [
+        script,
+        mode,
+        id,
+        '',
+        'https://fixture.invalid/agent',
+        digest,
+        '',
+        '',
+        String(expectedProtocol),
+      ],
       {
         env: {
           ...process.env,
@@ -55,6 +66,8 @@ test('bootstrap verifies bytes before execution and reports failures without los
     expect(existsSync(marker)).toBe(false);
     expect(JSON.parse((await run('status')).output).state).toBe('failed');
     const digest = createHash('sha256').update(binary).digest('hex');
+    expect((await run('worker', digest, protocol + 1)).code).not.toBe(0);
+    expect(existsSync(marker)).toBe(false);
     expect((await run('worker', digest)).code).toBe(0);
     expect(await readFile(marker, 'utf8')).toBe('verified');
     expect(JSON.parse((await run('status')).output).state).toBe('succeeded');
@@ -75,4 +88,37 @@ test('bootstrap verifies bytes before execution and reports failures without los
   } finally {
     await rm(base, { recursive: true, force: true });
   }
+});
+
+test('initial install trusts current official release digests independently of download proxies', async () => {
+  const release = {
+    tag_name: 'v9.8.7',
+    draft: false,
+    prerelease: false,
+    assets: ['arm64', 'armv7'].map((arch) => ({
+      name: `mihomo-agent-linux-${arch}`,
+      browser_download_url: `https://github.com/imbytecat/mihomo-agent/releases/download/v9.8.7/mihomo-agent-linux-${arch}`,
+      digest: 'sha256:' + 'a'.repeat(64),
+    })),
+  };
+  const fetch = vi.spyOn(globalThis, 'fetch');
+  fetch.mockResolvedValueOnce(Response.json(release));
+  const assets = await latestAgentAssets();
+  expect(assets.arm64.url).toContain('/v9.8.7/');
+  expect(assets.armv7.sha256).toBe('a'.repeat(64));
+  expect((fetch.mock.calls[0]![0] as Request).url).toBe(
+    'https://api.github.com/repos/imbytecat/mihomo-agent/releases/latest',
+  );
+  expect(
+    (fetch.mock.calls[0]![0] as Request).headers.has('Authorization'),
+  ).toBe(false);
+  fetch.mockResolvedValueOnce(Response.json({ ...release, prerelease: true }));
+  await expect(latestAgentAssets()).rejects.toThrow('预期格式');
+  release.assets[0]!.digest = '';
+  fetch.mockResolvedValueOnce(Response.json(release));
+  await expect(latestAgentAssets()).rejects.toThrow('SHA-256');
+  release.assets[0]!.digest = 'sha256:' + 'a'.repeat(64);
+  release.assets[0]!.browser_download_url = 'https://proxy.invalid/agent';
+  fetch.mockResolvedValueOnce(Response.json(release));
+  await expect(latestAgentAssets()).rejects.toThrow('官方版本缺少');
 });

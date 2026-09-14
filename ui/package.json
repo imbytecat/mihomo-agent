@@ -3,13 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "check": "tsc --noEmit",
-    "test": "vitest run --project node",
-    "test:ui": "bun run build && vitest run --project browser",
-    "browser:install": "playwright install --with-deps chromium",
-    "test:watch": "vitest --project node"
+    "dev": "bun run --bun vite",
+    "build": "bun run --bun vite build",
+    "check": "bun run --bun tsc --noEmit",
+    "test": "bun run --bun vitest run --project node",
+    "test:ui": "bun run build && bun run --bun vitest run --project browser",
+    "browser:install": "bun run --bun playwright install --with-deps chromium",
+    "test:watch": "bun run --bun vitest --project node"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

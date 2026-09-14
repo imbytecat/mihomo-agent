@@ -210,12 +210,30 @@ function Installation({
   const lifecycle = lifecycleAction(device);
   return (
     <section data-group="maintenance" aria-labelledby="ufi-maintenance-heading">
-      <h3
-        id="ufi-maintenance-heading"
-        className="ufi:m-0 ufi:px-4 ufi:pt-5 ufi:pb-2 ufi:text-xs ufi:font-medium ufi:opacity-60"
-      >
-        安装与更新
-      </h3>
+      <div className="ufi:flex ufi:items-center ufi:justify-between ufi:gap-3 ufi:px-4 ufi:pt-5 ufi:pb-2">
+        <h3
+          id="ufi-maintenance-heading"
+          className="ufi:m-0 ufi:text-xs ufi:font-medium ufi:opacity-60"
+        >
+          安装与更新
+        </h3>
+        <ActionButton model={model} action="check-updates" label="检查更新" />
+      </div>
+      {model.updates && (
+        <p
+          data-update-checked
+          className="ufi:m-0 ufi:px-4 ufi:text-xs ufi:opacity-60"
+        >
+          上次检查{' '}
+          {new Date(model.updates.checkedAt).toLocaleString([], {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </p>
+      )}
       <SettingInput
         model={model}
         name="githubProxy"
@@ -246,28 +264,62 @@ function Installation({
             'download-dashboard',
           ],
         ] as const
-      ).map(([id, name, installed, version, action]) => (
-        <Row key={id}>
-          <span className="ufi:flex ufi:min-w-0 ufi:flex-wrap ufi:items-baseline ufi:gap-x-2">
-            <span>{name}</span>
-            <span
-              data-version={id}
-              className="ufi:break-all ufi:text-xs ufi:opacity-60"
-            >
-              {componentVersion(installed, version)}
+      ).map(([id, name, installed, version, action]) => {
+        const checked = model.updates?.[id];
+        const update =
+          checked?.current === (installed === false ? '' : version || '')
+            ? checked
+            : undefined;
+        const label =
+          update &&
+          {
+            available: `可更新至 ${update.latest}`,
+            'up-to-date': '已是最新',
+            'not-installed': `最新 ${update.latest}`,
+            unknown: `最新 ${update.latest} · 当前版本无法比较`,
+            error: '检查失败',
+          }[update.state];
+        return (
+          <Row key={id}>
+            <span className="ufi:flex ufi:min-w-0 ufi:flex-wrap ufi:items-baseline ufi:gap-x-2">
+              <span>{name}</span>
+              <span
+                data-version={id}
+                className="ufi:break-all ufi:text-xs ufi:opacity-60"
+              >
+                {componentVersion(installed, version)}
+              </span>
+              {label && (
+                <span
+                  data-update={id}
+                  title={update?.error || `最新正式版 ${update?.latest}`}
+                  className={
+                    update?.state === 'available'
+                      ? 'ufi:text-xs ufi:text-[#0a84ff]'
+                      : update?.state === 'error'
+                        ? 'ufi:text-xs ufi:text-[#ff6961]'
+                        : 'ufi:text-xs ufi:opacity-60'
+                  }
+                >
+                  {label}
+                </span>
+              )}
             </span>
-          </span>
-          <ActionButton
-            model={model}
-            action={
-              action === 'update-agent' && installed === false
-                ? 'install'
-                : action
-            }
-            label={installed === false ? '安装' : '更新'}
-          />
-        </Row>
-      ))}
+            <ActionButton
+              model={model}
+              action={
+                action === 'update-agent' && installed === false
+                  ? 'install'
+                  : action
+              }
+              label={installed === false ? '安装' : '更新'}
+              extraReason={
+                update?.state === 'up-to-date' ? '已是最新正式版' : ''
+              }
+            />
+          </Row>
+        );
+      })}
       {task && <TaskNotice model={model} job={task} installation />}
       <Row>
         <span data-lifecycle>

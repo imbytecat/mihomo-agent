@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { subscriptionURL, githubProxyURL, interfaces } from './config';
 import {
   bootstrapAgent,
+  checkUpdates,
   deviceLogs,
   readDeviceState,
   submitTask,
@@ -51,7 +52,10 @@ const settingAction = {
   interfaces: 'save-interfaces',
 } as const;
 const settingLabel = { githubProxy: 'GitHub Proxy', interfaces: '接口' };
-const notification = { id: 'mihomo-agent-operation', toasterId: 'mihomo-agent' };
+const notification = {
+  id: 'mihomo-agent-operation',
+  toasterId: 'mihomo-agent',
+};
 
 export function useGateway() {
   const form = useForm<Fields>({
@@ -271,7 +275,7 @@ export function useGateway() {
     try {
       await queue.add(async () => {
         const state = await readState().catch((error) => {
-          if (id === 'update-agent' || id === 'stop') return null;
+          if (id === 'stop') return null;
           throw error;
         });
         const reason = disabledReason(id, state, false, snapshot.subscription);
@@ -291,11 +295,9 @@ export function useGateway() {
             break;
           case 'update-agent':
             result = await waitTask(
-              !state
-                ? await bootstrapAgent(githubProxyURL(snapshot.githubProxy))
-                : await submitTask('update-agent', {
-                    githubProxy: githubProxyURL(snapshot.githubProxy),
-                  }),
+              await submitTask('update-agent', {
+                githubProxy: githubProxyURL(snapshot.githubProxy),
+              }),
               observe,
             );
             break;
@@ -376,6 +378,17 @@ export function useGateway() {
               observe,
             );
             break;
+          case 'check-updates': {
+            const checked = await checkUpdates();
+            if (
+              [checked.agent, checked.core, checked.dashboard].some(
+                (item) => item.state === 'error',
+              )
+            )
+              throw new Error('部分组件检查失败，请重试');
+            result = '更新检查完成';
+            break;
+          }
           case 'view-secret':
             setSecret(await readControllerSecret());
             result = '密钥已读取';
@@ -538,6 +551,7 @@ export function useGateway() {
   };
   return {
     device,
+    updates: device?.updates ?? null,
     busy,
     form,
     values,

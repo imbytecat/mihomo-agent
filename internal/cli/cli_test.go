@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/imbytecat/mihomo-agent/internal/manager"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +13,7 @@ import (
 func TestCommandsValidateArgumentsBeforeDeviceAccess(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "mihomo-agent")
 	for _, args := range [][]string{
-		{"install", "unexpected"}, {"inspect", "unexpected"}, {"submit", "only-upload"},
+		{"install", "unexpected"}, {"inspect", "unexpected"}, {"check-updates", "unexpected"}, {"submit", "only-upload"},
 		{"job"}, {"controller-secret"}, {"worker"}, {"supervise", "unexpected"},
 		{"boot", "unexpected"}, {"stop", "unexpected"}, {"boot-off", "unexpected"},
 		{"logs", "unexpected"}, {"diagnose", "unexpected"}, {"version", "unexpected"},
@@ -50,7 +51,7 @@ func TestHelpAndVersionDoNotInitializeDevice(t *testing.T) {
 				Version  string
 				Protocol int
 			}
-			if json.Unmarshal(output.Bytes(), &info) != nil || info.Version != "test" || info.Protocol != 2 {
+			if json.Unmarshal(output.Bytes(), &info) != nil || info.Version != "test" || info.Protocol != manager.Protocol {
 				t.Fatal("version JSON changed", output.String())
 			}
 		} else if !strings.Contains(output.String(), "mihomo-agent") {
