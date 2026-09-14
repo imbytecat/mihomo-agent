@@ -52,7 +52,7 @@ export function githubProxyURL(value: string): string {
     /\/https?:\/\//.test(url.pathname)
   )
     throw new Error(
-      '请填写下载代理前缀，不要填写完整 GitHub 下载地址；直连请留空',
+      '请填写 GitHub Proxy 前缀，不要填写完整 GitHub 地址；直连请留空',
     );
   return url.href.replace(/\/+$/, '');
 }

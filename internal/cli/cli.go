@@ -135,7 +135,7 @@ func New(version string) *cobra.Command {
 		}}
 		switch child.Name() {
 		case "install":
-			child.Flags().StringVar(&githubProxy, "github-proxy", "", "GitHub download proxy")
+			child.Flags().StringVar(&githubProxy, "github-proxy", "", "HTTPS mirror prefix for GitHub release queries and downloads")
 			child.Flags().StringVar(&config.Unit, "unit", "", "Service name (Linux)")
 			child.Flags().StringVar(&config.ListenAddress, "listen-address", "", "Local IPv4 listen address (Linux; loopback by default)")
 		case "submit":

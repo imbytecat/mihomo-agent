@@ -59,7 +59,7 @@ test('input validation and shell results preserve the trust boundary', async () 
   );
   expect(() => githubProxyURL('http://worker.example/')).toThrow();
   expect(() => githubProxyURL('https://user:pass@worker.example/')).toThrow();
-  expect(githubProxyURL('https://ghfast.top/')).toBe('https://ghfast.top');
+  expect(githubProxyURL('https://mirror.example.com/')).toBe('https://mirror.example.com');
   expect(() =>
     githubProxyURL(
       'https://github.com/MetaCubeX/mihomo/releases/download/v1/core.gz',
@@ -67,7 +67,7 @@ test('input validation and shell results preserve the trust boundary', async () 
   ).toThrow('前缀');
   expect(() =>
     githubProxyURL(
-      'https://ghfast.top/https://github.com/MetaCubeX/mihomo/releases/download/v1/core.gz',
+      'https://mirror.example.com/https://github.com/MetaCubeX/mihomo/releases/download/v1/core.gz',
     ),
   ).toThrow('前缀');
   const value = "a'b $(printf injected) `printf injected`\n中文";

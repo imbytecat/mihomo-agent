@@ -93,7 +93,7 @@ func (a *Manager) execute(ctx context.Context, request Request, phase func(strin
 	if err != nil {
 		return "", err
 	}
-	if resume && request.Action != "stop" && request.Action != "uninstall" {
+	if resume && request.Action != "stop" {
 		if err = a.startRuntime(ctx); err != nil {
 			return "", err
 		}

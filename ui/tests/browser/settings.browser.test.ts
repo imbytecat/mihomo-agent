@@ -34,7 +34,7 @@ test('autosave preserves newer drafts and validates download settings', async ()
     )
     .toBeTruthy();
   await idle();
-  await app.getByCSS('[data-setting=githubProxy]').fill('https://ghfast.top/');
+  await app.getByCSS('[data-setting=githubProxy]').fill('https://mirror.example.com/');
   await evaluate('window.mockUploadDelayMs = 900');
   // The click itself blurs the input; it must survive the ensuing autosave render.
   await app.getByCSS('[data-group=maintenance] [data-action=download]').click();
@@ -45,7 +45,7 @@ test('autosave preserves newer drafts and validates download settings', async ()
   await expect
     .poll(() =>
       evaluate(
-        'mockDeviceState.settings.githubProxy === "https://ghfast.top" && mockIntents.filter(x => x.action === "save-github-proxy").length === 1',
+        'mockDeviceState.settings.githubProxy === "https://mirror.example.com" && mockIntents.filter(x => x.action === "save-github-proxy").length === 1',
       ),
     )
     .toBe(true);
