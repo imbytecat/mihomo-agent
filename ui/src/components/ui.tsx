@@ -226,7 +226,7 @@ export function SettingInput({
       <Hint id={`ufi-${name}-help`} error={!!error}>
         {error?.message ||
           (name === 'githubProxy'
-            ? '留空直连 · 离开输入框自动保存'
+            ? `查询与下载均生效 · 留空直连 · ${model.device?.service ? '离开输入框自动保存' : '安装时保存'}`
             : model.device?.capabilities.interfaces === false
               ? '由系统网络配置管理'
               : model.device?.running

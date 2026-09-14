@@ -379,6 +379,8 @@ export function useGateway() {
             );
             break;
           case 'check-updates': {
+            if (state?.service)
+              await persist('githubProxy', snapshot.githubProxy);
             const checked = await checkUpdates();
             if (
               [checked.agent, checked.core, checked.dashboard].some(

@@ -57,7 +57,7 @@
 ## 发布
 
 - 使用 mise 的官方 Go 与 GoReleaser；构建环境、架构、资产及校验以 .goreleaser.yaml 为准，工具版本以 mise.toml 为准。just snapshot 用于预览，just release 从当前 Git 标签构建且不上传；Release workflow 完成检查后发布，已有标签和资产不可覆盖。
-- UFI 初装从 GitHub 官方 HTTPS API 获取最新正式版与资产 SHA-256；下载代理仅传输二进制，执行前校验摘要和协议。后续 Agent 更新统一走 Manager，不用前端引导覆盖已有安装。
+- GitHub Proxy 是用户选择的发行镜像，覆盖 UFI 初装、三组件版本查询与下载；初装后持久化 SQLite。镜像必须支持 API 与 Release 路径，浏览器请求省略凭据并要求 CORS。订阅和 UFI 私有通信不走镜像。执行前校验摘要和协议，但同一镜像提供的文件与摘要不构成独立来源校验；README 明确其信任边界。后续 Agent 更新统一走 Manager，不用前端引导覆盖已有安装。
 - 发布前通过 Check 和 Release CI；从公开地址下载所有资产，校验 SHA256SUMS 并与本地构建对比。插件保持单 JS，不增加 CDN / WASM 请求。
 - 项目与 Go module 统一命名为 mihomo-agent；UFI 插件资产为 mihomo-agent-ufi.js。只维护当前名称、目录和协议，不提供历史别名或状态迁移。
 

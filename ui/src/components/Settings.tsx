@@ -237,7 +237,7 @@ function Installation({
         model={model}
         name="githubProxy"
         label="GitHub Proxy"
-        placeholder="https://ghfast.top"
+        placeholder="https://mirror.example.com"
       />
       {(
         [

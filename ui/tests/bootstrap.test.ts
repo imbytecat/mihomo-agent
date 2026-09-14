@@ -21,7 +21,7 @@ test('bootstrap verifies bytes before execution and reports failures without los
   await writeFile(fixture, binary);
   await writeFile(
     curl,
-    '#!/bin/sh\nwhile [ "$#" -gt 0 ]; do if [ "$1" = -o ]; then out=$2; break; fi; shift; done\ncp "$UFI_TEST_FIXTURE" "$out"\n',
+    '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$UFI_TEST_CURL_ARGS"\nwhile [ "$#" -gt 0 ]; do if [ "$1" = -o ]; then out=$2; break; fi; shift; done\ncp "$UFI_TEST_FIXTURE" "$out"\n',
     { mode: 0o700 },
   );
   const source = (await readFile('src/transport/ufi-bootstrap.sh', 'utf8'))
@@ -39,7 +39,7 @@ test('bootstrap verifies bytes before execution and reports failures without los
         script,
         mode,
         id,
-        '',
+        'https://mirror.invalid/cache',
         'https://fixture.invalid/agent',
         digest,
         '',
@@ -50,6 +50,7 @@ test('bootstrap verifies bytes before execution and reports failures without los
         env: {
           ...process.env,
           UFI_TEST_FIXTURE: fixture,
+          UFI_TEST_CURL_ARGS: join(base, 'curl-args'),
           UFI_TEST_EXEC_MARK: marker,
         },
         encoding: 'utf8',
@@ -70,6 +71,7 @@ test('bootstrap verifies bytes before execution and reports failures without los
     expect(existsSync(marker)).toBe(false);
     expect((await run('worker', digest)).code).toBe(0);
     expect(await readFile(marker, 'utf8')).toBe('verified');
+    expect(await readFile(join(base, 'curl-args'), 'utf8')).toContain('https://mirror.invalid/cache/https://fixture.invalid/agent');
     expect(JSON.parse((await run('status')).output).state).toBe('succeeded');
     expect(existsSync(join(job, 'agent'))).toBe(false);
     const stale = JSON.stringify({
@@ -90,7 +92,7 @@ test('bootstrap verifies bytes before execution and reports failures without los
   }
 });
 
-test('initial install trusts current official release digests independently of download proxies', async () => {
+test('initial metadata honors the selected proxy and rejects malformed releases', async () => {
   const release = {
     tag_name: 'v9.8.7',
     draft: false,
@@ -112,6 +114,11 @@ test('initial install trusts current official release digests independently of d
   expect(
     (fetch.mock.calls[0]![0] as Request).headers.has('Authorization'),
   ).toBe(false);
+  fetch.mockResolvedValueOnce(Response.json(release));
+  await latestAgentAssets('https://mirror.invalid/cache/');
+  const proxied = fetch.mock.calls[1]![0] as Request;
+  expect(proxied.url).toBe('https://mirror.invalid/cache/https://api.github.com/repos/imbytecat/mihomo-agent/releases/latest');
+  expect(proxied.headers.has('Authorization')).toBe(false);
   fetch.mockResolvedValueOnce(Response.json({ ...release, prerelease: true }));
   await expect(latestAgentAssets()).rejects.toThrow('预期格式');
   release.assets[0]!.digest = '';

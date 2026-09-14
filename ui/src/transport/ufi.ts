@@ -15,6 +15,7 @@ import {
   type TaskParams,
 } from '../state';
 import { requestJSON, requestFailure, transportFailure } from '../request';
+import { githubProxyURL } from '../config';
 
 declare const runShellWithRoot: (
   command: string,
@@ -268,15 +269,19 @@ const agentReleaseSchema = z.object({
     }),
   ),
 });
-export async function latestAgentAssets() {
+export async function latestAgentAssets(githubProxy = '') {
+  const prefix = githubProxyURL(githubProxy);
+  const official =
+    'https://api.github.com/repos/imbytecat/mihomo-agent/releases/latest';
+  const address = prefix ? `${prefix}/${official}` : official;
   const context = {
     step: '检查 Agent 最新版本',
-    target: 'GitHub 官方 API',
-    hint: '首次安装需要浏览器直连 GitHub API；GitHub Proxy 仅代理文件下载。',
+    target: address,
+    hint: '检查 GitHub Proxy 是否支持 GitHub API 和浏览器跨域；留空时直连。',
   };
   const release = await requestJSON(
-    'https://api.github.com/repos/imbytecat/mihomo-agent/releases/latest',
-    {},
+    address,
+    { credentials: 'omit', signal: AbortSignal.timeout(30_000) },
     context,
     agentReleaseSchema,
   );
@@ -295,7 +300,7 @@ export async function latestAgentAssets() {
 }
 
 export async function bootstrapAgent(githubProxy: string) {
-  const assets = await latestAgentAssets();
+  const assets = await latestAgentAssets(githubProxy);
   await sodium.ready;
   const id = taskID();
   const data = sodium.from_string(bootstrapScript);

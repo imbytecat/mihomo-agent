@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -50,7 +51,15 @@ func (r release) asset(repo, name string) (string, string, string, error) {
 func (a *Manager) latestRelease(ctx context.Context, owner, repo string) (release, error) {
 	client := a.deviceClient()
 	defer client.CloseIdleConnections()
+	address, err := a.githubURL("https://api.github.com/")
+	if err != nil {
+		return release{}, err
+	}
 	api := github.NewClient(client)
+	api.BaseURL, err = url.Parse(address)
+	if err != nil {
+		return release{}, err
+	}
 	api.UserAgent = "mihomo-agent/" + a.Version
 	value, _, err := api.Repositories.GetLatestRelease(ctx, owner, repo)
 	if err != nil {
@@ -88,12 +97,9 @@ func (a *Manager) updateAgent(ctx context.Context, work string, phase func(strin
 	if err != nil {
 		return "", err
 	}
-	settings, err := a.settings()
+	address, err = a.githubURL(address)
 	if err != nil {
 		return "", err
-	}
-	if settings.GitHubProxy != "" {
-		address = settings.GitHubProxy + "/" + address
 	}
 	phase("download")
 	path := filepath.Join(work, "agent")

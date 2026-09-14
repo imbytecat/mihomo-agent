@@ -116,12 +116,9 @@ func (a *Manager) downloadDashboard(ctx context.Context, request Request, work s
 	if err != nil {
 		return "", err
 	}
-	settings, err := a.settings()
+	address, err = a.githubURL(address)
 	if err != nil {
 		return "", err
-	}
-	if settings.GitHubProxy != "" {
-		address = settings.GitHubProxy + "/" + address
 	}
 	phase("download")
 	archive := filepath.Join(work, "dashboard.zip")

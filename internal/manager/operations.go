@@ -231,12 +231,9 @@ func (a *Manager) downloadCore(ctx context.Context, work string, phase func(stri
 	if err != nil {
 		return "", err
 	}
-	settings, err := a.settings()
+	address, err = a.githubURL(address)
 	if err != nil {
 		return "", err
-	}
-	if settings.GitHubProxy != "" {
-		address = settings.GitHubProxy + "/" + address
 	}
 	phase("download")
 	archive := filepath.Join(work, "core.gz")

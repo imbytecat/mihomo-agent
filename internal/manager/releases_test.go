@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/imbytecat/mihomo-agent/internal/platform"
@@ -62,8 +63,16 @@ func TestCoreDownloadUsesPlatformAssetAndVerifiedReplacement(t *testing.T) {
 			sum := sha256.Sum256(archive.Bytes())
 			digest := hex.EncodeToString(make([]byte, 32))
 			name := "mihomo-" + target + "-" + arch + "-v1.2.3.gz"
+			if err := a.applyDownloadSettings(ptr("https://mirror.invalid/cache")); err != nil {
+				t.Fatal(err)
+			}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				switch r.URL.Path {
+				if r.Host != "mirror.invalid" {
+					http.Error(w, "direct GitHub blocked", 403)
+					return
+				}
+				path := strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, "/cache/https://api.github.com"), "/cache/https://github.com")
+				switch path {
 				case "/repos/MetaCubeX/mihomo/releases/latest":
 					_ = json.NewEncoder(w).Encode(map[string]any{"tag_name": "v1.2.3", "draft": false, "prerelease": false, "assets": []map[string]string{{"name": name, "browser_download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.2.3/" + name, "digest": "sha256:" + digest}}})
 				case "/MetaCubeX/mihomo/releases/download/v1.2.3/" + name:
@@ -121,8 +130,15 @@ func TestAgentUpdateUsesSemverAndVerifiedGitHubAsset(t *testing.T) {
 		arch = "armv7"
 	}
 	name := "mihomo-agent-linux-" + arch
+	if err := a.applyDownloadSettings(ptr("https://mirror.invalid/cache")); err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/repos/imbytecat/mihomo-agent/releases/latest" {
+		if r.Host != "mirror.invalid" {
+			http.Error(w, "direct GitHub blocked", 403)
+			return
+		}
+		if r.URL.Path == "/cache/https://api.github.com/repos/imbytecat/mihomo-agent/releases/latest" {
 			_ = json.NewEncoder(w).Encode(map[string]any{"tag_name": tag, "draft": false, "prerelease": false, "assets": []map[string]string{{"name": name, "browser_download_url": "https://github.com/imbytecat/mihomo-agent/releases/download/" + tag + "/" + name, "digest": "sha256:" + digest}}})
 		} else {
 			downloads++

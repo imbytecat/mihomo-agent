@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -20,9 +21,17 @@ func TestCheckUpdatesComparesSemverWithoutCreatingTasks(t *testing.T) {
 		return []byte("Mihomo Meta v1.19.30 linux arm64"), nil
 	}
 	var invalid atomic.Bool
+	var mirrored atomic.Bool
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
+		if mirrored.Load() {
+			if r.Host != "mirror.invalid" || !strings.HasPrefix(r.URL.Path, "/cache/https://api.github.com/") {
+				http.Error(w, "direct GitHub blocked", 403)
+				return
+			}
+			r.URL.Path = strings.TrimPrefix(r.URL.Path, "/cache/https://api.github.com")
+		}
 		versions := map[string]string{
 			"/repos/imbytecat/mihomo-agent/releases/latest": "v1.10.0",
 			"/repos/MetaCubeX/mihomo/releases/latest":       "v1.19.30",
@@ -53,6 +62,10 @@ func TestCheckUpdatesComparesSemverWithoutCreatingTasks(t *testing.T) {
 	if err != nil || state.Version != "development" || state.Updates.Agent.Current != "v1.9.9" || requests.Load() != 3 {
 		t.Fatal("cached comparison replaced installed version", state, err)
 	}
+	if err := a.applyDownloadSettings(ptr("https://mirror.invalid/cache")); err != nil {
+		t.Fatal(err)
+	}
+	mirrored.Store(true)
 	result, err = a.CheckUpdates(context.Background())
 	if err != nil || result.Agent.State != "unknown" {
 		t.Fatal("unknown versions must not claim to be current", result, err)
@@ -61,6 +74,15 @@ func TestCheckUpdatesComparesSemverWithoutCreatingTasks(t *testing.T) {
 	result, err = a.CheckUpdates(context.Background())
 	if err != nil || result.Agent.State != "error" || result.Agent.Error == "" || result.Core.State != "up-to-date" {
 		t.Fatal("one failed query must not discard the others", result, err)
+	}
+	if err := a.applyDownloadSettings(ptr("")); err != nil {
+		t.Fatal(err)
+	}
+	mirrored.Store(false)
+	invalid.Store(false)
+	result, err = a.CheckUpdates(context.Background())
+	if err != nil || result.Core.State != "up-to-date" {
+		t.Fatal("clearing proxy did not restore direct access", result, err)
 	}
 	if id, _ := a.store.LatestTask(); id != "" {
 		t.Fatal("an update check created a task")

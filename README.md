@@ -13,12 +13,14 @@
 
 1. 已安装其他代理插件时，先在原界面卸载并关闭自启，再移除原插件。
 2. 下载 `mihomo-agent-ufi.js`，在 UFI 插件管理导入、保存并刷新。
-3. 安装 Mihomo Agent / 服务、Mihomo 内核，粘贴完整 YAML 订阅，点击「保存并更新」。
+3. 无法直连 GitHub 时，先填写 GitHub Proxy；再安装 Mihomo Agent / 服务和内核，粘贴完整 YAML 订阅，点击「保存并更新」。
 4. 启动代理，确认客户端能正常上网后再开启自启；需要控制面板时安装 Zashboard。
 
-初装从 GitHub 官方 API 获取最新正式版与 SHA-256，校验后才执行；浏览器需能直连 GitHub API。后续更新由已安装的 Agent 完成。
+初装查询版本与下载 Agent 都使用填写的 GitHub Proxy，安装后保存到 SQLite；后续检查更新、下载 Agent / Mihomo / Zashboard 共用此设置。配置镜像后不再先尝试直连 GitHub；清空前缀才恢复直连。
 
-GitHub Proxy 留空直连，或填写 `https://ghfast.top` 这样的 HTTPS 前缀；失焦保存。订阅和面板设置需要明确保存并应用。订阅无需提供 API secret。
+GitHub Proxy 必须是你信任的 HTTPS 镜像前缀，支持 `https://api.github.com/` 和 GitHub Release 文件；UFI 初装还要求镜像允许浏览器跨域请求。仅支持文件下载的服务不能用于版本查询。安装后失焦保存；订阅请求不经过这个镜像，订阅和面板设置需明确保存并应用。
+
+镜像可以看到公开发行查询和下载；UFI 登录信息、订阅和密钥不会交给它。SHA-256 校验保留，但镜像同时提供文件与摘要时，不能代替发布者签名或防止镜像同时篡改两者。
 
 ## Linux 安装
 
@@ -29,6 +31,8 @@ sha256sum --check --ignore-missing SHA256SUMS
 chmod +x mihomo-agent-linux-amd64
 sudo ./mihomo-agent-linux-amd64 install
 ```
+
+无法直连 GitHub 时，首次安装可加 `--github-proxy https://mirror.example.com`（替换成你信任且支持 API 的镜像前缀），后续 CLI 自动沿用。
 
 安装自动复制 Agent 到 `/var/lib/mihomo-agent/agent` 并注册 service；接下来通过 CLI 下载内核、保存订阅并启动。后续使用安装目录内的 Agent，确保自更新生效，首次下载的安装文件可删除。同名 service 冲突时会拒绝覆盖，可用 `install --unit 自定义名称.service`。
 

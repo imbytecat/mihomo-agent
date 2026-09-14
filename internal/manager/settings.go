@@ -18,6 +18,23 @@ func (a *Manager) settings() (Settings, error) {
 	return a.store.Settings()
 }
 
+// GitHub metadata and assets use the same user-selected mirror. Subscription
+// requests never pass through this function.
+func (a *Manager) githubURL(address string) (string, error) {
+	settings, err := a.settings()
+	if err != nil {
+		return "", err
+	}
+	prefix, err := validateURL(settings.GitHubProxy, true)
+	if err != nil {
+		return "", err
+	}
+	if prefix != "" {
+		return prefix + "/" + address, nil
+	}
+	return address, nil
+}
+
 func validateURL(value string, githubProxy bool) (string, error) {
 	value = strings.TrimSpace(value)
 	if value == "" && githubProxy {

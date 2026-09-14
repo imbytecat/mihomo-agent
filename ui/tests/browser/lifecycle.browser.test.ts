@@ -9,6 +9,9 @@ test('install, encrypted subscription, runtime, autostart and uninstall', async 
   await app.getByCSS('[data-primary=true][data-action=install]').click();
   await expect.poll(() => evaluate('mockDeviceState.service')).toBeTruthy();
   await idle();
+  expect(evaluate('mockRequests.filter(u => u.includes("api.github.com"))')).toEqual([
+    'https://before-install.example/https://api.github.com/repos/imbytecat/mihomo-agent/releases/latest',
+  ]);
   await expect
     .element(app.getByCSS('[data-setting=githubProxy]'))
     .toHaveValue('https://before-install.example');

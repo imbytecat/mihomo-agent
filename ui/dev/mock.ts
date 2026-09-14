@@ -371,10 +371,13 @@ const mockFetch = async (
         ? input.href
         : input.url;
   requests.push(url);
-  if (
-    url ===
-    'https://api.github.com/repos/imbytecat/mihomo-agent/releases/latest'
-  ) {
+  if ([
+    'https://api.github.com/repos/imbytecat/mihomo-agent/releases/latest',
+    'https://before-install.example/https://api.github.com/repos/imbytecat/mihomo-agent/releases/latest',
+  ].includes(url)) {
+    // Credential behavior is tested in Chromium; Bun does not model browser cookies.
+    if ((input instanceof Request ? input.credentials : init?.credentials) !== 'omit')
+      throw new Error('发行查询不得携带浏览器凭据');
     return Response.json({
       tag_name: 'v9.8.7',
       draft: false,
