@@ -1,6 +1,8 @@
 package manager
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,7 +12,91 @@ import (
 	"os"
 	"runtime"
 	"testing"
+
+	"github.com/imbytecat/mihomo-agent/internal/platform"
 )
+
+type releasePlatform struct {
+	platform.Adapter
+	kind string
+}
+
+func (p releasePlatform) Config() platform.Config { return platform.Config{Kind: p.kind} }
+
+func TestCoreTargets(t *testing.T) {
+	for _, tt := range []struct{ kind, arch, target, assetArch string }{
+		{platform.UFI, "arm64", "android", "arm64-v8"},
+		{platform.UFI, "arm", "android", "armv7"},
+		{platform.Linux, "amd64", "linux", "amd64-compatible"},
+		{platform.Linux, "arm64", "linux", "arm64"},
+		{platform.Linux, "arm", "linux", "armv7"},
+		{platform.UFI, "amd64", "", ""},
+		{platform.Linux, "386", "", ""},
+		{"unknown", "arm64", "", ""},
+	} {
+		target, arch, err := coreTarget(tt.kind, tt.arch)
+		if target != tt.target || arch != tt.assetArch || (err != nil) != (tt.target == "") {
+			t.Fatalf("%s/%s: %s/%s %v", tt.kind, tt.arch, target, arch, err)
+		}
+	}
+}
+
+func TestCoreDownloadUsesPlatformAssetAndVerifiedReplacement(t *testing.T) {
+	for _, kind := range []string{platform.UFI, platform.Linux} {
+		t.Run(kind, func(t *testing.T) {
+			target, arch, err := coreTarget(kind, runtime.GOARCH)
+			if err != nil {
+				t.Skip("core is not published for this host architecture")
+			}
+			a := testAgent(t)
+			a.Platform = releasePlatform{a.Platform, kind}
+			if err := os.WriteFile(a.corePath(), []byte("old core"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			var archive bytes.Buffer
+			gz := gzip.NewWriter(&archive)
+			_, _ = gz.Write([]byte("verified core"))
+			if err := gz.Close(); err != nil {
+				t.Fatal(err)
+			}
+			sum := sha256.Sum256(archive.Bytes())
+			digest := hex.EncodeToString(make([]byte, 32))
+			name := "mihomo-" + target + "-" + arch + "-v1.2.3.gz"
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/repos/MetaCubeX/mihomo/releases/latest":
+					_ = json.NewEncoder(w).Encode(map[string]any{"tag_name": "v1.2.3", "draft": false, "prerelease": false, "assets": []map[string]string{{"name": name, "browser_download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.2.3/" + name, "digest": "sha256:" + digest}}})
+				case "/MetaCubeX/mihomo/releases/download/v1.2.3/" + name:
+					_, _ = w.Write(archive.Bytes())
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			a.httpTransport = localTransport{server.URL}
+			probes := 0
+			a.runCommand = func(_ context.Context, name string, _ ...string) ([]byte, error) {
+				if name != "/system/bin/sh" {
+					probes++
+				}
+				return []byte(`{"listeners":false,"network":false}`), nil
+			}
+			if _, err = a.downloadCore(context.Background(), t.TempDir(), func(string) {}); err == nil || probes != 0 {
+				t.Fatal("executed unverified core", err)
+			}
+			if data, _ := os.ReadFile(a.corePath()); string(data) != "old core" {
+				t.Fatal("changed core on failed verification")
+			}
+			digest = hex.EncodeToString(sum[:])
+			if _, err = a.downloadCore(context.Background(), t.TempDir(), func(string) {}); err != nil {
+				t.Fatal(err)
+			}
+			if data, _ := os.ReadFile(a.corePath()); string(data) != "verified core" || probes != 1 {
+				t.Fatal("verified core was not installed")
+			}
+		})
+	}
+}
 
 func TestReleaseVersionRejectsProductPrefixes(t *testing.T) {
 	if _, err := releaseVersion("agent-v1.2.3"); err == nil {
@@ -44,7 +130,7 @@ func TestAgentUpdateUsesSemverAndVerifiedGitHubAsset(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	a.httpClient = localHTTP{server.URL}
+	a.httpTransport = localTransport{server.URL}
 	a.runCommand = func(_ context.Context, name string, _ ...string) ([]byte, error) {
 		if name == "/system/bin/sh" {
 			return []byte(`{"listeners":false,"network":false}`), nil

@@ -1,7 +1,11 @@
-/* Only host integration lives here. Component styling is in JSX utility classes. */
-/* preflight is disabled; base supplies Tailwind's transform/ring variable defaults. */
-@tailwind base;
-@tailwind utilities;
+/* Theme and host integration; component styles remain Tailwind utilities. */
+@import "tailwindcss/theme.css" layer(theme) prefix(ufi);
+@source "./";
+
+/* Unlayered, scoped utilities outrank the host's unlayered element styles. */
+:is(#mihomo-agent, #mihomo-agent-portals) {
+  @tailwind utilities;
+}
 
 :is(#mihomo-agent, #mihomo-agent-portals) {
   --mh-text: var(--dark-text-color, #f5f5f7);

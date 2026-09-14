@@ -48,12 +48,12 @@ func TestWorkerGateAndTypedRequests(t *testing.T) {
 	}
 }
 
-type managedPlatform struct{ platform.Adapter }
+type unsupportedPlatform struct{ platform.Adapter }
 
-func (p managedPlatform) Capabilities() platform.Capabilities { return platform.Capabilities{} }
-func TestSystemOwnedCapabilitiesRejectBeforeTaskCreation(t *testing.T) {
+func (p unsupportedPlatform) Capabilities() platform.Capabilities { return platform.Capabilities{} }
+func TestUnsupportedCapabilitiesRejectBeforeTaskCreation(t *testing.T) {
 	a := testAgent(t)
-	a.Platform = managedPlatform{a.Platform}
+	a.Platform = unsupportedPlatform{a.Platform}
 	for _, action := range []string{"download", "update-agent", "boot-on", "boot-off", "save-interfaces"} {
 		params := Params{}
 		if action == "save-interfaces" {

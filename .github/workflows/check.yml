@@ -6,32 +6,41 @@ on:
   pull_request:
 permissions:
   contents: read
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          bun-version: 1.4.2
-      - uses: actions/setup-go@v5
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          go-version: 1.26.7
-          cache-dependency-path: go.sum
-      - run: make check
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'go.sum') }}
+      - run: just check
       - name: Verify real systemd lifecycle on the isolated runner
-        run: |
-          mkdir -p .build
-          go build -o .build/mihomo-agent-ci ./cmd/mihomo-agent
-          go build -o .build/mihomo-core-fixture ./internal/integration/testdata/core
-          go test -c -o .build/systemd-integration ./internal/integration
-          sudo env MIHOMO_SYSTEMD_TEST=1 MIHOMO_TEST_AGENT="$PWD/.build/mihomo-agent-ci" MIHOMO_TEST_CORE="$PWD/.build/mihomo-core-fixture" .build/systemd-integration -test.v -test.timeout=4m
-      - run: npm install --global agent-browser@0.37.1
-      - run: agent-browser install --with-deps
-      - run: bun tests/ui-smoke.ts
-        working-directory: ui
-      - uses: actions/upload-artifact@v4
+        run: just test-systemd
+        env:
+          MIHOMO_SYSTEMD_TEST: '1'
+      - run: just browser-install
+      - run: just test-ui
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-failure-evidence
+          path: ui/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mihomo-agent-ufi
           path: ui/dist/mihomo-agent-ufi.js
+          if-no-files-found: error

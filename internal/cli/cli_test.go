@@ -17,7 +17,7 @@ func TestCommandsValidateArgumentsBeforeDeviceAccess(t *testing.T) {
 		{"boot", "unexpected"}, {"stop", "unexpected"}, {"boot-off", "unexpected"},
 		{"logs", "unexpected"}, {"diagnose", "unexpected"}, {"version", "unexpected"},
 		{"job-log", "id", "unexpected"}, {"inspect", "--github-proxy", "https://example.com"},
-		{"install", "--unknown"}, {"unknown"},
+		{"install", "--unknown"}, {"install", "--core", "/usr/bin/mihomo"}, {"unit"}, {"unknown"},
 	} {
 		cmd := New("test")
 		cmd.SetArgs(append([]string{"--platform", "ufi", "--root", root}, args...))

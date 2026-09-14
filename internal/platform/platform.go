@@ -62,6 +62,7 @@ func (e Environment) path(parts ...string) string {
 func (e Environment) runtime(parts ...string) string {
 	return e.path(append([]string{"runtime"}, parts...)...)
 }
+func (e Environment) CorePath() string { return e.runtime("mihomo") }
 func (e Environment) command(ctx context.Context, files []*os.File, name string, args ...string) ([]byte, error) {
 	if e.Run != nil {
 		return e.Run(ctx, files, name, args...)
@@ -86,12 +87,12 @@ var unitName = regexp.MustCompile(`^[A-Za-z0-9_.@-]+[.]service$`)
 func (c Config) Validate() error {
 	switch c.Kind {
 	case UFI:
-		if c.CorePath != "" || c.Unit != "" || c.ListenAddress != "" {
+		if c.Unit != "" || c.ListenAddress != "" {
 			return errors.New("UFI 不接受 Linux 平台参数")
 		}
 	case Linux:
-		if !filepath.IsAbs(c.CorePath) || !unitName.MatchString(c.Unit) {
-			return errors.New("Linux 需要绝对内核路径和有效 systemd service 名称")
+		if !unitName.MatchString(c.Unit) {
+			return errors.New("Linux 需要有效 systemd service 名称")
 		}
 		ip, err := netip.ParseAddr(c.ListenAddress)
 		if err != nil || !ip.Is4() || !(ip.IsLoopback() || ip.IsPrivate()) {
@@ -116,7 +117,7 @@ func Load(root string, requested Config) (Config, error) {
 		if requested.Kind != "" && requested.Kind != saved.Kind {
 			return saved, errors.New("安装平台不能更改")
 		}
-		if requested.CorePath != "" && requested.CorePath != saved.CorePath || requested.Unit != "" && requested.Unit != saved.Unit || requested.ListenAddress != "" && requested.ListenAddress != saved.ListenAddress {
+		if requested.Unit != "" && requested.Unit != saved.Unit || requested.ListenAddress != "" && requested.ListenAddress != saved.ListenAddress {
 			return saved, errors.New("安装参数不能更改，请先卸载")
 		}
 		return saved, saved.Validate()
@@ -127,9 +128,6 @@ func Load(root string, requested Config) (Config, error) {
 		requested.Kind = DefaultKind()
 	}
 	if requested.Kind == Linux {
-		if requested.CorePath == "" {
-			requested.CorePath = "/usr/bin/mihomo"
-		}
 		if requested.Unit == "" {
 			requested.Unit = "mihomo-agent-core.service"
 		}

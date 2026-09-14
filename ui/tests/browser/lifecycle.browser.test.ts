@@ -1,0 +1,159 @@
+import { expect, test } from 'vitest';
+import { app, evaluate, idle, closeModal, open, reload } from './app';
+
+test('install, encrypted subscription, runtime, autostart and uninstall', async () => {
+  await open('missing-service');
+  await app
+    .getByCSS('[data-setting=githubProxy]')
+    .fill('https://before-install.example');
+  await app.getByCSS('[data-primary=true][data-action=install]').click();
+  await expect.poll(() => evaluate('mockDeviceState.service')).toBeTruthy();
+  await idle();
+  await expect
+    .element(app.getByCSS('[data-setting=githubProxy]'))
+    .toHaveValue('https://before-install.example');
+  await app.getByCSS('[data-group=maintenance] [data-action=download]').click();
+  await expect
+    .element(app.getByCSS('[data-version=core]'))
+    .toHaveTextContent('v9.8.7');
+  await idle();
+  await expect
+    .poll(() =>
+      evaluate(
+        'mockDeviceState.settings.githubProxy === "https://before-install.example"',
+      ),
+    )
+    .toBe(true);
+  await app.getByCSS('[data-url]').fill('https://example.com/subscription');
+  await app.getByRole('button', { name: '保存并更新', exact: true }).click();
+  await expect
+    .element(app.getByText('配置已更新', { exact: true }).first())
+    .toBeVisible();
+  await idle();
+  expect(evaluate('mockDeviceState.config')).toBe(true);
+  await expect.element(app.getByCSS('[data-url]')).toHaveValue('');
+  await expect
+    .poll(() =>
+      evaluate(
+        'mockCommands.every(c => !c.includes("https://example.com/subscription")) && mockUploads.every(u => !new TextDecoder().decode(u.bytes).includes("https://example.com/subscription"))',
+      ),
+    )
+    .toBe(true);
+  await app.getByRole('button', { name: '启动代理', exact: true }).click();
+  await expect.poll(() => evaluate('mockDeviceState.running')).toBeTruthy();
+  await idle();
+  await app.getByCSS('[data-boot]').click();
+  await expect.poll(() => evaluate('mockDeviceState.boot')).toBeTruthy();
+  await idle();
+  await app.getByRole('button', { name: '更多操作', exact: true }).click();
+  await app.getByRole('menuitem', { name: '运行日志', exact: true }).click();
+  await expect
+    .element(app.getByCSS('[data-dialog=result][data-state=open]'))
+    .toBeVisible();
+  await closeModal();
+  await app.getByRole('button', { name: '卸载', exact: true }).click();
+  await expect
+    .element(app.getByCSS('[data-dialog=uninstall][data-state=open]'))
+    .toBeVisible();
+  await app.getByCSS('[data-uninstall-cancel]').click();
+  await expect
+    .element(app.getByCSS('[data-dialog=uninstall]'))
+    .not.toBeInTheDocument();
+  await expect
+    .poll(() => evaluate('!mockIntents.some(x => x.action === "uninstall")'))
+    .toBe(true);
+  await app.getByRole('button', { name: '卸载', exact: true }).click();
+  await expect
+    .element(app.getByCSS('[data-dialog=uninstall][data-state=open]'))
+    .toBeVisible();
+  await app.getByCSS('[data-uninstall-confirm]').click();
+  await expect.poll(() => evaluate('!mockDeviceState.service')).toBeTruthy();
+  await idle();
+  await expect
+    .poll(() =>
+      evaluate(
+        '!mockDeviceState.running && !mockDeviceState.boot && !mockDeviceState.agent',
+      ),
+    )
+    .toBe(true);
+});
+
+test('reconnect observes the original task without resubmitting', async () => {
+  await open('missing-core');
+  await expect
+    .element(app.getByCSS('[data-group=maintenance] [data-action=download]'))
+    .toHaveTextContent('安装');
+  await evaluate(
+    'window.mockTaskFailure = "F50 TLS 握手失败：api.github.com"; window.mockTaskDelayMs = 9000',
+  );
+  await app.getByCSS('[data-group=maintenance] [data-action=download]').click();
+  await expect.poll(() => evaluate('mockDeviceState.locked')).toBeTruthy();
+  await reload();
+  await expect.element(app.getByCSS('[data-plugin] > summary')).toBeVisible();
+  await app.getByCSS('[data-plugin] > summary').click();
+  await expect
+    .poll(() => evaluate('mockDeviceState.task?.state === "failed"'))
+    .toBeTruthy();
+  await app.getByCSS('[data-task]').click();
+  await expect
+    .element(app.getByCSS('[data-dialog=result][data-state=open]'))
+    .toBeVisible();
+  await expect
+    .element(app.getByCSS('[data-output]'))
+    .toMatchTextContent('F50 TLS');
+  await expect
+    .poll(() =>
+      evaluate(
+        'mockIntents.length === 0 && mockRequests.every(u => new URL(u, location.href).origin === location.origin)',
+      ),
+    )
+    .toBe(true);
+  await closeModal();
+  await evaluate('window.mockTaskFailure = ""; window.mockTaskDelayMs = 8000');
+  await app.getByCSS('[data-group=maintenance] [data-action=download]').click();
+  await expect.poll(() => evaluate('mockDeviceState.locked')).toBeTruthy();
+  await reload();
+  await expect.element(app.getByCSS('[data-plugin] > summary')).toBeVisible();
+  await app.getByCSS('[data-plugin] > summary').click();
+  await expect
+    .poll(() =>
+      evaluate(
+        'mockDeviceState.core && mockDeviceState.task?.state === "succeeded"',
+      ),
+    )
+    .toBeTruthy();
+  expect(evaluate('mockIntents.length')).toBe(0);
+  await expect
+    .element(app.getByCSS('[data-version=core]'))
+    .toHaveTextContent('v9.8.7');
+  await expect.element(app.getByCSS('[data-task]')).not.toBeInTheDocument();
+});
+
+test('Linux exposes shared capabilities without claiming network capture', async () => {
+  await open('managed-linux');
+  await app.getByCSS('[data-settings] > summary').click();
+  await expect
+    .element(app.getByCSS('[data-status]'))
+    .toHaveTextContent('运行中');
+  await expect
+    .element(app.getByCSS('body'))
+    .toMatchTextContent('网络由系统管理');
+  await expect
+    .element(app.getByCSS('[data-action=update-agent]'))
+    .toBeDisabled();
+  await expect
+    .element(app.getByCSS('[data-group=maintenance] [data-action=download]'))
+    .toBeDisabled();
+  await expect.element(app.getByCSS('[data-boot]')).toBeEnabled();
+  await expect
+    .element(app.getByCSS('[data-setting=interfaces]'))
+    .toBeDisabled();
+  await app.getByCSS('[data-action=stop]').click();
+  await idle();
+  await expect
+    .element(app.getByCSS('[data-action=update-agent]'))
+    .toBeEnabled();
+  await expect
+    .element(app.getByCSS('[data-group=maintenance] [data-action=download]'))
+    .toBeEnabled();
+});

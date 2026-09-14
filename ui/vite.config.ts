@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import tailwindcss from 'tailwindcss';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig(({ mode }) => ({
   root: 'dev',
@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
+    tailwindcss(),
     {
       name: 'ufi-single-script',
       generateBundle(_, bundle) {
@@ -25,19 +26,12 @@ export default defineConfig(({ mode }) => ({
       },
     },
   ],
-  css: {
-    postcss: {
-      plugins: [
-        tailwindcss(
-          fileURLToPath(new URL('./tailwind.config.cjs', import.meta.url)),
-        ),
-      ],
-    },
-  },
+  css: { transformer: 'lightningcss' },
   build: {
     outDir: '../dist',
     emptyOutDir: true,
-    target: 'es2020',
+    target: 'chrome111',
+    cssTarget: 'chrome111',
     sourcemap: false,
     lib: {
       entry: fileURLToPath(new URL('./src/index.tsx', import.meta.url)),

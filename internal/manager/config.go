@@ -2,7 +2,6 @@ package manager
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/imbytecat/mihomo-agent/internal/platform"
-	"github.com/imbytecat/mihomo-agent/internal/storage"
 
 	"github.com/google/renameio/v2"
 	"go.yaml.in/yaml/v3"
@@ -126,7 +124,6 @@ type configuration struct {
 	Controller *Controller `json:"controller,omitempty"`
 	Dashboard  bool        `json:"dashboard,omitempty"`
 }
-type pendingConfig = storage.Pending
 
 func (a *Manager) activeGeneration() (string, error) {
 	target, err := os.Readlink(a.runtime("current"))
@@ -188,21 +185,4 @@ func (a *Manager) recoverConfiguration() (bool, error) {
 		return false, err
 	}
 	return pending.WasRunning, a.store.ClearPending()
-}
-
-func (a *Manager) configPorts() (string, error) {
-	id, err := a.activeGeneration()
-	if err != nil || id == "" {
-		return "", errors.New("没有可用配置")
-	}
-	data, err := os.ReadFile(a.runtime("configurations", id, "ports"))
-	return strings.TrimSpace(string(data)), err
-}
-
-func (a *Manager) SettingsJSON() ([]byte, error) {
-	settings, err := a.settings()
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(settings)
 }

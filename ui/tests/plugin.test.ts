@@ -1,5 +1,11 @@
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import { promisify } from 'node:util';
+import type { AddressInfo } from 'node:net';
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { controllerURL } from '../src/gateway';
-import { afterEach, expect, spyOn, test } from 'bun:test';
+import { afterEach, expect, vi, test } from 'vitest';
 import {
   mkdtemp,
   readFile,
@@ -17,13 +23,13 @@ import {
   disabledReason,
   emptyState,
   lifecycleAction,
-  nextStep,
   parseState,
   componentVersion,
   topTask,
   parseJob,
 } from '../src/state';
-import { request, responseJSON } from '../src/request';
+import { requestJSON } from '../src/request';
+import { z } from 'zod';
 
 const temporary: string[] = [];
 afterEach(async () => {
@@ -31,10 +37,7 @@ afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
 });
 async function networkFunctions() {
-  const source = await readFile(
-    '../internal/platform/network_ufi.sh',
-    'utf8',
-  );
+  const source = await readFile('../internal/platform/network_ufi.sh', 'utf8');
   return (
     'PROTECTED_PORTS=7894,1053\n' +
     source.slice(source.indexOf('MARK='), source.indexOf('\nPROTECTED_PORTS='))
@@ -68,14 +71,13 @@ test('input validation and shell results preserve the trust boundary', async () 
     ),
   ).toThrow('前缀');
   const value = "a'b $(printf injected) `printf injected`\n中文";
-  const proc = Bun.spawn(
-    ['sh', '-c', shellCommand(`printf '%s' ${quote(value)}`, 'TEST_')],
-    { stdout: 'pipe' },
+  const proc = spawnSync(
+    'sh',
+    ['-c', shellCommand(`printf '%s' ${quote(value)}`, 'TEST_')],
+    { encoding: 'utf8', timeout: 10_000 },
   );
-  expect(shellResult(await new Response(proc.stdout).text(), 'TEST_')).toBe(
-    value,
-  );
-  expect(await proc.exited).toBe(0);
+  expect(shellResult(proc.stdout, 'TEST_')).toBe(value);
+  expect(proc.status).toBe(0);
   expect(() => shellResult('bad\nTEST_2', 'TEST_')).toThrow('bad');
   expect(() => shellResult('looks successful', 'TEST_')).toThrow('完整响应');
 });
@@ -103,19 +105,19 @@ test('network setup refuses foreign table and scopes interception to LAN', async
 ${network}
 ${harness}
 network_start`;
-    const proc = Bun.spawn(['sh', '-c', script], {
-      stdout: 'pipe',
-      stderr: 'pipe',
+    const proc = spawnSync('sh', ['-c', script], {
+      encoding: 'utf8',
+      timeout: 10_000,
     });
     return {
-      output: await new Response(proc.stdout).text(),
-      code: await proc.exited,
+      output: proc.stdout,
+      code: proc.status,
     };
   };
   await writeFile(join(dir, 'routes'), 'foreign route');
   const collision = await run();
   expect(collision.code).toBe(1);
-  expect(await Bun.file(join(dir, 'network.calls')).exists()).toBe(false);
+  expect(existsSync(join(dir, 'network.calls'))).toBe(false);
   await writeFile(join(dir, 'routes'), '');
   const ok = await run();
   expect(ok.code).toBe(0);
@@ -144,7 +146,7 @@ network_start`;
   ]) {
     expect(await readFile(join(dir, name), 'utf8')).toMatch(/_A\n$/);
   }
-  expect(await Bun.file(join(dir, 'network.pending')).exists()).toBe(false);
+  expect(existsSync(join(dir, 'network.pending'))).toBe(false);
   expect((await run()).code).toBe(0);
   expect(await readFile(join(dir, 'network.active'), 'utf8')).toBe(
     'B\nwlan0 rndis0 usb0\n',
@@ -170,12 +172,13 @@ test('startup and missing-LAN states keep listener guards without capturing traf
   const network = await networkFunctions();
   const harness = await readFile('tests/fake-net.sh', 'utf8');
   const run = async (action: string) => {
-    const proc = Bun.spawn(
-      ['sh', '-c', `DIR=${quote(dir)}\n${network}\n${harness}\n${action}`],
-      { stdout: 'pipe', stderr: 'pipe' },
+    const proc = spawnSync(
+      'sh',
+      ['-c', `DIR=${quote(dir)}\n${network}\n${harness}\n${action}`],
+      { encoding: 'utf8', timeout: 10_000 },
     );
-    const error = await new Response(proc.stderr).text();
-    expect(await proc.exited).toBe(0);
+    const error = proc.stderr;
+    expect(proc.status).toBe(0);
     expect(error).toBe('');
   };
   await run('ACTION=prepare network_start');
@@ -239,15 +242,15 @@ ip() {
   esac
 }
 resolve_interfaces`;
-    const proc = Bun.spawn(['sh', '-c', script], {
-      stdout: 'pipe',
-      stderr: 'pipe',
+    const proc = spawnSync('sh', ['-c', script], {
+      encoding: 'utf8',
+      timeout: 10_000,
     });
-    const error = await new Response(proc.stderr).text();
+    const error = proc.stderr;
     expect(error).toBe('');
     return {
-      value: (await new Response(proc.stdout).text()).trim(),
-      code: await proc.exited,
+      value: proc.stdout.trim(),
+      code: proc.status,
     };
   };
   expect((await run('default dev rmnet_data0 table 1009')).value).toBe(
@@ -279,11 +282,14 @@ network_sync
 desired='rndis0 wlan0'; network_sync
 desired=''; network_sync
 desired=wlan0; network_sync`;
-  const proc = Bun.spawn(['sh', '-c', script], { stdout: 'pipe' });
-  expect(await new Response(proc.stdout).text()).toBe(
+  const proc = spawnSync('sh', ['-c', script], {
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  expect(proc.stdout).toBe(
     'start:wlan0\nstart:rndis0 wlan0\npause\nstart:\nstart:wlan0\n',
   );
-  expect(await proc.exited).toBe(0);
+  expect(proc.status).toBe(0);
 });
 
 test('listener readiness requires all four core-owned sockets, not foreign listeners', async () => {
@@ -309,12 +315,15 @@ test('listener readiness requires all four core-owned sockets, not foreign liste
   await writeFile(join(procdir, 'net/udp6'), '');
   const source = (await networkFunctions()).replaceAll('/proc/', `${procdir}/`);
   const run = async () => {
-    const proc = Bun.spawn([
+    const proc = spawnSync(
       'sh',
-      '-c',
-      `DIR=${quote(dir)}\n${source}\nalive() { return 0; }\nlisteners_ready`,
-    ]);
-    return proc.exited;
+      [
+        '-c',
+        `DIR=${quote(dir)}\n${source}\nalive() { return 0; }\nlisteners_ready`,
+      ],
+      { encoding: 'utf8', timeout: 10_000 },
+    );
+    return proc.status;
   };
   expect(await run()).toBe(0);
   await mkdir(join(dir, 'current'));
@@ -362,7 +371,6 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
   expect(
     disabledReason('save-interfaces', { ...installed, running: true }),
   ).toContain('停止');
-  expect(nextStep(installed)).toContain('内核');
   const ready = { ...installed, core: true, config: true, subscription: true };
   expect(disabledReason('start', ready)).toBe('');
   expect(disabledReason('update', ready, false, 'https://new.example')).toBe(
@@ -380,6 +388,11 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
   expect(disabledReason('logs', { ...ready, locked: true })).toBe('');
   expect(() => parseState('{"service":true}')).toThrow();
   expect(parseState(JSON.stringify(ready))).toEqual(ready);
+  for (const field of ['coreVersion', 'controller', 'dashboard'] as const) {
+    const incomplete = { ...ready } as Partial<typeof ready>;
+    delete incomplete[field];
+    expect(() => parseState(JSON.stringify(incomplete))).toThrow('协议不匹配');
+  }
   expect(
     disabledReason('save-controller', { ...ready, controller: null }),
   ).toContain('更新 Mihomo Agent');
@@ -416,13 +429,14 @@ test('request errors identify network, timeout, HTTP and malformed response stag
     target: '管理浏览器 GET https://api.github.com/releases/latest',
     hint: 'GitHub Proxy不代理版本查询',
   };
-  const fetch = spyOn(globalThis, 'fetch');
+  const fetch = vi.spyOn(globalThis, 'fetch');
   try {
     fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
-    const error = await request(
+    const error = await requestJSON(
       'https://api.github.com/releases/latest',
       {},
       context,
+      z.unknown(),
     ).catch((error) => error as Error);
     if (!(error instanceof Error))
       throw new Error('Expected a request failure');
@@ -432,7 +446,12 @@ test('request errors identify network, timeout, HTTP and malformed response stag
     expect(error.message).toContain('GitHub Proxy不代理版本查询');
     fetch.mockRejectedValueOnce(new DOMException('aborted', 'AbortError'));
     await expect(
-      request('https://api.github.com/releases/latest', {}, context),
+      requestJSON(
+        'https://api.github.com/releases/latest',
+        {},
+        context,
+        z.unknown(),
+      ),
     ).rejects.toThrow('请求超时');
     fetch.mockResolvedValueOnce(
       new Response('{}', {
@@ -441,14 +460,34 @@ test('request errors identify network, timeout, HTTP and malformed response stag
       }),
     );
     await expect(
-      request('https://api.github.com/releases/latest', {}, context),
+      requestJSON(
+        'https://api.github.com/releases/latest',
+        {},
+        context,
+        z.unknown(),
+      ),
     ).rejects.toThrow('HTTP 403（请求已被限流');
+    fetch.mockResolvedValueOnce(new Response('<html>login</html>'));
     await expect(
-      responseJSON(new Response('<html>login</html>'), context),
+      requestJSON(
+        'https://api.github.com/releases/latest',
+        {},
+        context,
+        z.unknown(),
+      ),
     ).rejects.toThrow('响应不是有效 JSON');
+    fetch.mockResolvedValueOnce(Response.json({ url: 7 }));
+    await expect(
+      requestJSON(
+        'https://api.github.com/releases/latest',
+        {},
+        context,
+        z.object({ url: z.string() }),
+      ),
+    ).rejects.toThrow('响应内容不符合预期格式');
     fetch.mockResolvedValueOnce(new Response('', { status: 401 }));
     await expect(
-      request(
+      requestJSON(
         'http://192.168.0.1/api/upload_img',
         {},
         {
@@ -456,6 +495,7 @@ test('request errors identify network, timeout, HTTP and malformed response stag
           target: 'F50 /api/upload_img',
           hint: '重新登录 UFI',
         },
+        z.unknown(),
       ),
     ).rejects.toThrow('认证失败');
   } finally {
@@ -473,36 +513,47 @@ test('UFI uploads preserve FormData and never retry failed requests', async () =
   body.append('file', new File(['encrypted-fixture'], 'request.bin'));
   let requests = 0,
     uploaded = '';
-  const server = Bun.serve({
-    hostname: '127.0.0.1',
-    port: 0,
-    fetch: async (request) => {
-      requests++;
-      expect(request.method).toBe('POST');
-      expect(request.headers.get('content-type')).toContain(
-        'multipart/form-data; boundary=',
-      );
-      uploaded = await ((await request.formData()).get('file') as File).text();
-      return new Response('{}', { status: 503 });
-    },
+  let method: string | undefined;
+  let contentType = '';
+  const server = createServer(async (incoming, response) => {
+    requests++;
+    method = incoming.method;
+    contentType = incoming.headers['content-type'] || '';
+    const chunks: Buffer[] = [];
+    for await (const chunk of incoming) chunks.push(chunk);
+    const form = await new Response(new Uint8Array(Buffer.concat(chunks)), {
+      headers: { 'content-type': contentType },
+    }).formData();
+    uploaded = await (form.get('file') as File).text();
+    response.writeHead(503).end('{}');
   });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
   try {
     await expect(
-      request(server.url.href, { method: 'POST', body }, context),
+      requestJSON(address, { method: 'POST', body }, context, z.unknown()),
     ).rejects.toThrow('HTTP 503');
     expect(requests).toBe(1);
     expect(uploaded).toBe('encrypted-fixture');
+    expect(method).toBe('POST');
+    expect(contentType).toContain('multipart/form-data; boundary=');
   } finally {
-    server.stop(true);
+    await promisify(server.close.bind(server))();
   }
-  const fetch = spyOn(globalThis, 'fetch');
+  const fetch = vi.spyOn(globalThis, 'fetch');
   try {
-    fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    fetch.mockImplementationOnce(async (input) => {
+      // Fail after serialization, so Node's multipart encoder can finish cleanly.
+      await (input as Request).arrayBuffer();
+      throw new TypeError('Failed to fetch');
+    });
     await expect(
-      request(
+      requestJSON(
         'http://192.168.0.1/api/upload_img',
         { method: 'POST', body },
         context,
+        z.unknown(),
       ),
     ).rejects.toThrow('Failed to fetch');
     expect(fetch).toHaveBeenCalledTimes(1);

@@ -51,30 +51,30 @@ export default function Gateway({ container }: { container: HTMLElement }) {
       )}
       <details
         data-plugin
-        className="ufi-group/plugin ufi-overflow-hidden ufi-rounded-[22px] ufi-border ufi-border-solid ufi-border-[var(--mh-line)] ufi-bg-[var(--mh-bg)] ufi-text-[var(--mh-text)]"
+        className="ufi:group/plugin ufi:overflow-hidden ufi:rounded-[22px] ufi:border ufi:border-solid ufi:border-[var(--mh-line)] ufi:bg-[var(--mh-bg)] ufi:text-[var(--mh-text)]"
         onToggle={(event) => {
           if (event.target === event.currentTarget)
             model.open.current = event.currentTarget.open;
         }}
       >
         <summary
-          className={`ufi-flex ufi-list-none ufi-items-center ufi-gap-3 ufi-px-5 ufi-py-4 ufi-cursor-pointer [&::-webkit-details-marker]:ufi-hidden ${focus}`}
+          className={`ufi:flex ufi:list-none ufi:items-center ufi:gap-3 ufi:px-5 ufi:py-4 ufi:cursor-pointer ufi:[&::-webkit-details-marker]:hidden ${focus}`}
         >
-          <ShieldCheck size={22} className="ufi-text-[#0a84ff]" aria-hidden />
-          <strong className="ufi-text-base ufi-font-semibold">Mihomo</strong>
-          <span className="ufi-ml-auto ufi-text-xs ufi-opacity-65">
+          <ShieldCheck size={22} className="ufi:text-[#0a84ff]" aria-hidden />
+          <strong className="ufi:text-base ufi:font-semibold">Mihomo</strong>
+          <span className="ufi:ml-auto ufi:text-xs ufi:opacity-65">
             {runtimeTitle(model)}
           </span>
           <ChevronDown
             size={17}
-            className="group-open/plugin:ufi-rotate-180"
+            className="ufi:group-open/plugin:rotate-180"
             aria-hidden
           />
         </summary>
         <div
           data-gateway-body
           aria-busy={!!model.busy}
-          className="ufi-px-4 ufi-pb-4"
+          className="ufi:px-4 ufi:pb-4"
         >
           <Overview
             model={model}
@@ -88,7 +88,7 @@ export default function Gateway({ container }: { container: HTMLElement }) {
             }}
           />
           {model.error ? (
-            <div className="ufi-mt-3">
+            <div className="ufi:mt-3">
               <Button
                 full
                 variant="danger"
@@ -114,14 +114,10 @@ export default function Gateway({ container }: { container: HTMLElement }) {
         open={uninstallOpen}
         onOpenChange={setUninstallOpen}
         title="卸载 Mihomo 服务？"
-        description={
-          model.device?.platform === 'linux'
-            ? '请先从系统移除对应 unit。仅删除 Agent 数据，不删除系统软件包或网络规则，不可恢复。'
-            : '停止代理并关闭开机启动，删除本插件全部设备文件和数据，不可恢复。'
-        }
+        description="停止代理并关闭开机启动，删除本安装的 Agent、内核和全部数据，不可恢复。"
         closeLabel="取消卸载"
       >
-        <div className="ufi-flex ufi-justify-end ufi-gap-3">
+        <div className="ufi:flex ufi:justify-end ufi:gap-3">
           <Button data-uninstall-cancel onClick={() => setUninstallOpen(false)}>
             取消
           </Button>
@@ -146,7 +142,7 @@ export default function Gateway({ container }: { container: HTMLElement }) {
       >
         <pre
           data-output
-          className="ufi-m-0 ufi-max-h-[60vh] ufi-overflow-auto ufi-whitespace-pre-wrap ufi-break-words ufi-text-xs ufi-leading-relaxed"
+          className="ufi:m-0 ufi:max-h-[60vh] ufi:overflow-auto ufi:whitespace-pre-wrap ufi:wrap-break-word ufi:text-xs ufi:leading-relaxed"
         >
           {model.detail}
         </pre>

@@ -1,54 +1,51 @@
-# Linux / systemd
+# Linux
 
-Agent 管订阅、配置版本、任务和运行操作；Mihomo 程序、systemd unit、自启及网络规则由系统管理。不会覆盖 Nix store 或自动配置旁路网络。
+Agent 自行安装、校验和更新 Mihomo 与自身二进制，管理订阅、配置版本、任务、启停和自启。需要 root；进程托管和开机启动通过 systemd 的 D-Bus 接口完成，无需手写 service 或预装 Mihomo。
 
-## 安装
+## 安装与日常操作
 
-需要 root、systemd，以及系统安装的 Mihomo。以下以 AMD64、内核路径 /usr/bin/mihomo 为例；其他架构使用对应 Release 文件。
+安装、订阅、内核更新和卸载命令见 [README](../README.md#linux-安装)。默认目录为 `/var/lib/mihomo-agent`，后续直接使用其中的 `agent`。`install` 只初始化 Agent 和 service，首次内核下载使用 `task download --wait`。
 
-```sh
-sudo install -m 0755 mihomo-agent-linux-amd64 /usr/local/bin/mihomo-agent
-mihomo-agent --platform linux unit --core /usr/bin/mihomo > mihomo-agent-core.service
-sudo install -m 0644 mihomo-agent-core.service /etc/systemd/system/mihomo-agent-core.service
-sudo systemctl daemon-reload
-sudo mihomo-agent --platform linux install --core /usr/bin/mihomo
-```
+安装参数仅在首次安装时确定，后续命令从数据库读取：
 
-若已有同名 unit，不要覆盖；生成和安装时均通过 --unit 指定独立名称。NixOS 应通过系统声明部署软件包和相同的 unit，不能直接写入系统托管文件。
+| 参数 | 默认值 | 用途 |
+| --- | --- | --- |
+| `--root` | `/var/lib/mihomo-agent` | 私有数据目录，末级名称必须为 `mihomo-agent` |
+| `install --unit` | `mihomo-agent-core.service` | 独立 service 名称，已有同名服务时拒绝覆盖 |
+| `install --listen-address` | `127.0.0.1` | 本机回环或 IPv4 私网地址 |
+| `install --github-proxy` | 空，直连 | GitHub 下载代理 HTTPS 前缀 |
 
-创建权限为 0600 的 request.json，填入完整 YAML 订阅链接：
-
-```json
-{"url":"https://example.com/your-subscription"}
-```
+例如安装到另一目录并监听本机 LAN 地址：
 
 ```sh
-sudo mihomo-agent task update --input request.json --wait
-sudo mihomo-agent task start --wait
-sudo systemctl enable mihomo-agent-core.service
-sudo mihomo-agent inspect
+sudo ./mihomo-agent-linux-amd64 --root /opt/mihomo-agent install \
+  --unit mihomo-agent-lan.service --listen-address 192.168.1.2
 ```
 
-秘密通过文件或 --input - 的标准输入传递，不放在命令行参数。去掉 --wait 会立即返回任务 ID；用 job ID、job-log ID 查询。页面或终端断开不取消已接收的任务。
+自定义目录安装后，后续命令也传同一个 `--root`。下载会按架构选择官方 Linux 资产；AMD64 使用兼容版，不要求新 CPU 指令集。内核和 Agent 更新均需先执行 `task stop --wait`，成功后用 `task start --wait` 启动。
+
+需要修改 GitHub Proxy 时，通过 `task save-github-proxy --input 文件 --wait` 传入 `{"githubProxy":"https://ghfast.top"}`，空字符串恢复直连。
 
 ## 监听与面板
 
-默认只监听 127.0.0.1。LAN 使用时，首次生成 unit 和安装时都传 --listen-address 本机私网IPv4。地址绑定不等于入口隔离：转发、TPROXY、DNS 接管、IPv6 和故障策略仍需配置系统防火墙。
+默认只监听 `127.0.0.1`。LAN 地址必须实际存在于本机接口；地址绑定不等于入口隔离。转发、TPROXY、DNS 接管、IPv6 和故障策略仍需配置系统网络和防火墙，Agent 不会自动部署这些规则，也不会显示“已接管网络”。`diagnose` 使用系统 `ip` 命令读取网络信息，`logs` 通过 `journalctl` 读取 service 日志。
 
-API 固定绑定本机回环地址。需要 Zashboard 时执行 task download-dashboard --wait，并通过 SSH 转发访问；可用 task save-controller --input 文件 设置自己选择的密钥：
+管理 API 固定绑定本机回环地址。需要 Zashboard 时执行 `task download-dashboard --wait`，通过 SSH 转发访问：
+
+```sh
+ssh -N -L 9090:127.0.0.1:9090 root@设备地址
+```
+
+浏览器打开 `http://127.0.0.1:9090/ui/`。使用 `task save-controller --input 文件 --wait` 设置自己的密钥，JSON 文件权限保持 `0600`：
 
 ```json
 {"controller":{"enabled":true,"port":9090,"secret":"your-key"}}
 ```
 
-本平台不会显示“已接管网络”，也不能通过 Agent 更新系统软件包或修改自启。
+Dashboard 链接不携带密钥，登录时输入所设置的密钥。
 
-## 卸载
+## 自启与卸载
 
-先停用并从系统配置移除对应 unit，执行 daemon-reload，再运行：
+配置和内核就绪后，使用 `task boot-on --wait` 开启自启，`task boot-off --wait` 关闭。Agent 在私有目录保存 service 文件，通过 systemd 注册；无需手动执行 `systemctl enable` 或 `daemon-reload`。勿修改该 service 或添加 drop-in，Agent 会拒绝操作身份或配置不符的服务。
 
-```sh
-sudo mihomo-agent task uninstall --wait
-```
-
-删除 Agent 私有状态目录中的全部数据，不保留备份；系统中的 Mihomo、Agent 二进制和防火墙规则不属于这个目录，按系统部署方式移除。
+`task uninstall --wait` 自动停止内核、关闭自启并移除 service，确认 systemd 不再引用安装目录后删除 Agent、内核及全部数据。清理失败会报错并保留尚未删除的数据，可修复原因后重试。无备份；其他服务和系统网络规则不受影响。

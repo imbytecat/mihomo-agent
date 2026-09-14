@@ -13,12 +13,7 @@ import {
   type TaskAction,
   type TaskParams,
 } from '../state';
-import {
-  request,
-  requestFailure,
-  responseJSON,
-  transportFailure,
-} from '../request';
+import { requestJSON, requestFailure, transportFailure } from '../request';
 
 declare const runShellWithRoot: (
   command: string,
@@ -124,17 +119,13 @@ async function uploadBytes(bytes: Uint8Array) {
     target: 'UFI 设备 /api/upload_img',
     hint: '检查设备连接和 UFI 登录状态。',
   };
-  const response = await request(
+  const result = await requestJSON(
     `${KANO_baseURL}/upload_img`,
     { method: 'POST', headers: common_headers, body },
     context,
+    uploadResponse,
   );
-  const result = uploadResponse.safeParse(
-    await responseJSON(response, context),
-  );
-  if (!result.success)
-    throw requestFailure(context, '设备返回了无效的上传路径');
-  return result.data.url;
+  return result.url;
 }
 export async function sealRequest(publicKey: string, value: object) {
   await sodium.ready;

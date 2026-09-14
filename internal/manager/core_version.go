@@ -11,15 +11,9 @@ import (
 
 var coreVersionLine = regexp.MustCompile(`(?m)^Mihomo Meta ([A-Za-z0-9][A-Za-z0-9._+-]{0,127})(?:[ \t]|$)`)
 
-type coreVersionCache struct {
-	Version        string
-	Device, Inode  uint64
-	Size, Modified int64
-}
-
-func coreIdentity(info os.FileInfo) coreVersionCache {
+func coreIdentity(info os.FileInfo) string {
 	stat := info.Sys().(*syscall.Stat_t)
-	return coreVersionCache{Device: uint64(stat.Dev), Inode: uint64(stat.Ino), Size: info.Size(), Modified: info.ModTime().UnixNano()}
+	return fmt.Sprintf("%x:%x:%d:%d", uint64(stat.Dev), uint64(stat.Ino), info.Size(), info.ModTime().UnixNano())
 }
 
 // The installed executable is authoritative. Cache across CLI invocations until
@@ -30,8 +24,7 @@ func (a *Manager) coreVersion() string {
 	if err != nil || !before.Mode().IsRegular() {
 		return ""
 	}
-	identity := coreIdentity(before)
-	cacheKey := fmt.Sprintf("%x:%x:%d:%d", identity.Device, identity.Inode, identity.Size, identity.Modified)
+	cacheKey := coreIdentity(before)
 	if version, err := a.store.CoreVersion(cacheKey); err == nil {
 		return version
 	}
@@ -46,14 +39,14 @@ func (a *Manager) coreVersion() string {
 		return ""
 	}
 	after, err := os.Stat(path)
-	if err != nil || !after.Mode().IsRegular() || identity != coreIdentity(after) {
+	if err != nil || !after.Mode().IsRegular() || cacheKey != coreIdentity(after) {
 		return ""
 	}
-	identity.Version = string(match[1])
+	version := string(match[1])
 	// Display metadata must neither block operations nor recreate an uninstalled runtime.
 	if lock, err := a.lock(); err == nil {
 		defer lock.Close()
-		_ = a.store.SaveCoreVersion(cacheKey, identity.Version)
+		_ = a.store.SaveCoreVersion(cacheKey, version)
 	}
-	return identity.Version
+	return version
 }

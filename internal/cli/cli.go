@@ -42,13 +42,7 @@ func New(version string) *cobra.Command {
 		if err != nil {
 			return nil, err
 		}
-		executable, err := os.Executable()
-		if err != nil {
-			return nil, err
-		}
-		if deployment.Kind == platform.UFI {
-			executable = filepath.Join(directory, "agent")
-		}
+		executable := filepath.Join(directory, "agent")
 		adapter, err := platform.New(deployment, platform.Environment{Root: directory, Executable: executable})
 		if err != nil {
 			return nil, err
@@ -64,20 +58,8 @@ func New(version string) *cobra.Command {
 		hidden     bool
 		run        func(*cobra.Command, *manager.Manager, []string) (any, error)
 	}{
-		{"unit", "Print a systemd unit; installs nothing", cobra.NoArgs, false, func(cmd *cobra.Command, m *manager.Manager, _ []string) (any, error) {
-			p, ok := m.Platform.(*platform.SystemdAdapter)
-			if !ok {
-				return nil, errors.New("unit 仅用于 Linux 平台")
-			}
-			text, err := p.Unit()
-			if err != nil {
-				return nil, err
-			}
-			_, err = fmt.Fprint(cmd.OutOrStdout(), text)
-			return nil, err
-		}},
 		{"install", "Initialize this platform deployment", cobra.NoArgs, false, func(_ *cobra.Command, m *manager.Manager, _ []string) (any, error) {
-			return map[string]bool{"ok": true}, m.Install(githubProxy)
+			return map[string]any{"ok": true, "executable": m.Executable}, m.Install(githubProxy)
 		}},
 		{"inspect", "Print platform, capabilities and runtime state", cobra.NoArgs, false, func(_ *cobra.Command, m *manager.Manager, _ []string) (any, error) { return m.Inspect() }},
 		{"submit UPLOAD SHA256", "Accept an encrypted UFI upload", cobra.ExactArgs(2), false, func(_ *cobra.Command, m *manager.Manager, args []string) (any, error) {
@@ -158,12 +140,9 @@ func New(version string) *cobra.Command {
 			return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 		}}
 		switch child.Name() {
-		case "install", "unit":
-			if child.Name() == "install" {
-				child.Flags().StringVar(&githubProxy, "github-proxy", "", "GitHub download proxy")
-			}
-			child.Flags().StringVar(&config.CorePath, "core", "", "System-owned Mihomo executable (Linux)")
-			child.Flags().StringVar(&config.Unit, "unit", "", "System-owned service name (Linux)")
+		case "install":
+			child.Flags().StringVar(&githubProxy, "github-proxy", "", "GitHub download proxy")
+			child.Flags().StringVar(&config.Unit, "unit", "", "Service name (Linux)")
 			child.Flags().StringVar(&config.ListenAddress, "listen-address", "", "Local IPv4 listen address (Linux; loopback by default)")
 		case "submit":
 			child.Flags().StringVar(&uploads, "uploads", platform.UFIUploads, "UFI public upload directory")

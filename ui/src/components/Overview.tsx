@@ -1,4 +1,4 @@
-import * as Menu from '@radix-ui/react-dropdown-menu';
+import { Menu } from '@base-ui/react/menu';
 import {
   Check,
   Download,
@@ -70,8 +70,8 @@ export function Overview({
     <Menu.Item
       key={action}
       disabled={!!disabledReason(action, device, !!busy)}
-      onSelect={() => void model.perform(action)}
-      className="ufi-flex ufi-min-h-11 ufi-items-center ufi-gap-2 ufi-rounded-lg ufi-px-3 ufi-py-2 ufi-outline-none ufi-cursor-pointer data-[highlighted]:ufi-bg-white/10 data-[disabled]:ufi-opacity-40"
+      onClick={() => void model.perform(action)}
+      className="ufi:flex ufi:min-h-11 ufi:items-center ufi:gap-2 ufi:rounded-lg ufi:px-3 ufi:py-2 ufi:outline-hidden ufi:cursor-pointer ufi:data-[highlighted]:bg-white/10 ufi:data-[disabled]:opacity-40"
     >
       <Icon size={16} aria-hidden />
       {name}
@@ -80,59 +80,63 @@ export function Overview({
   return (
     <div
       data-overview
-      className="ufi-rounded-2xl ufi-bg-[var(--mh-group)] ufi-p-5"
+      className="ufi:rounded-2xl ufi:bg-[var(--mh-group)] ufi:p-5"
     >
-      <div className="ufi-flex ufi-items-start ufi-justify-between">
+      <div className="ufi:flex ufi:items-start ufi:justify-between">
         <span
           className={clsx(
-            'ufi-flex ufi-size-14 ufi-items-center ufi-justify-center ufi-rounded-2xl',
+            'ufi:flex ufi:size-14 ufi:items-center ufi:justify-center ufi:rounded-2xl',
             healthy
-              ? 'ufi-bg-emerald-400/10 ufi-text-[#30d158]'
-              : 'ufi-bg-blue-400/10 ufi-text-[#0a84ff]',
+              ? 'ufi:bg-emerald-400/10 ufi:text-[#30d158]'
+              : 'ufi:bg-blue-400/10 ufi:text-[#0a84ff]',
           )}
         >
           <ShieldCheck size={30} aria-hidden />
         </span>
         <Menu.Root modal={false}>
-          <Menu.Trigger asChild>
-            <Button icon={MoreHorizontal} aria-label="更多操作" />
-          </Menu.Trigger>
+          <Menu.Trigger
+            render={<Button icon={MoreHorizontal} aria-label="更多操作" />}
+          />
           <Menu.Portal container={container}>
-            <Menu.Content
+            <Menu.Positioner
               align="end"
               sideOffset={8}
               collisionPadding={12}
-              data-ufi-menu
-              className="ufi-z-[2147483639] ufi-min-w-48 ufi-rounded-xl ufi-border ufi-border-solid ufi-border-[var(--mh-line)] ufi-bg-[var(--mh-group)] ufi-p-1.5 ufi-text-sm ufi-text-[var(--mh-text)] ufi-shadow-xl"
+              className="ufi:z-[2147483639]"
             >
-              {menuItem('refresh', '刷新状态', RefreshCw)}
-              {menuItem('logs', '运行日志', FileText)}
-              {menuItem('diagnose', '网络诊断', Stethoscope)}
-              <Menu.Item
-                disabled={!device?.task}
-                onSelect={() => void model.showTask()}
-                className="ufi-flex ufi-min-h-11 ufi-items-center ufi-gap-2 ufi-rounded-lg ufi-px-3 ufi-py-2 ufi-outline-none ufi-cursor-pointer data-[highlighted]:ufi-bg-white/10 data-[disabled]:ufi-opacity-40"
+              <Menu.Popup
+                data-ufi-menu
+                className="ufi:z-[2147483639] ufi:min-w-48 ufi:rounded-xl ufi:border ufi:border-solid ufi:border-[var(--mh-line)] ufi:bg-[var(--mh-group)] ufi:p-1.5 ufi:text-sm ufi:text-[var(--mh-text)] ufi:shadow-xl"
               >
-                <FileText size={16} aria-hidden />
-                最近任务
-              </Menu.Item>
-              <Menu.Separator className="ufi-my-1 ufi-h-px ufi-bg-white/10" />
-              {menuItem(
-                device ? 'restart' : 'stop',
-                device ? '重启代理' : '停止代理',
-                device ? RefreshCw : Square,
-              )}
-            </Menu.Content>
+                {menuItem('refresh', '刷新状态', RefreshCw)}
+                {menuItem('logs', '运行日志', FileText)}
+                {menuItem('diagnose', '网络诊断', Stethoscope)}
+                <Menu.Item
+                  disabled={!device?.task}
+                  onClick={() => void model.showTask()}
+                  className="ufi:flex ufi:min-h-11 ufi:items-center ufi:gap-2 ufi:rounded-lg ufi:px-3 ufi:py-2 ufi:outline-hidden ufi:cursor-pointer ufi:data-[highlighted]:bg-white/10 ufi:data-[disabled]:opacity-40"
+                >
+                  <FileText size={16} aria-hidden />
+                  最近任务
+                </Menu.Item>
+                <Menu.Separator className="ufi:my-1 ufi:h-px ufi:bg-white/10" />
+                {menuItem(
+                  device ? 'restart' : 'stop',
+                  device ? '重启代理' : '停止代理',
+                  device ? RefreshCw : Square,
+                )}
+              </Menu.Popup>
+            </Menu.Positioner>
           </Menu.Portal>
         </Menu.Root>
       </div>
       <h2
         data-status
-        className="ufi-m-0 ufi-mt-4 ufi-text-[28px] ufi-font-semibold ufi-tracking-tight"
+        className="ufi:m-0 ufi:mt-4 ufi:text-[28px] ufi:font-semibold ufi:tracking-tight"
       >
         {runtimeTitle(model)}
       </h2>
-      <p className="ufi-m-0 ufi-mt-1 ufi-mb-5 ufi-text-sm ufi-opacity-60">
+      <p className="ufi:m-0 ufi:mt-1 ufi:mb-5 ufi:text-sm ufi:opacity-60">
         {!device
           ? '检查 UFI 登录与高级功能'
           : healthy
@@ -202,7 +206,7 @@ export function Overview({
         </Button>
       )}
       {device?.service && (
-        <div className="ufi-mt-3">
+        <div className="ufi:mt-3">
           {dashboardReason ? (
             <Button full disabled title={dashboardReason}>
               打开面板
@@ -210,7 +214,7 @@ export function Overview({
           ) : (
             <a
               data-dashboard-link
-              className={`${buttonStyle} ufi-w-full ufi-bg-white/5 ufi-text-inherit hover:ufi-bg-white/10`}
+              className={`${buttonStyle} ufi:w-full ufi:bg-white/5 ufi:text-inherit ufi:hover:bg-white/10`}
               href={dashboardURL(device.controller!.port)}
               target="_blank"
               rel="noopener noreferrer"
@@ -224,7 +228,7 @@ export function Overview({
       {device && stage !== 'ready' && (
         <div
           aria-label="安装进度"
-          className="ufi-mt-4 ufi-flex ufi-justify-between ufi-gap-2 ufi-text-xs ufi-opacity-70"
+          className="ufi:mt-4 ufi:flex ufi:justify-between ufi:gap-2 ufi:text-xs ufi:opacity-70"
         >
           {[
             ['服务', device.service],
@@ -234,8 +238,8 @@ export function Overview({
             <span
               key={String(label)}
               className={clsx(
-                'ufi-flex ufi-items-center ufi-gap-1',
-                done && 'ufi-text-[#30d158]',
+                'ufi:flex ufi:items-center ufi:gap-1',
+                done && 'ufi:text-[#30d158]',
               )}
             >
               {done && <Check size={13} aria-hidden />}

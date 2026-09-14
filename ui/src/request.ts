@@ -1,4 +1,9 @@
-import ky, { isHTTPError, isNetworkError } from 'ky';
+import ky, {
+  isHTTPError,
+  isNetworkError,
+  SchemaValidationError,
+  type StandardSchemaV1,
+} from 'ky';
 
 export type RequestContext = { step: string; target: string; hint: string };
 
@@ -22,16 +27,24 @@ export function transportFailure(
   return requestFailure(context, `${reason}\n原始错误：${name}: ${message}`);
 }
 
-export async function request(
+export async function requestJSON<Schema extends StandardSchemaV1>(
   url: string,
   options: RequestInit,
   context: RequestContext,
+  schema: Schema,
 ) {
   try {
     // UFI uploads are not idempotent. Never replay them automatically or impose
     // a second timeout over the host's own request lifecycle.
-    return await ky(url, { ...options, retry: 0, timeout: false });
+    return await ky(url, { ...options, retry: 0, timeout: false }).json(schema);
   } catch (error) {
+    if (error instanceof SyntaxError)
+      throw requestFailure(
+        context,
+        '响应不是有效 JSON，可能返回了登录页或错误页',
+      );
+    if (error instanceof SchemaValidationError)
+      throw requestFailure(context, '响应内容不符合预期格式');
     if (!isHTTPError(error)) throw transportFailure(context, error);
     const response = error.response;
     const rateLimited =
@@ -41,21 +54,6 @@ export async function request(
     throw requestFailure(
       context,
       `HTTP ${response.status}${rateLimited ? '（请求已被限流，请稍后重试）' : response.status === 401 ? '（认证失败，请重新登录）' : ''}`,
-    );
-  }
-}
-
-export async function responseJSON(
-  response: Response,
-  context: RequestContext,
-): Promise<unknown> {
-  try {
-    return await response.json();
-  } catch (error) {
-    if (!(error instanceof SyntaxError)) throw transportFailure(context, error);
-    throw requestFailure(
-      context,
-      '响应不是有效 JSON，可能返回了登录页或错误页',
     );
   }
 }

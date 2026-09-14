@@ -16,7 +16,7 @@ export function TaskNotice({
   const active = ['queued', 'running'].includes(job.state);
   const failed = ['failed', 'interrupted'].includes(job.state);
   return (
-    <div className="ufi-p-3">
+    <div className="ufi:p-3">
       <Button
         full
         data-task={!installation || undefined}
@@ -27,7 +27,7 @@ export function TaskNotice({
         {active && (
           <LoaderCircle
             size={14}
-            className="ufi-animate-spin motion-reduce:ufi-animate-none"
+            className="ufi:animate-spin ufi:motion-reduce:animate-none"
             aria-hidden
           />
         )}

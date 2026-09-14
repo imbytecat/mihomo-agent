@@ -14,6 +14,7 @@ import (
 	"strconv"
 
 	"github.com/imbytecat/mihomo-agent/internal/fsutil"
+	"github.com/imbytecat/mihomo-agent/internal/platform"
 	"github.com/imbytecat/mihomo-agent/internal/storage"
 )
 
@@ -192,25 +193,46 @@ func (a *Manager) execute(ctx context.Context, request Request, phase func(strin
 	return "", errors.New("未知任务")
 }
 
+// Use the baseline AMD64 build so downloads also work on older x86 CPUs.
+func coreTarget(kind, arch string) (string, string, error) {
+	switch kind {
+	case platform.UFI:
+		switch arch {
+		case "arm64":
+			return "android", "arm64-v8", nil
+		case "arm":
+			return "android", "armv7", nil
+		}
+	case platform.Linux:
+		switch arch {
+		case "amd64":
+			return "linux", "amd64-compatible", nil
+		case "arm64":
+			return "linux", "arm64", nil
+		case "arm":
+			return "linux", "armv7", nil
+		}
+	}
+	return "", "", errors.New("不支持此平台或内核架构")
+}
+
 func (a *Manager) downloadCore(ctx context.Context, work string, phase func(string)) (string, error) {
 	if a.running() {
 		return "", errors.New("请先停止代理")
 	}
-	arch := ""
-	switch runtime.GOARCH {
-	case "arm64":
-		arch = "arm64-v8"
-	case "arm":
-		arch = "armv7"
-	default:
-		return "", errors.New("仅支持 ARM64 / ARMv7 设备")
+	if !a.Platform.Capabilities().CoreInstall {
+		return "", errors.New("该平台不支持内核安装")
+	}
+	assetPlatform, arch, err := coreTarget(a.Platform.Config().Kind, runtime.GOARCH)
+	if err != nil {
+		return "", err
 	}
 	phase("release")
 	r, err := a.latestRelease(ctx, "MetaCubeX", "mihomo")
 	if err != nil {
 		return "", err
 	}
-	version, address, digest, err := r.asset("MetaCubeX/mihomo", "mihomo-android-"+arch+"-"+r.GetTagName()+".gz")
+	version, address, digest, err := r.asset("MetaCubeX/mihomo", "mihomo-"+assetPlatform+"-"+arch+"-"+r.GetTagName()+".gz")
 	if err != nil {
 		return "", err
 	}
@@ -235,7 +257,7 @@ func (a *Manager) downloadCore(ctx context.Context, work string, phase func(stri
 
 func (a *Manager) installCore(ctx context.Context, archive, work, digest string, phase func(string)) error {
 	if !a.Platform.Capabilities().CoreInstall {
-		return errors.New("内核由系统软件包管理")
+		return errors.New("该平台不支持内核安装")
 	}
 	f, err := os.Open(archive)
 	if err != nil {

@@ -12,19 +12,12 @@ import (
 	"github.com/imbytecat/mihomo-agent/internal/download"
 )
 
-type HTTPClient interface {
-	Do(*http.Request) (*http.Response, error)
-}
-type requestTransport struct{ HTTPClient }
-
-func (t requestTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	return t.Do(request)
-}
 func (a *Manager) deviceClient() *http.Client {
-	if a.httpClient != nil {
-		return &http.Client{Transport: requestTransport{a.httpClient}}
+	client := download.NewClient(a.Platform.CertDirs())
+	if a.httpTransport != nil {
+		client.Transport = a.httpTransport
 	}
-	return download.NewClient(a.Platform.CertDirs())
+	return client
 }
 
 // Every outbound request is made by the device. TLS remains verified on DNS fallback.

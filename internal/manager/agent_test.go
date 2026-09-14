@@ -31,16 +31,16 @@ import (
 	"golang.org/x/crypto/nacl/box"
 )
 
-type localHTTP struct{ address string }
+type localTransport struct{ address string }
 
-func (client localHTTP) Do(request *http.Request) (*http.Response, error) {
+func (client localTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	target, _ := url.Parse(client.address)
 	copy := request.Clone(request.Context())
 	u := *request.URL
 	u.Scheme = target.Scheme
 	u.Host = target.Host
 	copy.URL = &u
-	return http.DefaultClient.Do(copy)
+	return http.DefaultTransport.RoundTrip(copy)
 }
 
 // A real child process exercises descriptor handoff without running ARM or firewall code.
@@ -54,7 +54,7 @@ func TestMain(m *testing.M) {
 			os.Exit(2)
 		}
 		if address := os.Getenv("UFI_TEST_HTTP"); address != "" {
-			a.httpClient = localHTTP{address}
+			a.httpTransport = localTransport{address}
 		}
 		if err = a.Worker(flags.Arg(0)); err != nil {
 			os.Exit(1)
@@ -228,7 +228,7 @@ func TestConfigPolicyPreservedAndFailedValidationDoesNotCommit(t *testing.T) {
 	_ = fsutil.AtomicWrite(a.runtime("mihomo"), []byte("test fixture"), 0700)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(source) }))
 	defer server.Close()
-	a.httpClient = server.Client()
+	a.httpTransport = server.Client().Transport
 	id := randomID()
 	work := a.jobDir(id)
 	_ = os.MkdirAll(work, 0700)
@@ -267,7 +267,7 @@ func TestIncompleteConfigTransactionRestoresPreviousGeneration(t *testing.T) {
 	if err := a.activate(next); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.store.SavePending(pendingConfig{Previous: old, Next: next}); err != nil {
+	if err := a.store.SavePending(storage.Pending{Previous: old, Next: next}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.recoverConfiguration(); err != nil {

@@ -62,7 +62,7 @@ func (a *Manager) latestRelease(ctx context.Context, owner, repo string) (releas
 
 func (a *Manager) updateAgent(ctx context.Context, work string, phase func(string)) (string, error) {
 	if !a.Platform.Capabilities().AgentUpdate {
-		return "", errors.New("Mihomo Agent 由系统软件包管理")
+		return "", errors.New("该平台不支持 Agent 更新")
 	}
 	if a.running() {
 		return "", errors.New("请先停止代理")

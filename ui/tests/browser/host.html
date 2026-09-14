@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>UFI mock</title>
+    <style>
+      button, input { margin:11px; font-size:30px; border:5px solid magenta; background-image:linear-gradient(red,blue); }
+      #host-probe { display:block; margin:19px; }
+    </style>
+    <script>
+      const report = (error) => parent.postMessage({
+        type: 'ufi-test-error', message: error?.stack || String(error),
+      }, location.origin);
+      addEventListener('error', (event) => report(event.error || event.message));
+      addEventListener('unhandledrejection', (event) => report(event.reason));
+    </script>
+  </head>
+  <body>
+    <main style="max-width:600px;margin:auto;font-family:sans-serif">
+      <h1>UFI 模拟页面</h1>
+      <div id="host-probe" class="ufi:flex ufi:m-0">宿主内容</div>
+      <div class="functions-container"></div>
+    </main>
+    <script type="module">
+      import '../../dev/mock.ts';
+      // Vite publicDir serves the exact production bytes without transforming them.
+      const response = await fetch('/mihomo-agent-ufi.js');
+      if (!response.ok) throw new Error('Production plugin is missing; build it first');
+      const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+      for (const script of doc.querySelectorAll('script')) {
+        const el = document.createElement('script');
+        el.textContent = script.textContent;
+        document.head.append(el);
+      }
+    </script>
+  </body>
+</html>

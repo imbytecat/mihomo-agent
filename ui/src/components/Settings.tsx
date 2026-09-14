@@ -30,7 +30,7 @@ function RuntimeSettings({ model }: { model: GatewayModel }) {
     >
       <h3
         id="ufi-runtime-heading"
-        className="ufi-m-0 ufi-px-4 ufi-pt-5 ufi-pb-2 ufi-text-xs ufi-font-medium ufi-opacity-60"
+        className="ufi:m-0 ufi:px-4 ufi:pt-5 ufi:pb-2 ufi:text-xs ufi:font-medium ufi:opacity-60"
       >
         运行
       </h3>
@@ -75,7 +75,7 @@ function PanelSettings({ model }: { model: GatewayModel }) {
     >
       <h3
         id="ufi-controller-heading"
-        className="ufi-m-0 ufi-flex ufi-items-center ufi-justify-between ufi-px-4 ufi-pt-5 ufi-pb-2 ufi-text-xs ufi-font-medium ufi-opacity-60"
+        className="ufi:m-0 ufi:flex ufi:items-center ufi:justify-between ufi:px-4 ufi:pt-5 ufi:pb-2 ufi:text-xs ufi:font-medium ufi:opacity-60"
       >
         控制面板
         <span>
@@ -89,14 +89,14 @@ function PanelSettings({ model }: { model: GatewayModel }) {
         </span>
       </h3>
       {!device?.controller && (
-        <div className="ufi-px-4">
+        <div className="ufi:px-4">
           <Hint>请先更新 Mihomo Agent</Hint>
         </div>
       )}
       <fieldset
         hidden={!device?.controller}
         disabled={!!busy || !device?.controller || device.locked}
-        className="ufi-m-0 ufi-min-w-0 ufi-border-0 ufi-p-0"
+        className="ufi:m-0 ufi:min-w-0 ufi:border-0 ufi:p-0"
       >
         <Row>
           <label htmlFor="ufi-control-enabled">启用控制面板</label>
@@ -115,8 +115,8 @@ function PanelSettings({ model }: { model: GatewayModel }) {
             )}
           />
         </Row>
-        <div className="ufi-border-0 ufi-border-t ufi-border-solid ufi-border-[var(--mh-line)] ufi-p-4">
-          <label htmlFor="ufi-control-port" className="ufi-mb-2.5 ufi-block">
+        <div className="ufi:border-0 ufi:border-t ufi:border-solid ufi:border-[var(--mh-line)] ufi:p-4">
+          <label htmlFor="ufi-control-port" className="ufi:mb-2.5 ufi:block">
             API 端口
           </label>
           <Input
@@ -135,12 +135,12 @@ function PanelSettings({ model }: { model: GatewayModel }) {
             {errors.controlPort?.message}
           </Hint>
         </div>
-        <div className="ufi-border-0 ufi-border-t ufi-border-solid ufi-border-[var(--mh-line)] ufi-p-4">
-          <div className="ufi-mb-2.5 ufi-flex ufi-items-center ufi-justify-between ufi-gap-2">
+        <div className="ufi:border-0 ufi:border-t ufi:border-solid ufi:border-[var(--mh-line)] ufi:p-4">
+          <div className="ufi:mb-2.5 ufi:flex ufi:items-center ufi:justify-between ufi:gap-2">
             <label htmlFor="ufi-control-secret">API 密钥</label>
             <button
               type="button"
-              className={`ufi-m-0 ufi-border-0 ufi-bg-none ufi-bg-transparent ufi-p-1 ufi-text-xs ufi-text-[#0a84ff] ufi-cursor-pointer ${focus}`}
+              className={`ufi:m-0 ufi:border-0 ufi:bg-none ufi:bg-transparent ufi:p-1 ufi:text-xs ufi:text-[#0a84ff] ufi:cursor-pointer ${focus}`}
               onClick={() => void model.perform('view-secret')}
             >
               查看当前密钥
@@ -163,10 +163,10 @@ function PanelSettings({ model }: { model: GatewayModel }) {
           <Hint id="ufi-secret-error" error>
             {errors.controlSecret?.message}
           </Hint>
-          <label className="ufi-my-2 ufi-flex ufi-min-h-11 ufi-items-center ufi-gap-2 ufi-text-xs">
+          <label className="ufi:my-2 ufi:flex ufi:min-h-11 ufi:items-center ufi:gap-2 ufi:text-xs">
             <input
               type="checkbox"
-              className="ufi-m-0 ufi-h-4 ufi-w-4 ufi-accent-[#0a84ff]"
+              className="ufi:m-0 ufi:h-4 ufi:w-4 ufi:accent-[#0a84ff]"
               {...form.register('resetSecret', {
                 onChange: (event) => {
                   if (event.target.checked)
@@ -212,7 +212,7 @@ function Installation({
     <section data-group="maintenance" aria-labelledby="ufi-maintenance-heading">
       <h3
         id="ufi-maintenance-heading"
-        className="ufi-m-0 ufi-px-4 ufi-pt-5 ufi-pb-2 ufi-text-xs ufi-font-medium ufi-opacity-60"
+        className="ufi:m-0 ufi:px-4 ufi:pt-5 ufi:pb-2 ufi:text-xs ufi:font-medium ufi:opacity-60"
       >
         安装与更新
       </h3>
@@ -248,11 +248,11 @@ function Installation({
         ] as const
       ).map(([id, name, installed, version, action]) => (
         <Row key={id}>
-          <span className="ufi-flex ufi-min-w-0 ufi-flex-wrap ufi-items-baseline ufi-gap-x-2">
+          <span className="ufi:flex ufi:min-w-0 ufi:flex-wrap ufi:items-baseline ufi:gap-x-2">
             <span>{name}</span>
             <span
               data-version={id}
-              className="ufi-break-all ufi-text-xs ufi-opacity-60"
+              className="ufi:break-all ufi:text-xs ufi:opacity-60"
             >
               {componentVersion(installed, version)}
             </span>
@@ -272,7 +272,7 @@ function Installation({
       <Row>
         <span data-lifecycle>
           Mihomo 服务{' '}
-          <span className="ufi-text-xs ufi-opacity-60">
+          <span className="ufi:text-xs ufi:opacity-60">
             {device
               ? device.service
                 ? '已安装'
@@ -326,22 +326,22 @@ export function Settings({
     <details
       data-settings
       open={open}
-      className="ufi-group/settings ufi-mt-4 ufi-overflow-hidden ufi-rounded-2xl ufi-bg-[var(--mh-group)]"
+      className="ufi:group/settings ufi:mt-4 ufi:overflow-hidden ufi:rounded-2xl ufi:bg-[var(--mh-group)]"
       onToggle={(event) => {
         if (event.target === event.currentTarget)
           onOpenChange(event.currentTarget.open);
       }}
     >
       <summary
-        className={`ufi-flex ufi-min-h-14 ufi-list-none ufi-items-center ufi-justify-between ufi-px-4 ufi-py-3 ufi-cursor-pointer [&::-webkit-details-marker]:ufi-hidden ${focus}`}
+        className={`ufi:flex ufi:min-h-14 ufi:list-none ufi:items-center ufi:justify-between ufi:px-4 ufi:py-3 ufi:cursor-pointer ufi:[&::-webkit-details-marker]:hidden ${focus}`}
       >
-        <span className="ufi-flex ufi-items-center ufi-gap-2">
+        <span className="ufi:flex ufi:items-center ufi:gap-2">
           <Settings2 size={18} aria-hidden />
           设置
         </span>
         <ChevronDown
           size={16}
-          className="group-open/settings:ufi-rotate-180"
+          className="ufi:group-open/settings:rotate-180"
           aria-hidden
         />
       </summary>

@@ -1,4 +1,6 @@
-import { expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { expect, test } from 'vitest';
 import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -30,42 +32,33 @@ test('bootstrap verifies bytes before execution and reports failures without los
     .replace('umask 077', 'getprop() { echo arm64-v8a; }\numask 077');
   await writeFile(script, source);
   async function run(mode: string, digest = '') {
-    const child = Bun.spawn(
-      [
-        'sh',
-        script,
-        mode,
-        id,
-        '',
-        'https://fixture.invalid/agent',
-        digest,
-        '',
-        '',
-      ],
+    const child = spawnSync(
+      'sh',
+      [script, mode, id, '', 'https://fixture.invalid/agent', digest, '', ''],
       {
         env: {
           ...process.env,
           UFI_TEST_FIXTURE: fixture,
           UFI_TEST_EXEC_MARK: marker,
         },
-        stdout: 'pipe',
-        stderr: 'pipe',
+        encoding: 'utf8',
+        timeout: 10_000,
       },
     );
     return {
-      output: await new Response(child.stdout).text(),
-      code: await child.exited,
+      output: child.stdout,
+      code: child.status,
     };
   }
   try {
     expect((await run('worker', '0'.repeat(64))).code).not.toBe(0);
-    expect(await Bun.file(marker).exists()).toBe(false);
+    expect(existsSync(marker)).toBe(false);
     expect(JSON.parse((await run('status')).output).state).toBe('failed');
     const digest = createHash('sha256').update(binary).digest('hex');
     expect((await run('worker', digest)).code).toBe(0);
     expect(await readFile(marker, 'utf8')).toBe('verified');
     expect(JSON.parse((await run('status')).output).state).toBe('succeeded');
-    expect(await Bun.file(join(job, 'agent')).exists()).toBe(false);
+    expect(existsSync(join(job, 'agent'))).toBe(false);
     const stale = JSON.stringify({
       id,
       action: 'bootstrap',

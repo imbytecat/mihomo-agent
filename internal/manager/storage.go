@@ -6,12 +6,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 
-	"github.com/imbytecat/mihomo-agent/internal/fsutil"
 	"github.com/imbytecat/mihomo-agent/internal/platform"
 	"github.com/imbytecat/mihomo-agent/internal/storage"
 )
@@ -22,7 +22,7 @@ type Manager struct {
 	Root, Version, Executable string
 	Platform                  platform.Adapter
 	store                     *storage.Store
-	httpClient                HTTPClient
+	httpTransport             http.RoundTripper
 	runCommand                func(context.Context, string, ...string) ([]byte, error)
 }
 
@@ -40,13 +40,7 @@ func New(root, version string, adapter platform.Adapter) (*Manager, error) {
 	if adapter == nil {
 		return nil, errors.New("platform adapter is required")
 	}
-	executable, err := os.Executable()
-	if err != nil {
-		return nil, err
-	}
-	if adapter.Config().Kind == platform.UFI {
-		executable = filepath.Join(absolute, "agent")
-	}
+	executable := filepath.Join(absolute, "agent")
 	db, err := storage.Open(absolute)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
@@ -62,10 +56,7 @@ func (a *Manager) runtime(parts ...string) string {
 func (a *Manager) corePath() string { return a.Platform.CorePath() }
 func (a *Manager) coreInstalled() bool {
 	path := a.corePath()
-	if a.Platform.Capabilities().CoreInstall {
-		return fsutil.RegularFile(path)
-	}
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	return err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0111 != 0
 }
 func (a *Manager) lock() (*os.File, error) {
@@ -81,9 +72,7 @@ func (a *Manager) lock() (*os.File, error) {
 }
 func randomID() string {
 	var id [16]byte
-	if _, err := rand.Read(id[:]); err != nil {
-		panic(err)
-	}
+	rand.Read(id[:])
 	return hex.EncodeToString(id[:])
 }
 func validID(id string) bool {

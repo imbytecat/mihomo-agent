@@ -1,4 +1,10 @@
-import { expect, test } from 'bun:test';
+import { execFile } from 'node:child_process';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
+import { promisify } from 'node:util';
+import { setTimeout as delay } from 'node:timers/promises';
+import { expect, test } from 'vitest';
 import {
   mkdtemp,
   mkdir,
@@ -19,6 +25,8 @@ import {
 } from '../src/state';
 import sodium from 'libsodium-wrappers';
 
+const exec = promisify(execFile);
+
 test('sealed browser intents run in a detached native worker; failed updates preserve config', async () => {
   const folder = await mkdtemp(join(tmpdir(), 'ufi-native-'));
   const root = join(folder, 'mihomo-agent'),
@@ -29,26 +37,24 @@ test('sealed browser intents run in a detached native worker; failed updates pre
     'proxies: []\nrules: ["MATCH,DIRECT"]\nexternal-controller: 127.0.0.1:9999\n';
   let requested = 0;
   const addresses: string[] = [];
-  const server = Bun.serve({
-    hostname: '127.0.0.1',
-    port: 0,
-    fetch: async (request) => {
-      requested++;
-      addresses.push(request.url);
-      await Bun.sleep(200);
-      return new Response(source);
-    },
+  const server = createServer(async (request, response) => {
+    requested++;
+    addresses.push(`http://${request.headers.host}${request.url}`);
+    await delay(200);
+    response.end(source);
   });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
   try {
-    const build = Bun.spawn(
-      ['go', 'build', '-o', binary, './cmd/mihomo-agent'],
-      { cwd: '..', stderr: 'inherit' },
-    );
-    expect(await build.exited).toBe(0);
+    await exec('go', ['build', '-o', binary, './cmd/mihomo-agent'], {
+      cwd: '..',
+      env: { ...process.env, CGO_ENABLED: '0' },
+      timeout: 45_000,
+    });
     async function cli(command: string, ...args: string[]) {
-      const child = Bun.spawn(
+      const { stdout } = await exec(
+        binary,
         [
-          binary,
           '--platform',
           'ufi',
           '--root',
@@ -57,11 +63,9 @@ test('sealed browser intents run in a detached native worker; failed updates pre
           ...(command === 'submit' ? ['--uploads', uploads] : []),
           ...args,
         ],
-        { stdout: 'pipe', stderr: 'pipe' },
+        { timeout: 10_000 },
       );
-      const output = await new Response(child.stdout).text();
-      expect(await child.exited).toBe(0);
-      return JSON.parse(output);
+      return JSON.parse(stdout);
     }
     await cli('install');
     const inspect = () =>
@@ -87,7 +91,7 @@ test('sealed browser intents run in a detached native worker; failed updates pre
       for (let attempt = 0; attempt < 100; attempt++) {
         const observed = parseJob(await cli('job', id));
         if (!['queued', 'running'].includes(observed.state)) return observed;
-        await Bun.sleep(30);
+        await delay(30);
       }
       throw new Error('Worker did not finish');
     };
@@ -103,7 +107,7 @@ test('sealed browser intents run in a detached native worker; failed updates pre
     );
     await chmod(join(root, 'runtime/mihomo'), 0o700);
     expect((await inspect()).coreVersion).toBe('v1.19.30');
-    const url = server.url.href + '?token=fixture-secret';
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/?token=fixture-secret`;
     const accepted = await submit('update', { url });
     expect(accepted.state).toBe('succeeded');
     expect(requested).toBe(1);
@@ -168,25 +172,35 @@ test('sealed browser intents run in a detached native worker; failed updates pre
     const localID = 'e'.repeat(32),
       localURL = url + '&from=local-cli';
     async function localTask(address: string) {
-      const child = Bun.spawn(
-        [
-          binary,
-          '--root',
-          root,
-          'task',
-          'update',
-          '--id',
-          localID,
-          '--input',
-          '-',
-          '--wait',
-        ],
-        { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
+      const result = await new Promise<{ code: number; output: string }>(
+        (resolve, reject) => {
+          const child = execFile(
+            binary,
+            [
+              '--root',
+              root,
+              'task',
+              'update',
+              '--id',
+              localID,
+              '--input',
+              '-',
+              '--wait',
+            ],
+            { timeout: 10_000 },
+            (error, stdout) => {
+              if (error && typeof error.code !== 'number') reject(error);
+              else
+                resolve({
+                  code: error ? Number(error.code) : 0,
+                  output: stdout,
+                });
+            },
+          );
+          child.stdin!.end(JSON.stringify({ url: address }));
+        },
       );
-      child.stdin.write(JSON.stringify({ url: address }));
-      child.stdin.end();
-      const output = await new Response(child.stdout).text();
-      return { code: await child.exited, output, task: JSON.parse(output) };
+      return { ...result, task: JSON.parse(result.output) };
     }
     const local = await localTask(localURL);
     expect(local.code).toBe(0);
@@ -202,7 +216,8 @@ test('sealed browser intents run in a detached native worker; failed updates pre
     expect(conflict.output).toContain('任务 ID 冲突');
     expect(requested).toBe(count);
   } finally {
-    server.stop(true);
+    server.closeAllConnections();
+    await promisify(server.close.bind(server))();
     await rm(folder, { recursive: true, force: true });
   }
 }, 60_000);

@@ -5,7 +5,7 @@
 - 产品是独立 Mihomo 管理器。UFI-TOOLS / Android 和 Linux / systemd 是两个平台；F50 只是设备实例。代理数据流始终由 Mihomo 处理。
 - 库优先：通用能力先查现有依赖和成熟库；适用就采用。自写代码限于业务规则、所有权检查和必要平台适配。不要另写简化框架或兼容旧协议。
 - README 面向用户并保持简短；Linux 操作说明在 docs/linux.md。开发决策维护于本文件，不保留 ref 源码或研究流水账。
-- 本仓修改不授权操作用户现有 NixOS 网关。独立 Web、任意操作系统、自动 Linux 防火墙部署不在当前范围。
+- 本仓修改不授权操作用户现有网关。独立 Web、任意操作系统、自动 Linux 防火墙部署不在当前范围。
 
 ## 修改前定位
 
@@ -14,6 +14,7 @@
 - 平台 Module：internal/platform 管 UFI 守护 / 网络桥接及 systemd 运行时。Adapter 配置由数据库持久化，worker、boot、supervise 都重新读取；已有安装不能通过环境或旗标换平台。
 - 存储 Module：internal/storage 使用 database/sql + modernc SQLite，拥有类型化状态表；YAML、日志和运行文件留在文件系统。fsutil、host、download、redact 是共享基础实现。
 - 前端：ui/src/transport/ufi 只处理 UFI 通信和引导；gateway.ts 处理任务观察与展示；use-gateway.ts 管草稿和交互；components/ 管视图。CSS 仅留主题与宿主隔离，其余用 Tailwind className。
+- 无样式交互组件统一使用 Base UI。Tailwind 4 使用官方 Vite 插件、ufi: 前缀和容器内的无 layer utilities；不加载 preflight，避免宿主样式覆盖插件或插件样式外溢。
 - 修改加载协议时核对下方 UFI 官方来源；没有文档保证的行为不能从其他插件推断。
 
 ## 必须保持的约束
@@ -33,11 +34,11 @@
 
 - UFI 使用自己的链、mark 和路由，不清空系统防火墙或全局路由。启动内核前建立监听保护；等待 LAN 时仍保留保护，内核退出后才撤掉。
 - UFI 自动接口识别只接受共享入口，排除蜂窝、上游和 VPN；未知固件保留手动接口配置。能力标识不保证任意硬件已支持 TPROXY。
-- Linux 使用 go-systemd 的 D-Bus 客户端和 unit 序列化；只控制绑定的系统 unit。核对有效 Id、ExecStart / argv、WorkingDirectory、KillMode 和命名空间设置，而非仅凭文件名。
-- Linux 核心和 Agent 由系统包管理；自启、网络也是系统所有。相关动作在后端拒绝，不只禁用按钮。先移除引用配置的 systemd unit，才能卸载 Agent 状态。
+- Linux 使用 go-systemd 的 D-Bus 客户端和 unit 序列化；unit 源文件位于私有目录，通过 D-Bus 注册。操作前核对源文件、FragmentPath、有效 Id、ExecStart / argv、WorkingDirectory、KillMode 和命名空间设置；拒绝外部同名 unit、mask 和 drop-in，链接及启用不使用 force。ExecStart 使用 : 禁用环境变量展开，路径中的 % 仍需转义。
+- 两平台均由 Agent 管理私有目录内的自身二进制和 Mihomo；共用下载、校验与更新流程，按平台和架构选择官方资产，不支持外部内核模式或旧状态迁移。Linux 的 service 安装、自启和卸载由 CLI 调用 systemd 完成；先停止、禁用并移除 unit，确认不再引用配置，再删除 Agent 数据。
 - Linux 默认 loopback；显式 LAN 地址必须是本机 IPv4 私网地址。管理 API 仍绑定 loopback，额外 listeners / tunnels 不接受。私网地址绑定不证明入口隔离；network/capture 不得虚报就绪。
 - systemd 启动提交或健康检查失败时，用新的有界 context 验证并停止本 unit，再进行配置回滚。不能遗留一次失败启动创建的监听。
-- 不把 NixOS 的故障策略套到 UFI，也不反向套用。系统拥有的文件、unit、软件包和网络规则不能由卸载顺带删除。
+- 平台依赖限于必要适配：Linux 用 systemd 托管进程、自启；网络与故障策略仍由用户配置。卸载仅清理本安装拥有的文件及 service 链接，不删除其他 unit、软件包或网络规则。
 
 ## 库与验证
 
@@ -45,13 +46,15 @@
 - renameio 暂存必须同文件系统且初始私有，不沿用旧文件权限覆盖密钥。Android 公共自启文件的 chmod 可容忍 EPERM/EOPNOTSUPP，其余情况必须报错。
 - DoH 使用 net/http 与 x/net/dnsmessage，保留引导 IP、Android CA、取消、HTTPS 重定向限制与响应上限。解压使用标准库，调用方保留路径、类型和大小限制。
 - modernc.org/libc 必须与所用 modernc.org/sqlite 的 go.mod 匹配；保持 CGO_ENABLED=0 和 ARM64 / ARMv7 / AMD64 构建。
-- 根目录为 Go module，前端包与测试独立位于 ui/。构建与验证入口见 Makefile；Go 构建不能依赖 Bun 或前端资产。
-- 交互修改运行 make test-ui，用真实 DOMParser 加载生产 IIFE。ui/tests/native.test.ts 验证 Bun → Go；platform 测试替换 D-Bus；真实 systemd 验证仅在隔离 CI runner 通过 MIHOMO_SYSTEMD_TEST 显式启用。
+- Go、Bun、Node、just 和检查工具的版本集中在 mise.toml，CI 通过 mise 安装；Vitest 与 Playwright 驱动是 ui/ 的锁定开发依赖，GitHub Actions 固定完整提交 SHA。
+- 根目录为 Go module，前端包与测试独立位于 ui/。构建与验证入口见 justfile；Go 构建不能依赖 Bun 或前端资产；go.mod 用 ignore ./ui 排除前端依赖中附带的 Go 示例，保持 test/tidy 的边界。
+- 交互修改运行 just test-ui；ui/tests/browser 使用 Vitest Browser Mode 和 Playwright 驱动，通过真实 DOMParser 加载生产 IIFE，并验证窄屏布局与宿主隔离。ui/tests/native.test.ts 在 Vitest Node 中验证前端请求 → 纯 Go CLI；platform 测试替换 D-Bus；真实 systemd 验证仅在隔离 CI runner 通过 MIHOMO_SYSTEMD_TEST 显式启用。
+- 浏览器测试通过官方 [frameLocator](https://vitest.dev/api/browser/context#framelocator) 操作同源应用 iframe；仅刷新应用 iframe，不导航 Vitest 运行器。同文件用例顺序执行，每例清理专属 sessionStorage 并收集应用异常；[失败截图和 trace](https://vitest.dev/guide/browser/playwright-traces) 由 Vitest 管理。
 - CI systemd fixture 只监听 loopback 测试端口，不发送代理流量或改路由 / 防火墙。不得把它描述为真实网关流量验证。
 
 ## 发布
 
-- 使用官方 Go，通过 mise exec -- make release VERSION=vX.Y.Z 构建。Nix 修改标准库路径，同版本编译器也会产生不同摘要。
+- 使用官方 Go，通过 mise exec -- just release vX.Y.Z 构建。Nix 修改标准库路径，同版本编译器也会产生不同摘要。
 - 构建资产与校验以 tools/release、mise.toml 与 workflows 为准；协议复用 Go 常量。提交生成的 ui/agent-bootstrap.json，再推送对应 v* 标签，不能覆盖已发布标签或资产。
 - ui/agent-bootstrap.json 仅为 UFI 初装信任锚，不参与正常版本比较；不能只信任同一下载代理同时提供的文件与摘要。
 - 发布前通过 Check 和 Release CI；从公开地址下载所有资产，校验 SHA256SUMS 并与本地构建对比。插件保持单 JS，不增加 CDN / WASM 请求。

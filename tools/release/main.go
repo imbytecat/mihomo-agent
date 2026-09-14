@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -41,7 +42,7 @@ func main() {
 
 func build(version string) error {
 	// Pin every compiler option that can affect bootstrap hashes across hosts.
-	env := append(os.Environ(), "GOTOOLCHAIN=go1.26.7", "GOENV=off", "GOWORK=off", "GOFLAGS=", "GOEXPERIMENT=", "GOFIPS140=off", "CGO_ENABLED=0", "GOAMD64=v1", "GOARM64=v8.0")
+	env := append(os.Environ(), "GOTOOLCHAIN="+runtime.Version(), "GOENV=off", "GOWORK=off", "GOFLAGS=", "GOEXPERIMENT=", "GOFIPS140=off", "CGO_ENABLED=0", "GOAMD64=v1", "GOARM64=v8.0")
 	probe := exec.Command("go", "env", "GOROOT")
 	probe.Env = env
 	root, err := probe.Output()
@@ -49,7 +50,7 @@ func build(version string) error {
 		return fmt.Errorf("locate official Go: %w", err)
 	}
 	if strings.Contains(string(root), "/nix/store/") {
-		return errors.New("release requires official Go: mise exec -- make release VERSION=" + version)
+		return errors.New("release requires official Go: mise exec -- just release " + version)
 	}
 	if err := os.MkdirAll(".release", 0755); err != nil {
 		return err

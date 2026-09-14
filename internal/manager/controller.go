@@ -27,9 +27,7 @@ type ControllerStatus struct {
 
 func newSecret() string {
 	var key [32]byte
-	if _, err := rand.Read(key[:]); err != nil {
-		panic(err)
-	}
+	rand.Read(key[:])
 	return hex.EncodeToString(key[:])
 }
 

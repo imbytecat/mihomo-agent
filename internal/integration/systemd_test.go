@@ -32,7 +32,7 @@ func TestSystemdDeployment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := filepath.Join(base, "mihomo-agent")
+	root := filepath.Join(base, "${MIHOMO_UNSET} % path", "mihomo-agent")
 	core := filepath.Join(base, "core")
 	data, err := os.ReadFile(fixture)
 	if err != nil {
@@ -57,25 +57,25 @@ func TestSystemdDeployment(t *testing.T) {
 		_ = exec.Command("systemctl", "daemon-reload").Run()
 		_ = os.RemoveAll(base)
 	})
+	executable := agent
 	run := func(input string, args ...string) ([]byte, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, agent, append([]string{"--root", root}, args...)...)
+		cmd := exec.CommandContext(ctx, executable, append([]string{"--root", root}, args...)...)
 		cmd.Stdin = strings.NewReader(input)
 		return cmd.CombinedOutput()
 	}
-	output, err := run("", "--platform", "linux", "unit", "--core", core, "--unit", name)
+	output, err := run("", "--platform", "linux", "install", "--unit", name)
 	if err != nil {
-		t.Fatalf("unit: %s %v", output, err)
-	}
-	if err = os.WriteFile(unitPath, output, 0644); err != nil {
-		t.Fatal(err)
-	}
-	if output, err = exec.Command("systemctl", "daemon-reload").CombinedOutput(); err != nil {
-		t.Fatalf("reload: %s %v", output, err)
-	}
-	if output, err = run("", "--platform", "linux", "install", "--core", core, "--unit", name); err != nil {
 		t.Fatalf("install: %s %v", output, err)
+	}
+	executable = filepath.Join(root, "agent")
+	if output, err = run("", "inspect"); err != nil {
+		t.Fatalf("inspect before core download: %s %v", output, err)
+	}
+	// Stand in for the verified download; the fixture only opens loopback ports.
+	if err = os.WriteFile(filepath.Join(root, "runtime", "mihomo"), data, 0700); err != nil {
+		t.Fatal(err)
 	}
 	var source atomic.Value
 	source.Store("proxies: []\nrules: [MATCH,DIRECT]\n")
@@ -153,20 +153,21 @@ func TestSystemdDeployment(t *testing.T) {
 	if !state.Running || !state.Listeners {
 		t.Fatal("rollback did not restore service")
 	}
-	if output, err = run("", "task", "download", "--wait"); err == nil {
-		t.Fatal("download overwrote system core")
-	}
-	if output, err = run("", "task", "uninstall", "--wait"); err == nil {
-		t.Fatal("deleted state referenced by system unit")
-	}
-	if output, err = exec.Command("systemctl", "stop", name).CombinedOutput(); err != nil {
-		t.Fatal(string(output), err)
-	}
-	if err = os.Remove(unitPath); err != nil {
-		t.Fatal(err)
-	}
-	if output, err = exec.Command("systemctl", "daemon-reload").CombinedOutput(); err != nil {
-		t.Fatal(string(output), err)
+	for _, action := range []string{"boot-on", "boot-off", "restart"} {
+		if output, err = run("", "task", action, "--wait"); err != nil {
+			t.Fatalf("%s: %s %v", action, output, err)
+		}
+		if action == "boot-on" {
+			if output, err = exec.Command("systemctl", "is-enabled", name).CombinedOutput(); err != nil || strings.TrimSpace(string(output)) != "enabled" {
+				t.Fatalf("autostart was not enabled: %s %v", output, err)
+			}
+		}
+		if action == "boot-off" {
+			output, _ = exec.Command("systemctl", "is-enabled", name).CombinedOutput()
+			if strings.TrimSpace(string(output)) != "linked" {
+				t.Fatalf("disabled unit lost its managed link: %s", output)
+			}
+		}
 	}
 	if output, err = run("", "task", "uninstall", "--wait"); err != nil {
 		t.Fatalf("uninstall: %s %v", output, err)
@@ -175,6 +176,9 @@ func TestSystemdDeployment(t *testing.T) {
 		t.Fatal("uninstall left state")
 	}
 	if _, err = os.Stat(core); err != nil {
-		t.Fatal("uninstall touched system-owned core")
+		t.Fatal("uninstall touched an unrelated executable")
+	}
+	if _, err = os.Lstat(unitPath); !os.IsNotExist(err) {
+		t.Fatal("uninstall left the systemd link", err)
 	}
 }

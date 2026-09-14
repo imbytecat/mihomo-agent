@@ -42,8 +42,8 @@ export const jobSchema = z.object({
   state: z.enum(['queued', 'running', 'succeeded', 'failed', 'interrupted']),
   phase: z.string(),
   updated: z.string(),
-  result: z.string().optional().default(''),
-  error: z.string().optional().default(''),
+  result: z.string().default(''),
+  error: z.string().default(''),
   hash: z.string(),
 });
 export type DeviceJob = z.infer<typeof jobSchema>;
@@ -65,7 +65,7 @@ const stateSchema = z.object({
   boot: z.boolean(),
   locked: z.boolean(),
   capture: z.boolean(),
-  coreVersion: z.string().optional().default(''),
+  coreVersion: z.string(),
   settings: z.object({
     githubProxy: z.string(),
     interfaces: z.array(z.string()),
@@ -77,13 +77,12 @@ const stateSchema = z.object({
       port: z.number().int().min(1024).max(65535),
       applied: z.boolean(),
     })
-    .nullable()
-    .optional()
-    .default(null),
-  dashboard: z
-    .object({ installed: z.boolean(), ready: z.boolean(), version: z.string() })
-    .optional()
-    .default({ installed: false, ready: false, version: '' }),
+    .nullable(),
+  dashboard: z.object({
+    installed: z.boolean(),
+    ready: z.boolean(),
+    version: z.string(),
+  }),
 });
 export type DeviceState = z.infer<typeof stateSchema> & { agent: boolean };
 export const emptyState: DeviceState = {
@@ -117,23 +116,10 @@ export const emptyState: DeviceState = {
   dashboard: { installed: false, ready: false, version: '' },
 };
 export type Action =
-  | 'install'
-  | 'update-agent'
-  | 'download'
-  | 'save-github-proxy'
-  | 'save-interfaces'
-  | 'update'
-  | 'start'
-  | 'stop'
-  | 'restart'
-  | 'boot-on'
-  | 'boot-off'
+  | TaskAction
   | 'logs'
   | 'refresh'
   | 'diagnose'
-  | 'uninstall'
-  | 'save-controller'
-  | 'download-dashboard'
   | 'view-secret'
   | 'open-dashboard';
 
@@ -205,12 +191,12 @@ export function disabledReason(
     (action === 'download' && !state.capabilities.coreInstall) ||
     (action === 'update-agent' && !state.capabilities.agentUpdate)
   )
-    return '由系统软件包管理';
+    return '该平台不支持此操作';
   if (
     (action === 'boot-on' || action === 'boot-off') &&
     !state.capabilities.autostart
   )
-    return '由系统配置管理';
+    return '该平台不支持自启管理';
   if (action === 'save-interfaces' && !state.capabilities.interfaces)
     return '由系统网络配置管理';
   if (action === 'uninstall') return state.agent ? '' : 'Mihomo 服务未安装';
@@ -267,18 +253,4 @@ export function disabledReason(
     return state.running ? '' : '代理未运行，请使用启动';
   if (action === 'boot-on') return state.boot ? '开机启动已开启' : '';
   return '';
-}
-
-export function nextStep(state: DeviceState | null): string {
-  if (!state) return '请检查连接后刷新';
-  if (state.locked) return '设备操作中，请稍候';
-  if (!state.service) return '请先安装 Mihomo 服务';
-  if (!state.core) return '请安装 Mihomo 内核';
-  if (!state.subscription && !state.config) return '请保存订阅';
-  if (!state.config) return '请更新订阅';
-  if (!state.running) return '准备就绪，可以启动';
-  if (!state.supervisor) return '守护进程异常，请重启';
-  if (!state.listeners) return '等待内核就绪';
-  if (!state.network) return '等待共享网络';
-  return '本地接管就绪';
 }

@@ -3,7 +3,6 @@ package platform
 import (
 	"context"
 	"errors"
-	"github.com/coreos/go-systemd/v22/unit"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,14 +10,19 @@ import (
 	"time"
 
 	systemdbus "github.com/coreos/go-systemd/v22/dbus"
+	"github.com/coreos/go-systemd/v22/unit"
+	"github.com/imbytecat/mihomo-agent/internal/fsutil"
 )
 
 type fakeBus struct {
-	properties map[string]any
-	calls      []string
-	result     string
-	fail       bool
-	scopePID   uint32
+	properties    map[string]any
+	calls         []string
+	result        string
+	fail          bool
+	scopePID      uint32
+	unitPath      string
+	linked        bool
+	failOperation string
 }
 
 func (b *fakeBus) Close() {}
@@ -55,17 +59,62 @@ func (b *fakeBus) StartTransientUnitContext(_ context.Context, name, mode string
 	ch <- b.result
 	return 3, nil
 }
+func (b *fakeBus) LinkUnitFilesContext(_ context.Context, files []string, runtime, force bool) ([]systemdbus.LinkUnitFileChange, error) {
+	b.calls = append(b.calls, "link")
+	if b.failOperation == "link" || force || runtime || len(files) != 1 || files[0] != b.unitPath {
+		return nil, errors.New("link refused")
+	}
+	b.linked = true
+	return nil, nil
+}
+func (b *fakeBus) EnableUnitFilesContext(_ context.Context, files []string, runtime, force bool) (bool, []systemdbus.EnableUnitFileChange, error) {
+	b.calls = append(b.calls, "enable")
+	if b.failOperation == "enable" || force || runtime || len(files) != 1 || files[0] != b.unitPath {
+		return false, nil, errors.New("enable refused")
+	}
+	b.linked = true
+	b.properties["UnitFileState"] = "enabled"
+	return true, nil, nil
+}
+func (b *fakeBus) DisableUnitFilesContext(_ context.Context, _ []string, _ bool) ([]systemdbus.DisableUnitFileChange, error) {
+	b.calls = append(b.calls, "disable")
+	if b.failOperation == "disable" {
+		return nil, errors.New("disable refused")
+	}
+	b.linked = false
+	b.properties["UnitFileState"] = "disabled"
+	return nil, nil
+}
+func (b *fakeBus) ReloadContext(context.Context) error {
+	b.calls = append(b.calls, "reload")
+	if b.failOperation == "reload" {
+		return errors.New("reload refused")
+	}
+	b.properties["LoadState"] = "not-found"
+	if _, err := os.Stat(b.unitPath); err == nil && b.linked {
+		b.properties["LoadState"] = "loaded"
+	}
+	return nil
+}
+
 func systemdFixture(t *testing.T) (*SystemdAdapter, *fakeBus) {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "mihomo-agent")
-	core := filepath.Join(t.TempDir(), "mihomo")
-	if err := os.WriteFile(core, []byte("fixture"), 0700); err != nil {
+	config := Config{Kind: Linux, Unit: "mihomo-agent-core.service", ListenAddress: "127.0.0.1"}
+	p := NewSystemd(config, Environment{Root: root})
+	core := p.CorePath()
+	if err := fsutil.AtomicWrite(core, []byte("fixture"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	config := Config{Kind: Linux, CorePath: core, Unit: "mihomo-agent-core.service", ListenAddress: "127.0.0.1"}
-	p := NewSystemd(config, Environment{Root: root})
-	b := &fakeBus{result: "done", properties: map[string]any{
-		"Id": config.Unit, "LoadState": "loaded", "FragmentPath": "/etc/systemd/system/mihomo-agent-core.service",
+	content, err := p.Unit()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = fsutil.AtomicWrite(p.unitPath(), []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	b := &fakeBus{result: "done", unitPath: p.unitPath(), linked: true, properties: map[string]any{
+		"Id": config.Unit, "LoadState": "loaded", "FragmentPath": p.unitPath(), "DropInPaths": []string{},
 		"WorkingDirectory": p.runtime(), "PrivateNetwork": false, "KillMode": "control-group", "MainPID": uint32(0), "ControlPID": uint32(0),
 		"ActiveState": "inactive", "SubState": "dead", "UnitFileState": "enabled",
 		"ExecStart": []unitExec{{Path: core, Args: []string{core, "-d", p.runtime(), "-f", p.runtime("current", "config.yaml")}}},
@@ -75,13 +124,29 @@ func systemdFixture(t *testing.T) (*SystemdAdapter, *fakeBus) {
 	p.interval = time.Millisecond
 	return p, b
 }
-func TestSystemdLifecycleAndExternalOwnership(t *testing.T) {
+func TestSystemdManagedLifecycle(t *testing.T) {
 	p, b := systemdFixture(t)
+	// Installation and inspection must work before the first core download.
+	if err := os.Remove(p.CorePath()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(p.unitPath()); err != nil {
+		t.Fatal(err)
+	}
+	b.linked = false
+	b.properties["LoadState"] = "not-found"
+	b.properties["UnitFileState"] = "disabled"
 	if err := p.Prepare(); err != nil {
 		t.Fatal(err)
 	}
-	if c := p.Capabilities(); c.CoreInstall || c.AgentUpdate || c.Autostart || c.Capture {
-		t.Fatal("claimed system-owned resources")
+	if c := p.Capabilities(); !c.CoreInstall || !c.AgentUpdate || !c.Autostart || c.Capture || c.Interfaces {
+		t.Fatal("incorrect managed capabilities", c)
+	}
+	if state, err := p.Inspect(context.Background()); err != nil || state.Running {
+		t.Fatal("could not inspect before first download", state, err)
+	}
+	if err := fsutil.AtomicWrite(p.CorePath(), []byte("fixture"), 0700); err != nil {
+		t.Fatal(err)
 	}
 	if err := p.Start(context.Background(), StartOptions{}); err != nil {
 		t.Fatal(err)
@@ -90,25 +155,25 @@ func TestSystemdLifecycleAndExternalOwnership(t *testing.T) {
 	if err != nil || !state.Running || !state.Listeners || state.Capture || state.Network {
 		t.Fatal(state, err)
 	}
-	if err := p.SetBoot(context.Background(), false); err == nil {
-		t.Fatal("mutated external autostart")
+	for _, enabled := range []bool{true, false, true} {
+		if err := p.SetBoot(context.Background(), enabled); err != nil {
+			t.Fatal(err)
+		}
+		if !b.linked || p.state(b.properties).Boot != enabled {
+			t.Fatal("autostart lost unit link or did not change")
+		}
 	}
-	if err := p.Remove(context.Background()); err == nil {
-		t.Fatal("deleted data still referenced by a unit")
-	}
-	if err := p.Stop(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	b.properties["UnitFileState"] = "disabled"
-	if err := p.Remove(context.Background()); err == nil {
-		t.Fatal("disabled units still reference deployment")
-	}
-	b.properties["LoadState"] = "not-found"
 	if err := p.Remove(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if data, _ := os.ReadFile(p.CorePath()); string(data) != "fixture" {
-		t.Fatal("changed external core")
+	if b.linked || b.properties["LoadState"] != "not-found" || p.state(b.properties).Running {
+		t.Fatal("removed data before stopping and unlinking unit")
+	}
+	if _, err := os.Stat(p.unitPath()); !os.IsNotExist(err) {
+		t.Fatal("left unit source", err)
+	}
+	if err := p.Remove(context.Background()); err != nil {
+		t.Fatal("cleanup cannot be retried", err)
 	}
 	if err := p.AttachTask(context.Background(), 123, "abcdef"); err != nil || b.scopePID != 123 {
 		t.Fatal("worker not attached to scope", err)
@@ -118,6 +183,9 @@ func TestSystemdRefusesForeignOrUnknownUnits(t *testing.T) {
 	for _, mutation := range []func(*fakeBus){
 		func(b *fakeBus) { b.properties["Id"] = "ssh.service" },
 		func(b *fakeBus) { delete(b.properties, "FragmentPath") },
+		func(b *fakeBus) { b.properties["FragmentPath"] = "/etc/systemd/system/foreign.service" },
+		func(b *fakeBus) { b.properties["DropInPaths"] = []string{"/etc/systemd/system/override.conf"} },
+		func(b *fakeBus) { _ = os.WriteFile(b.unitPath, []byte("foreign content"), 0600) },
 		func(b *fakeBus) { b.properties["WorkingDirectory"] = "/another-installation" },
 		func(b *fakeBus) { b.properties["PrivateNetwork"] = true },
 		func(b *fakeBus) { b.properties["KillMode"] = "process" },
@@ -140,6 +208,15 @@ func TestSystemdRefusesForeignOrUnknownUnits(t *testing.T) {
 		}
 		if err := p.Stop(context.Background()); err == nil {
 			t.Fatal("stopped an unverified unit")
+		}
+		if err := p.Prepare(); err == nil {
+			t.Fatal("installed over an unverified unit")
+		}
+		if err := p.SetBoot(context.Background(), true); err == nil {
+			t.Fatal("enabled an unverified unit")
+		}
+		if err := p.Remove(context.Background()); err == nil {
+			t.Fatal("removed an unverified unit")
 		}
 		if len(b.calls) != 0 {
 			t.Fatal("mutated before verifying ownership")
@@ -169,9 +246,53 @@ func TestSystemdJobFailureAndReadinessTimeout(t *testing.T) {
 		t.Fatal("ignored outstanding control process")
 	}
 }
+
+func TestSystemdManagedCleanupFailureCanBeRetried(t *testing.T) {
+	for _, operation := range []string{"disable", "reload"} {
+		t.Run(operation, func(t *testing.T) {
+			p, b := systemdFixture(t)
+			b.failOperation = operation
+			if err := p.Remove(context.Background()); err == nil {
+				t.Fatal("ignored systemd cleanup failure")
+			}
+			if data, err := os.ReadFile(p.CorePath()); err != nil || string(data) != "fixture" {
+				t.Fatal("deleted runtime data on cleanup failure", err)
+			}
+			b.failOperation = ""
+			if err := p.Remove(context.Background()); err != nil {
+				t.Fatal("cleanup retry failed", err)
+			}
+		})
+	}
+}
+
+func TestSystemdManagedInstallAndBootFailures(t *testing.T) {
+	for _, operation := range []string{"link", "reload", "enable", "disable"} {
+		t.Run(operation, func(t *testing.T) {
+			p, b := systemdFixture(t)
+			b.failOperation = operation
+			var err error
+			switch operation {
+			case "link", "reload":
+				err = p.Prepare()
+			case "enable":
+				err = p.SetBoot(context.Background(), true)
+			case "disable":
+				err = p.SetBoot(context.Background(), false)
+			}
+			if err == nil {
+				t.Fatal("reported success after D-Bus failure")
+			}
+			b.failOperation = ""
+			if err := p.Prepare(); err != nil {
+				t.Fatal("install retry failed", err)
+			}
+		})
+	}
+}
 func TestPlatformSelectionAndListenPolicy(t *testing.T) {
 	for _, value := range []string{"0.0.0.0", "8.8.8.8", "::1", "not-an-address"} {
-		c := Config{Kind: Linux, CorePath: "/usr/bin/mihomo", Unit: "mihomo-agent-core.service", ListenAddress: value}
+		c := Config{Kind: Linux, Unit: "mihomo-agent-core.service", ListenAddress: value}
 		if c.Validate() == nil {
 			t.Fatal("accepted unsafe listen address", value)
 		}
@@ -188,6 +309,7 @@ func TestPlatformSelectionAndListenPolicy(t *testing.T) {
 
 func TestUnitUsesLibrarySerialization(t *testing.T) {
 	p, _ := systemdFixture(t)
+	p.Root = filepath.Join(t.TempDir(), "${MIHOMO_UNSET} % path", "mihomo-agent")
 	text, err := p.Unit()
 	if err != nil {
 		t.Fatal(err)
@@ -200,7 +322,10 @@ func TestUnitUsesLibrarySerialization(t *testing.T) {
 	for _, option := range options {
 		values[option.Section+"/"+option.Name] = option.Value
 	}
-	if values["Service/KillMode"] != "control-group" || values["Service/WorkingDirectory"] != p.runtime() || !strings.Contains(values["Service/ExecStart"], "config.yaml") {
+	if values["Service/KillMode"] != "control-group" || values["Service/WorkingDirectory"] != strings.ReplaceAll(p.runtime(), "%", "%%") || !strings.Contains(values["Service/ExecStart"], "config.yaml") {
 		t.Fatal("unit does not bind the managed deployment")
+	}
+	if !strings.HasPrefix(values["Service/ExecStart"], ":") || !strings.Contains(values["Service/ExecStart"], "${MIHOMO_UNSET} %% path") {
+		t.Fatal("unit permits environment or specifier expansion in paths")
 	}
 }

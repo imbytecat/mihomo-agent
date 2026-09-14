@@ -34,7 +34,6 @@ func NewUFI(env Environment) *UFIAdapter {
 }
 func (a *UFIAdapter) Config() Config             { return Config{Kind: UFI} }
 func (a *UFIAdapter) Capabilities() Capabilities { return Capabilities{true, true, true, true, true} }
-func (a *UFIAdapter) CorePath() string           { return a.runtime("mihomo") }
 func (a *UFIAdapter) Policy() Policy             { return Policy{"*", "0.0.0.0", "0.0.0.0"} }
 func (a *UFIAdapter) ExtraPaths() []string       { return []string{a.Root + "-bootstrap"} }
 func (a *UFIAdapter) CertDirs() []string {
@@ -73,11 +72,10 @@ func (a *UFIAdapter) Inspect(ctx context.Context) (State, error) {
 }
 func (a *UFIAdapter) process(name string) (*os.Process, bool) {
 	var record host.Record
-	if fsutil.ReadJSON(a.runtime(name+".json"), &record) != nil || record.PID < 2 || record.Start == "" || host.Start(record.PID) != record.Start {
+	if fsutil.ReadJSON(a.runtime(name+".json"), &record) != nil {
 		return nil, false
 	}
-	process, err := os.FindProcess(record.PID)
-	return process, err == nil && process.Signal(syscall.Signal(0)) == nil
+	return host.Owned(record)
 }
 
 func (a *UFIAdapter) alive(name string) bool {

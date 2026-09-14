@@ -83,15 +83,15 @@ func (a *Manager) authorize(r Request) error {
 	switch r.Action {
 	case "download":
 		if !c.CoreInstall {
-			return errors.New("内核由系统软件包管理")
+			return errors.New("该平台不支持内核安装")
 		}
 	case "update-agent":
 		if !c.AgentUpdate {
-			return errors.New("Mihomo Agent 由系统软件包管理")
+			return errors.New("该平台不支持 Agent 更新")
 		}
 	case "boot-on", "boot-off":
 		if !c.Autostart {
-			return errors.New("开机启动由系统配置管理")
+			return errors.New("该平台不支持自启管理")
 		}
 	case "save-interfaces":
 		if !c.Interfaces {

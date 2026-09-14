@@ -13,18 +13,18 @@ export function Subscription({
   const { form, values, device, busy } = model;
   const error = form.formState.errors.subscription;
   return (
-    <section className="ufi-mt-4">
-      <h3 className="ufi-m-0 ufi-px-3 ufi-py-2 ufi-text-xs ufi-font-normal ufi-opacity-60">
+    <section className="ufi:mt-4">
+      <h3 className="ufi:m-0 ufi:px-3 ufi:py-2 ufi:text-xs ufi:font-normal ufi:opacity-60">
         订阅
       </h3>
       <div
         data-group="subscription"
         ref={anchor}
-        className="ufi-rounded-2xl ufi-bg-[var(--mh-group)] ufi-p-4"
+        className="ufi:rounded-2xl ufi:bg-[var(--mh-group)] ufi:p-4"
       >
-        <div className="ufi-mb-2.5 ufi-flex ufi-items-center ufi-justify-between">
+        <div className="ufi:mb-2.5 ufi:flex ufi:items-center ufi:justify-between">
           <label htmlFor="ufi-subscription">订阅链接</label>
-          <span className="ufi-text-xs ufi-opacity-60">
+          <span className="ufi:text-xs ufi:opacity-60">
             {values.subscription?.trim()
               ? '待应用'
               : device?.subscription
@@ -61,7 +61,7 @@ export function Subscription({
         <Hint error id="ufi-subscription-error">
           {error?.message}
         </Hint>
-        <div className="ufi-mt-3">
+        <div className="ufi:mt-3">
           <ActionButton
             model={model}
             action="update"

@@ -25,7 +25,6 @@ type Store struct {
 }
 type Deployment struct {
 	Kind          string `json:"kind"`
-	CorePath      string `json:"corePath,omitempty"`
 	Unit          string `json:"unit,omitempty"`
 	ListenAddress string `json:"listenAddress,omitempty"`
 }
@@ -64,7 +63,7 @@ type Task struct {
 
 const schema = `
 CREATE TABLE identity (singleton INTEGER PRIMARY KEY CHECK(singleton=1), protocol INTEGER NOT NULL, public_key BLOB NOT NULL CHECK(length(public_key)=32), private_key BLOB NOT NULL CHECK(length(private_key)=32));
-CREATE TABLE deployment (singleton INTEGER PRIMARY KEY CHECK(singleton=1), kind TEXT NOT NULL, core_path TEXT NOT NULL, unit TEXT NOT NULL, listen_address TEXT NOT NULL);
+CREATE TABLE deployment (singleton INTEGER PRIMARY KEY CHECK(singleton=1), kind TEXT NOT NULL, unit TEXT NOT NULL, listen_address TEXT NOT NULL);
 CREATE TABLE settings (singleton INTEGER PRIMARY KEY CHECK(singleton=1), installed INTEGER NOT NULL DEFAULT 0, github_proxy TEXT NOT NULL DEFAULT '', interfaces TEXT NOT NULL DEFAULT '', latest_task TEXT REFERENCES tasks(id));
 CREATE TABLE controller (singleton INTEGER PRIMARY KEY CHECK(singleton=1), enabled INTEGER NOT NULL, port INTEGER NOT NULL, secret TEXT NOT NULL);
 CREATE TABLE tasks (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, action TEXT NOT NULL, state TEXT NOT NULL, phase TEXT NOT NULL, updated TEXT NOT NULL, result TEXT NOT NULL, error TEXT NOT NULL, hash TEXT NOT NULL, fingerprint TEXT NOT NULL, request BLOB);
@@ -164,7 +163,7 @@ func Initialize(root string, id Identity, deployment Deployment, controller Cont
 	if _, err = tx.Exec("INSERT INTO identity VALUES(1,?,?,?)", id.Protocol, id.Public[:], id.Private[:]); err != nil {
 		return err
 	}
-	if _, err = tx.Exec("INSERT INTO deployment VALUES(1,?,?,?,?)", deployment.Kind, deployment.CorePath, deployment.Unit, deployment.ListenAddress); err != nil {
+	if _, err = tx.Exec("INSERT INTO deployment VALUES(1,?,?,?)", deployment.Kind, deployment.Unit, deployment.ListenAddress); err != nil {
 		return err
 	}
 	if _, err = tx.Exec("INSERT INTO settings(singleton) VALUES(1)"); err != nil {
@@ -232,7 +231,7 @@ func (s *Store) Identity() (Identity, error) {
 }
 func (s *Store) Deployment() (Deployment, error) {
 	var d Deployment
-	err := s.db.QueryRow("SELECT kind,core_path,unit,listen_address FROM deployment WHERE singleton=1").Scan(&d.Kind, &d.CorePath, &d.Unit, &d.ListenAddress)
+	err := s.db.QueryRow("SELECT kind,unit,listen_address FROM deployment WHERE singleton=1").Scan(&d.Kind, &d.Unit, &d.ListenAddress)
 	return d, err
 }
 func (s *Store) Installed() (bool, error) {

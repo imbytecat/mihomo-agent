@@ -160,7 +160,7 @@ func TestDashboardInstallVerifiesAndAppliesLocalUI(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	a.httpClient = localHTTP{server.URL}
+	a.httpTransport = localTransport{server.URL}
 	install := func() error {
 		_, err := a.downloadDashboard(context.Background(), Request{ID: randomID()}, t.TempDir(), func(string) {})
 		return err

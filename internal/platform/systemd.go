@@ -21,31 +21,25 @@ type Bus interface {
 	StartUnitContext(context.Context, string, string, chan<- string) (int, error)
 	StopUnitContext(context.Context, string, string, chan<- string) (int, error)
 	StartTransientUnitContext(context.Context, string, string, []systemdbus.Property, chan<- string) (int, error)
+	LinkUnitFilesContext(context.Context, []string, bool, bool) ([]systemdbus.LinkUnitFileChange, error)
+	EnableUnitFilesContext(context.Context, []string, bool, bool) (bool, []systemdbus.EnableUnitFileChange, error)
+	DisableUnitFilesContext(context.Context, []string, bool) ([]systemdbus.DisableUnitFileChange, error)
+	ReloadContext(context.Context) error
 	Close()
 }
 type systemBus struct{ *systemdbus.Conn }
 
 func (b *systemBus) GetAllPropertiesContext(ctx context.Context, name string) (map[string]any, error) {
-	properties, err := b.Conn.GetAllPropertiesContext(ctx, name)
-	if err == nil {
-		return properties, nil
-	}
-	var missing dbus.Error
-	if !errors.As(err, &missing) || (missing.Name != "org.freedesktop.systemd1.NoSuchUnit" && missing.Name != "org.freedesktop.DBus.Error.UnknownObject") {
+	units, err := b.ListUnitsByNamesContext(ctx, []string{name})
+	if err != nil {
 		return nil, err
 	}
-	loader, e := dbus.ConnectSystemBus()
-	if e != nil {
-		return nil, e
+	if len(units) != 1 {
+		return nil, errors.New("systemd 未返回唯一的 unit")
 	}
-	defer loader.Close()
-	var path dbus.ObjectPath
-	if e = loader.Object("org.freedesktop.systemd1", "/org/freedesktop/systemd1").CallWithContext(ctx, "org.freedesktop.systemd1.Manager.LoadUnit", 0, name).Store(&path); e != nil {
-		var absent dbus.Error
-		if errors.As(e, &absent) && absent.Name == "org.freedesktop.systemd1.NoSuchUnit" {
-			return map[string]any{"Id": name, "LoadState": "not-found", "ActiveState": "inactive", "MainPID": uint32(0), "ControlPID": uint32(0)}, nil
-		}
-		return nil, e
+	unit := units[0]
+	if unit.LoadState == "not-found" && unit.ActiveState == "inactive" {
+		return map[string]any{"Id": unit.Name, "LoadState": unit.LoadState, "ActiveState": unit.ActiveState, "MainPID": uint32(0), "ControlPID": uint32(0)}, nil
 	}
 	return b.Conn.GetAllPropertiesContext(ctx, name)
 }
@@ -67,17 +61,15 @@ func NewSystemd(config Config, env Environment) *SystemdAdapter {
 		return &systemBus{connection}, nil
 	}, Ready: host.Listeners, interval: time.Second}
 }
-func (a *SystemdAdapter) Config() Config             { return a.deployment }
-func (a *SystemdAdapter) Capabilities() Capabilities { return Capabilities{} }
-func (a *SystemdAdapter) CorePath() string           { return a.deployment.CorePath }
+func (a *SystemdAdapter) Config() Config { return a.deployment }
+func (a *SystemdAdapter) Capabilities() Capabilities {
+	return Capabilities{CoreInstall: true, AgentUpdate: true, Autostart: true}
+}
 func (a *SystemdAdapter) Policy() Policy {
 	return Policy{a.deployment.ListenAddress, a.deployment.ListenAddress, "127.0.0.1"}
 }
 func (a *SystemdAdapter) ExtraPaths() []string { return nil }
 func (a *SystemdAdapter) CertDirs() []string   { return nil }
-func (a *SystemdAdapter) SetBoot(context.Context, bool) error {
-	return errors.New("开机启动由系统配置管理")
-}
 
 // Match the effective command, not the unit filename or a marker comment.
 type unitExec struct {
@@ -121,13 +113,14 @@ func (a *SystemdAdapter) properties(ctx context.Context, bus Bus) (map[string]an
 	if dbus.Store([]any{p["ExecStart"]}, &starts) != nil || len(starts) != 1 {
 		return nil, errors.New("无法验证 systemd ExecStart")
 	}
-	real, err := filepath.EvalSymlinks(a.CorePath())
-	if err != nil {
-		return nil, err
+	if fragment != a.unitPath() || starts[0].Path != a.CorePath() {
+		return nil, errors.New("systemd unit 不属于本安装")
 	}
-	executable, err := filepath.EvalSymlinks(starts[0].Path)
-	if err != nil || real != executable {
-		return nil, errors.New("systemd 内核路径不匹配")
+	if drops, ok := p["DropInPaths"].([]string); !ok || len(drops) != 0 {
+		return nil, errors.New("Agent 托管的 systemd unit 不接受 drop-in")
+	}
+	if err := a.checkUnitFile(); err != nil && !os.IsNotExist(err) {
+		return nil, err
 	}
 	argv := starts[0].Args
 	if len(argv) != 5 || argv[0] != starts[0].Path || argv[1] != "-d" || argv[2] != a.runtime() || argv[3] != "-f" || argv[4] != a.runtime("current", "config.yaml") {
@@ -147,27 +140,6 @@ func (a *SystemdAdapter) checkAddress() error {
 		}
 	}
 	return errors.New("Linux 监听地址不在本机接口上")
-}
-func (a *SystemdAdapter) Prepare() error {
-	info, err := os.Stat(a.CorePath())
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
-		return errors.New("请先由系统安装可执行的 Mihomo 内核")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	bus, err := a.Connect(ctx)
-	if err != nil {
-		return err
-	}
-	defer bus.Close()
-	p, err := a.properties(ctx, bus)
-	if err != nil {
-		return err
-	}
-	if p["LoadState"] != "loaded" {
-		return errors.New("请先配置 systemd unit")
-	}
-	return a.checkAddress()
 }
 func (a *SystemdAdapter) state(p map[string]any) State {
 	pid, _ := p["MainPID"].(uint32)
@@ -271,21 +243,6 @@ func (a *SystemdAdapter) change(ctx context.Context, start bool) (resultErr erro
 }
 func (a *SystemdAdapter) Start(ctx context.Context, _ StartOptions) error { return a.change(ctx, true) }
 func (a *SystemdAdapter) Stop(ctx context.Context) error                  { return a.change(ctx, false) }
-func (a *SystemdAdapter) Remove(ctx context.Context) error {
-	bus, err := a.Connect(ctx)
-	if err != nil {
-		return err
-	}
-	defer bus.Close()
-	p, err := a.properties(ctx, bus)
-	if err != nil {
-		return err
-	}
-	if p["LoadState"] != "not-found" || a.state(p).Running {
-		return errors.New("请先停止并移除系统中的 Mihomo unit，再卸载 Agent 数据")
-	}
-	return nil
-}
 func (a *SystemdAdapter) AttachTask(ctx context.Context, pid int, id string) error {
 	bus, err := a.Connect(ctx)
 	if err != nil {

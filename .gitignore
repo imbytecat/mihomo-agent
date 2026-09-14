@@ -3,3 +3,5 @@ dist/
 .build/
 .release/
 *.local.*
+test-results/
+.vitest/

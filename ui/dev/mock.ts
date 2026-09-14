@@ -38,9 +38,9 @@ const scenarios: Record<string, DeviceState> = {
     ...ready,
     platform: 'linux',
     capabilities: {
-      coreInstall: false,
-      agentUpdate: false,
-      autostart: false,
+      coreInstall: true,
+      agentUpdate: true,
+      autostart: true,
       interfaces: false,
       capture: false,
     },
@@ -362,6 +362,4 @@ const mockFetch = async (
   }
   return nativeFetch(input, init);
 };
-globalThis.fetch = Object.assign(mockFetch, {
-  preconnect: globalThis.fetch.preconnect,
-});
+globalThis.fetch = mockFetch;
