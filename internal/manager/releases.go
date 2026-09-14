@@ -7,33 +7,37 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
-	"github.com/creativeprojects/go-selfupdate/update"
-	"github.com/google/go-github/v86/github"
+	"github.com/google/go-github/v91/github"
+	"github.com/imbytecat/mihomoctl/internal/fsutil"
 )
 
-type release struct{ github.RepositoryRelease }
+type release struct {
+	TagName    string                 `json:"tag_name"`
+	Draft      *bool                  `json:"draft"`
+	Prerelease *bool                  `json:"prerelease"`
+	Assets     []*github.ReleaseAsset `json:"assets"`
+}
 
 func releaseVersion(tag string) (*semver.Version, error) {
 	return semver.StrictNewVersion(strings.TrimPrefix(tag, "v"))
 }
 
 func (r release) validate() error {
-	version, err := releaseVersion(r.GetTagName())
-	if err != nil || version.Prerelease() != "" || r.Draft == nil || r.Prerelease == nil || r.GetDraft() || r.GetPrerelease() {
+	version, err := releaseVersion(r.TagName)
+	if err != nil || version.Prerelease() != "" || r.Draft == nil || r.Prerelease == nil || *r.Draft || *r.Prerelease {
 		return errors.New("官方版本信息无效")
 	}
 	return nil
 }
 
 func (r release) asset(repo, name string) (string, string, string, error) {
-	expectedURL := "https://github.com/" + repo + "/releases/download/" + r.GetTagName() + "/" + name
+	expectedURL := "https://github.com/" + repo + "/releases/download/" + r.TagName + "/" + name
 	for _, asset := range r.Assets {
 		if asset.GetName() != name {
 			continue
@@ -43,7 +47,7 @@ func (r release) asset(repo, name string) (string, string, string, error) {
 		if asset.GetBrowserDownloadURL() != expectedURL || !strings.HasPrefix(asset.GetDigest(), "sha256:") || err != nil || len(decoded) != 32 {
 			return "", "", "", errors.New("官方资产缺少有效 SHA-256")
 		}
-		return r.GetTagName(), expectedURL, strings.ToLower(digest), nil
+		return r.TagName, expectedURL, strings.ToLower(digest), nil
 	}
 	return "", "", "", errors.New("官方版本缺少所需文件")
 }
@@ -55,20 +59,19 @@ func (a *Manager) latestRelease(ctx context.Context, owner, repo string) (releas
 	if err != nil {
 		return release{}, err
 	}
-	api := github.NewClient(client)
-	api.BaseURL, err = url.Parse(address)
+	api, err := github.NewClient(github.WithHTTPClient(client), github.WithURLs(&address, nil), github.WithUserAgent("mihomoctl/"+a.Version))
 	if err != nil {
 		return release{}, err
 	}
-	api.UserAgent = "mihomoctl/" + a.Version
-	value, _, err := api.Repositories.GetLatestRelease(ctx, owner, repo)
+	request, err := api.NewRequest(ctx, "GET", fmt.Sprintf("repos/%s/%s/releases/latest", owner, repo), nil)
 	if err != nil {
+		return release{}, err
+	}
+	// Preserve required wire fields: the SDK's release booleans now default to false.
+	var r release
+	if _, err := api.Do(request, &r); err != nil {
 		return release{}, fmt.Errorf("查询 %s/%s 版本失败：%w", owner, repo, err)
 	}
-	if value == nil {
-		return release{}, errors.New("官方版本信息无效")
-	}
-	r := release{*value}
 	return r, r.validate()
 }
 
@@ -81,7 +84,7 @@ func (a *Manager) updateAgent(ctx context.Context, work string, phase func(strin
 	if err != nil {
 		return "", err
 	}
-	latest, _ := releaseVersion(r.GetTagName())
+	latest, _ := releaseVersion(r.TagName)
 	current, err := releaseVersion(a.Version)
 	if err != nil {
 		return "", errors.New("当前 mihomoctl 版本无效，请重新安装")
@@ -130,14 +133,10 @@ func (a *Manager) updateAgent(ctx context.Context, work string, phase func(strin
 	if err != nil || !actual.Equal(latest) {
 		return "", errors.New("mihomoctl 版本与发布信息不符")
 	}
-	file, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	checksum, _ := hex.DecodeString(digest)
 	phase("installing")
-	if err := update.Apply(file, update.Options{TargetPath: a.path("mihomoctl"), TargetMode: 0700, Checksum: checksum}); err != nil {
+	// ponytail: keep the verified bytes (at most 32 MiB); stream a verified staging
+	// file if that bound becomes too large. Never reread the probed candidate path.
+	if err := fsutil.AtomicWrite(a.Executable, data, 0700); err != nil {
 		return "", err
 	}
 	return "mihomoctl v" + latest.String() + " 已更新", nil

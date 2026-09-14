@@ -3,14 +3,13 @@ package manager
 import (
 	"archive/zip"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/imbytecat/mihomoctl/internal/download"
 	"github.com/imbytecat/mihomoctl/internal/fsutil"
 
 	"github.com/google/renameio/v2"
@@ -126,13 +125,13 @@ func (a *Manager) downloadDashboard(ctx context.Context, request Request, work s
 		return "", err
 	}
 	phase("verify")
-	data, err := os.ReadFile(archive)
+	file, err := os.Open(archive)
 	if err != nil {
 		return "", err
 	}
-	sum := sha256.Sum256(data)
-	if hex.EncodeToString(sum[:]) != digest {
-		return "", errors.New("面板 SHA-256 不匹配，拒绝安装")
+	defer file.Close()
+	if err := download.VerifySHA256(file, digest); err != nil {
+		return "", err
 	}
 	root, err := extractDashboard(archive, filepath.Join(work, "dashboard"))
 	if err != nil {

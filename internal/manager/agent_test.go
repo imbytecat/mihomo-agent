@@ -125,7 +125,7 @@ func waitJob(t *testing.T, a *Manager, id string) *Job {
 
 func TestEncryptedSubmissionAndDurableCompletion(t *testing.T) {
 	a := testAgent(t)
-	request := Request{ID: randomID(), Action: "save-github-proxy", Params: Params{GitHubProxy: ptr("https://githubProxy.example")}}
+	request := Request{ID: randomID(), Action: "save-github-proxy", Params: Params{GitHubProxy: new("https://githubProxy.example")}}
 	name, digest, data := sealRequest(t, a, request)
 	if bytes.Contains(data, []byte(*request.Params.GitHubProxy)) {
 		t.Fatal("request is not encrypted")
@@ -195,7 +195,7 @@ func TestUnmanagedDataAndInvalidRequestsArePreserved(t *testing.T) {
 		t.Fatal("data changed")
 	}
 	a = testAgent(t)
-	name, _, _ := sealRequest(t, a, Request{ID: randomID(), Action: "save-github-proxy", Params: Params{GitHubProxy: ptr("https://example.com")}})
+	name, _, _ := sealRequest(t, a, Request{ID: randomID(), Action: "save-github-proxy", Params: Params{GitHubProxy: new("https://example.com")}})
 	if _, err := submitUpload(a, name, strings.Repeat("0", 64)); err == nil {
 		t.Fatal("accepted invalid digest")
 	}
@@ -230,7 +230,7 @@ func TestConfigPolicyPreservedAndFailedValidationDoesNotCommit(t *testing.T) {
 	defer server.Close()
 	a.httpTransport = server.Client().Transport
 	id := randomID()
-	work := a.jobDir(id)
+	work := a.taskPath(id, "")
 	_ = os.MkdirAll(work, 0700)
 	if _, err = a.updateConfig(context.Background(), Request{ID: id, Params: Params{URL: server.URL}}, work, func(string) {}); err != nil {
 		t.Fatal(err)
@@ -243,7 +243,7 @@ func TestConfigPolicyPreservedAndFailedValidationDoesNotCommit(t *testing.T) {
 		return []byte("password: secret"), errors.New("invalid")
 	}
 	next := randomID()
-	nextWork := a.jobDir(next)
+	nextWork := a.taskPath(next, "")
 	_ = os.MkdirAll(nextWork, 0700)
 	if _, err = a.updateConfig(context.Background(), Request{ID: next, Params: Params{URL: server.URL}}, nextWork, func(string) {}); err == nil {
 		t.Fatal("accepted invalid config")
@@ -453,12 +453,11 @@ func selectAsset(data []byte, arch string) (string, string, string, error) {
 	if err != nil {
 		return "", "", "", errors.New("官方版本信息无效")
 	}
-	return value.asset("MetaCubeX/mihomo", "mihomo-android-"+arch+"-"+value.GetTagName()+".gz")
+	return value.asset("MetaCubeX/mihomo", "mihomo-android-"+arch+"-"+value.TagName+".gz")
 }
 
 var ufiPolicy = platform.Policy{Bind: "*", DNS: "0.0.0.0", Controller: "0.0.0.0"}
 
-func ptr[T any](value T) *T       { return &value }
 func uploadDir(a *Manager) string { return filepath.Join(filepath.Dir(a.Root), "uploads") }
 func testManager(root string) (*Manager, error) {
 	p := platform.NewUFI(platform.Environment{Root: root, Executable: filepath.Join(root, "mihomoctl")})

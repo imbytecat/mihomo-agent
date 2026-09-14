@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/imbytecat/mihomoctl/internal/fsutil"
 	"github.com/imbytecat/mihomoctl/internal/host"
 	"github.com/imbytecat/mihomoctl/internal/platform"
 	"github.com/imbytecat/mihomoctl/internal/redact"
@@ -80,10 +80,7 @@ func (a *Manager) Logs() (string, error) {
 	}
 	var result strings.Builder
 	for _, name := range []string{"supervisor.log", "core.log"} {
-		if data, err := os.ReadFile(a.runtime(name)); err == nil {
-			if len(data) > 24*1024 {
-				data = data[len(data)-24*1024:]
-			}
+		if data, err := fsutil.ReadTail(a.runtime(name), 24*1024); err == nil {
 			result.WriteString(name + "\n" + redact.String(string(data)) + "\n")
 		}
 	}

@@ -13,7 +13,8 @@ export function interfaces(value: string): string {
     names.some(
       (name) =>
         !/^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,14}$/.test(name) ||
-        /^(lo|rmnet|ccmni|pdp|wwan)/.test(name),
+        name === 'lo' ||
+        /^(rmnet|ccmni|pdp|wwan)/.test(name),
     )
   ) {
     throw new Error('填写热点/USB 的 LAN 接口名，不能填写蜂窝接口或 lo');

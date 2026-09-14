@@ -502,7 +502,6 @@ export function useGateway() {
         )
       ) {
         event.preventDefault();
-        event.returnValue = '';
       }
     };
     window.addEventListener('beforeunload', beforeUnload);
@@ -522,7 +521,7 @@ export function useGateway() {
           (/^\d+$/.test(value) &&
             Number(value) >= 1024 &&
             Number(value) <= 65535 &&
-            !['7894', '1053'].includes(value)) ||
+            ![7894, 1053].includes(Number(value))) ||
           '请输入可用的 1024–65535 端口'
         );
       if (name === 'controlSecret')

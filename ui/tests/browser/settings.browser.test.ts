@@ -2,6 +2,16 @@ import { expect, test } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { app, evaluate, idle, closeModal, open, reload } from './app';
 
+test('unsaved drafts cancel navigation with the current browser event API', async () => {
+  await open('ready');
+  const canLeave = () => evaluate('window.dispatchEvent(new Event("beforeunload", { cancelable: true }))');
+  expect(canLeave()).toBe(true);
+  await app.getByCSS('[data-url]').fill('https://draft.example/subscription');
+  expect(canLeave()).toBe(false);
+  await app.getByCSS('[data-url]').fill('');
+  expect(canLeave()).toBe(true);
+});
+
 test('autosave preserves newer drafts and validates download settings', async () => {
   await open('ready');
   await app.getByCSS('[data-settings] > summary').click();
@@ -129,6 +139,11 @@ test('autosave preserves newer drafts and validates download settings', async ()
 test('controller transactions, encrypted secrets and task details', async () => {
   await open('running');
   await app.getByCSS('[data-settings] > summary').click();
+  await app.getByCSS('#ufi-control-port').fill('07894');
+  await app.getByCSS('[data-action=save-controller]').click();
+  await idle();
+  await expect.element(app.getByCSS('#ufi-port-error')).toBeVisible();
+  expect(evaluate('mockIntents.length')).toBe(0);
   await expect
     .element(app.getByCSS('[data-dashboard-link]'))
     .toHaveAttribute('href', expect.stringContaining(':9090/ui/'));

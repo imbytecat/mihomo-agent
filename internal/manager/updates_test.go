@@ -62,7 +62,7 @@ func TestCheckUpdatesComparesSemverWithoutCreatingTasks(t *testing.T) {
 	if err != nil || state.Version != "development" || state.Updates.Self.Current != "v1.9.9" || requests.Load() != 3 {
 		t.Fatal("cached comparison replaced installed version", state, err)
 	}
-	if err := a.applyDownloadSettings(ptr("https://mirror.invalid/cache")); err != nil {
+	if err := a.applyDownloadSettings(new("https://mirror.invalid/cache")); err != nil {
 		t.Fatal(err)
 	}
 	mirrored.Store(true)
@@ -75,7 +75,7 @@ func TestCheckUpdatesComparesSemverWithoutCreatingTasks(t *testing.T) {
 	if err != nil || result.Self.State != "error" || result.Self.Error == "" || result.Core.State != "up-to-date" {
 		t.Fatal("one failed query must not discard the others", result, err)
 	}
-	if err := a.applyDownloadSettings(ptr("")); err != nil {
+	if err := a.applyDownloadSettings(new("")); err != nil {
 		t.Fatal(err)
 	}
 	mirrored.Store(false)

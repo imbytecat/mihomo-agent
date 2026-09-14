@@ -45,7 +45,7 @@ func (a *Manager) CheckUpdates(ctx context.Context) (Updates, error) {
 				target.update.Error = redact.String(err.Error())
 				return
 			}
-			target.update.Latest = r.GetTagName()
+			target.update.Latest = r.TagName
 			if target.update.State == "not-installed" {
 				return
 			}
@@ -53,7 +53,7 @@ func (a *Manager) CheckUpdates(ctx context.Context) (Updates, error) {
 			if err != nil {
 				return
 			}
-			latest, _ := releaseVersion(r.GetTagName())
+			latest, _ := releaseVersion(r.TagName)
 			target.update.State = "up-to-date"
 			if latest.GreaterThan(current) {
 				target.update.State = "available"

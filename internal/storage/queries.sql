@@ -55,15 +55,13 @@ SELECT fingerprint FROM tasks WHERE id=?;
 -- name: Request :one
 SELECT request FROM tasks WHERE id=?;
 -- name: InterruptTasks :exec
-UPDATE tasks SET state='interrupted',error=?,updated=? WHERE state IN ('queued','running');
+UPDATE tasks SET state='interrupted',error=?,updated=?,request=NULL WHERE state IN ('queued','running');
 -- name: InsertTask :exec
 INSERT INTO tasks(id,action,state,phase,updated,result,error,hash,fingerprint,request) VALUES(?,?,?,?,?,?,?,?,?,?);
 -- name: SetLatestTask :exec
 UPDATE settings SET latest_task=? WHERE singleton=1;
 -- name: UpdateTask :execrows
-UPDATE tasks SET state=?,phase=?,updated=?,result=?,error=? WHERE id=?;
--- name: PruneRequests :exec
-UPDATE tasks SET request=NULL WHERE state NOT IN ('queued','running');
+UPDATE tasks SET state=sqlc.arg(state),phase=sqlc.arg(phase),updated=sqlc.arg(updated),result=sqlc.arg(result),error=sqlc.arg(error),request=CASE sqlc.arg(state) WHEN 'queued' THEN request WHEN 'running' THEN request END WHERE id=sqlc.arg(id);
 -- name: Updates :one
 SELECT checked_at,self_current,self_latest,self_state,self_error,core_current,core_latest,core_state,core_error,dashboard_current,dashboard_latest,dashboard_state,dashboard_error FROM update_checks WHERE singleton=1;
 -- name: SaveUpdates :exec

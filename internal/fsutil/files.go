@@ -1,14 +1,36 @@
 package fsutil
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"syscall"
 
 	"github.com/google/renameio/v2"
 )
+
+// ReadTail bounds memory and drops a partial first line so callers can redact
+// whole log lines even when a secret's field name lies before the read window.
+func ReadTail(path string, limit int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	start := max(0, info.Size()-limit-1)
+	data, err := io.ReadAll(io.NewSectionReader(f, start, info.Size()-start))
+	if info.Size() > limit {
+		_, data, _ = bytes.Cut(data, []byte("\n"))
+	}
+	return data, err
+}
 
 func AtomicWrite(path string, data []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {

@@ -3,7 +3,6 @@ package manager
 import "os"
 
 func (a *Manager) pruneTaskFiles() {
-	_ = a.store.PruneRequests()
 	entries, _ := os.ReadDir(a.path("tasks"))
 	for _, entry := range entries {
 		if entry.IsDir() && validID(entry.Name()) {

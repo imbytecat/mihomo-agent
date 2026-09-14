@@ -30,8 +30,7 @@ export default defineConfig(({ mode }) => ({
   build: {
     outDir: '../dist',
     emptyOutDir: true,
-    target: 'chrome111',
-    cssTarget: 'chrome111',
+    target: 'chrome153',
     sourcemap: false,
     lib: {
       entry: fileURLToPath(new URL('./src/index.tsx', import.meta.url)),

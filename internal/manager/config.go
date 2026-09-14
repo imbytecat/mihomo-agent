@@ -120,9 +120,9 @@ func adaptConfig(source []byte, control Controller, dashboard bool, policy platf
 }
 
 type configuration struct {
-	URL        string      `json:"url"`
-	Controller *Controller `json:"controller,omitempty"`
-	Dashboard  bool        `json:"dashboard,omitempty"`
+	URL        string
+	Controller *Controller
+	Dashboard  bool
 }
 
 func (a *Manager) activeGeneration() (string, error) {

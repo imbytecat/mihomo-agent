@@ -9,7 +9,7 @@
 
 ## UFI 安装
 
-需要 UFI-TOOLS 完整版、root / 高级功能，以及支持 TPROXY 的系统。插件界面使用 Chrome / Android System WebView 111 或以上版本。
+需要 UFI-TOOLS 完整版、root / 高级功能，以及支持 TPROXY 的系统。插件界面使用 Chrome / Android System WebView 153 或以上版本。
 
 1. 已安装其他代理插件时，先在原界面卸载并关闭自启，再移除原插件。
 2. 下载 `mihomoctl-ufi.js`，在 UFI 插件管理导入、保存并刷新。
@@ -72,6 +72,8 @@ ctl=/var/lib/mihomoctl/mihomoctl
 插件「安装与更新」中点击「检查更新」，查看各组件当前版本、最新版本及检查时间；不会自动升级。检查结果保存在设备 SQLite，刷新页面或执行 `status` 读取上次结果，手动检查才联网；组件版本变化后重新检查。
 
 操作默认等待完成；自动化需要立即返回时加 `--no-wait`，用 `job ID`、`job-log ID` 查询。终端或页面关闭不会取消已接收任务；重新连接后用 `status` 查看最近任务，不要重复提交。
+
+`request.json` 仅用于传入本次参数，保存成功后可删除；后续 `update` 使用设备已保存的订阅链接。
 
 ## 数据与安全
 

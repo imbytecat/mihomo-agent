@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -63,7 +64,7 @@ func TestCoreDownloadUsesPlatformAssetAndVerifiedReplacement(t *testing.T) {
 			sum := sha256.Sum256(archive.Bytes())
 			digest := hex.EncodeToString(make([]byte, 32))
 			name := "mihomo-" + target + "-" + arch + "-v1.2.3.gz"
-			if err := a.applyDownloadSettings(ptr("https://mirror.invalid/cache")); err != nil {
+			if err := a.applyDownloadSettings(new("https://mirror.invalid/cache")); err != nil {
 				t.Fatal(err)
 			}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -130,7 +131,7 @@ func TestAgentUpdateUsesSemverAndVerifiedGitHubAsset(t *testing.T) {
 		arch = "armv7"
 	}
 	name := "mihomoctl-linux-" + arch
-	if err := a.applyDownloadSettings(ptr("https://mirror.invalid/cache")); err != nil {
+	if err := a.applyDownloadSettings(new("https://mirror.invalid/cache")); err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -152,6 +153,10 @@ func TestAgentUpdateUsesSemverAndVerifiedGitHubAsset(t *testing.T) {
 			return []byte(`{"listeners":false,"network":false}`), nil
 		}
 		probes++
+		// Installation must use the verified bytes, even if the probed path changes.
+		if err := os.WriteFile(name, []byte("changed after verification"), 0700); err != nil {
+			t.Fatal(err)
+		}
 		return json.Marshal(map[string]any{"version": "v1.11.0", "protocol": Protocol})
 	}
 	if _, err := a.updateAgent(context.Background(), t.TempDir(), func(string) {}); err != nil || downloads != 0 {
@@ -167,10 +172,41 @@ func TestAgentUpdateUsesSemverAndVerifiedGitHubAsset(t *testing.T) {
 		t.Fatal("changed executable on failure")
 	}
 	digest = hex.EncodeToString(sum[:])
+	previous, err := os.Open(a.Executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer previous.Close()
 	if _, err := a.updateAgent(context.Background(), t.TempDir(), func(string) {}); err != nil {
 		t.Fatal(err)
 	}
 	if data, _ := os.ReadFile(a.path("mihomoctl")); string(data) != string(payload) || probes != 1 {
 		t.Fatal("verified update not installed")
+	}
+	if data, err := io.ReadAll(previous); err != nil || string(data) != "previous agent" {
+		t.Fatal("update modified the old executable inode", err)
+	}
+	if info, err := os.Stat(a.Executable); err != nil || info.Mode().Perm() != 0700 {
+		t.Fatal("updated executable is not private and executable", err)
+	}
+	entries, _ := os.ReadDir(a.Root)
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".mihomoctl") {
+			t.Fatal("update left temporary files or backups", entry.Name())
+		}
+	}
+}
+
+func TestReleaseRequiresExplicitStableFlags(t *testing.T) {
+	for _, data := range []string{
+		`null`,
+		`{"tag_name":"v1.2.3"}`,
+		`{"tag_name":"v1.2.3","draft":null,"prerelease":false}`,
+		`{"tag_name":"v1.2.3","draft":false,"prerelease":null}`,
+		`{"tag_name":"v1.2.3","draft":true,"prerelease":false}`,
+	} {
+		if _, err := parseRelease([]byte(data)); err == nil {
+			t.Fatal("accepted incomplete or unstable release", data)
+		}
 	}
 }

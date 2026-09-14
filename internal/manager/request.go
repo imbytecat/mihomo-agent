@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 )
 
 type ControllerInput struct {
@@ -36,9 +37,20 @@ func DecodeRequest(data []byte) (Request, error) {
 	if decoder.Decode(&extra) != io.EOF {
 		return req, errors.New("请求只能包含一个 JSON 对象")
 	}
-	return req, req.validate()
+	// Presence matters: an inapplicable parameter stays invalid even if empty or null.
+	var fields struct {
+		Params map[string]json.RawMessage `json:"params"`
+	}
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return req, errors.New("请求格式无效")
+	}
+	provided := make(map[string]bool, len(fields.Params))
+	for name := range fields.Params {
+		provided[strings.ToLower(name)] = true
+	}
+	return req, req.validate(provided)
 }
-func (r Request) validate() error {
+func (r Request) validate(provided map[string]bool) error {
 	if !validID(r.ID) {
 		return errors.New("无效任务 ID")
 	}
@@ -70,13 +82,13 @@ func (r Request) validate() error {
 	default:
 		return errors.New("未知设备操作")
 	}
-	if p.GitHubProxy != nil && !allowProxy || p.Interfaces != nil && !allowInterfaces || p.URL != "" && !allowURL || p.Controller != nil && !allowController {
+	if (provided["githubproxy"] || p.GitHubProxy != nil) && !allowProxy || (provided["interfaces"] || p.Interfaces != nil) && !allowInterfaces || (provided["url"] || p.URL != "") && !allowURL || (provided["controller"] || p.Controller != nil) && !allowController {
 		return errors.New("该操作不接受这些参数")
 	}
 	return nil
 }
 func (a *Manager) authorize(r Request) error {
-	if err := r.validate(); err != nil {
+	if err := r.validate(nil); err != nil {
 		return err
 	}
 	if (r.Action == "save-interfaces" || r.Params.Interfaces != nil) && !a.Platform.Capabilities().Interfaces {

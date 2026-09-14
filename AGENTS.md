@@ -42,7 +42,7 @@
 
 ## 库与验证
 
-- Cobra 管 CLI；renameio 管原子文件和符号链接替换；procfs 管进程解析；SQLite 管状态；go-github、semver、go-selfupdate/update 管发行信息和校验替换。
+- Cobra 管 CLI；renameio 管原子文件、二进制和符号链接替换；procfs 管进程解析；SQLite 管状态；go-github、semver 管发行信息。自更新用标准库校验 SHA-256，探测候选版本后写入同一份已验证字节，不重新读取候选路径。
 - renameio 暂存必须同文件系统且初始私有，不沿用旧文件权限覆盖密钥。Android 公共自启文件的 chmod 可容忍 EPERM/EOPNOTSUPP，其余情况必须报错。
 - DoH 使用 net/http 与 x/net/dnsmessage，保留引导 IP、Android CA、取消、HTTPS 重定向限制与响应上限。解压使用标准库，调用方保留路径、类型和大小限制。
 - modernc.org/libc 必须与所用 modernc.org/sqlite 的 go.mod 匹配；保持 CGO_ENABLED=0 和 ARM64 / ARMv7 / AMD64 构建。

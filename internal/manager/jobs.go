@@ -12,10 +12,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"syscall"
 	"time"
 
+	"github.com/imbytecat/mihomoctl/internal/fsutil"
 	"github.com/imbytecat/mihomoctl/internal/redact"
 	"github.com/imbytecat/mihomoctl/internal/storage"
 	"golang.org/x/crypto/nacl/box"
@@ -70,7 +70,7 @@ func (a *Manager) SubmitSealed(sealed []byte) (*Job, error) {
 	}
 	return a.accept(request, sealed)
 }
-func (a *Manager) accept(request Request, sealed []byte) (*Job, error) {
+func (a *Manager) accept(request Request, sealed []byte) (_ *Job, err error) {
 	key, err := a.identity()
 	if err != nil {
 		return nil, err
@@ -102,7 +102,14 @@ func (a *Manager) accept(request Request, sealed []byte) (*Job, error) {
 	if err := a.store.CreateTask(*job, fingerprint, sealed); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(a.jobDir(job.ID), 0700); err != nil {
+	defer func() {
+		if err != nil {
+			job.State = "failed"
+			job.Error = redact.String(err.Error())
+			err = errors.Join(err, a.writeJob(job))
+		}
+	}()
+	if err := os.MkdirAll(a.taskPath(job.ID, ""), 0700); err != nil {
 		return nil, err
 	}
 	log, err := os.OpenFile(a.taskPath(job.ID, "log.txt"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
@@ -123,10 +130,7 @@ func (a *Manager) accept(request Request, sealed []byte) (*Job, error) {
 	cmd.Stderr = log
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err = cmd.Start(); err != nil {
-		job.State = "failed"
-		job.Error = "无法启动设备任务"
-		_ = a.writeJob(job)
-		return nil, err
+		return nil, fmt.Errorf("无法启动设备任务：%w", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -136,10 +140,7 @@ func (a *Manager) accept(request Request, sealed []byte) (*Job, error) {
 	if err != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
-		job.State = "failed"
-		job.Error = "无法托管设备任务"
-		_ = a.writeJob(job)
-		return nil, err
+		return nil, fmt.Errorf("无法托管设备任务：%w", err)
 	}
 	_ = cmd.Process.Release()
 	return job, nil // The worker inherited the locked descriptor; browser lifetime is irrelevant.
@@ -277,14 +278,9 @@ func (a *Manager) readJobLog(id string) string {
 	if !validID(id) {
 		return ""
 	}
-	data, _ := os.ReadFile(a.taskPath(id, "log.txt"))
-	if len(data) > 24*1024 {
-		data = data[len(data)-24*1024:]
-	}
+	data, _ := fsutil.ReadTail(a.taskPath(id, "log.txt"), 24*1024)
 	return redact.String(string(data))
 }
-
-func (a *Manager) jobDir(id string) string { return filepath.Join(a.Root, "tasks", id) }
 
 func (a *Manager) JobLog(id string) (string, error) {
 	if _, err := a.Job(id); err != nil {

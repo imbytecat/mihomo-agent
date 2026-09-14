@@ -18,10 +18,61 @@ import (
 	"testing"
 
 	"github.com/imbytecat/mihomoctl/internal/fsutil"
+	"github.com/imbytecat/mihomoctl/internal/platform"
 
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/crypto/nacl/box"
 )
+
+type canceledStart struct {
+	platform.Adapter
+	cancel  context.CancelFunc
+	starts  int
+	running bool
+}
+
+func (p *canceledStart) Inspect(context.Context) (platform.State, error) {
+	return platform.State{Running: p.running}, nil
+}
+func (p *canceledStart) Stop(context.Context) error { p.running = false; return nil }
+func (p *canceledStart) Start(ctx context.Context, _ platform.StartOptions) error {
+	p.starts++
+	if p.starts == 1 {
+		p.cancel()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	p.running = true
+	return nil
+}
+
+func TestCanceledConfigApplyRestoresRunningGeneration(t *testing.T) {
+	a := testAgent(t)
+	if err := fsutil.AtomicWrite(a.corePath(), []byte("fixture"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	control, _ := a.controller()
+	source := []byte("proxies: []\n")
+	previous := randomID()
+	if err := a.applyConfig(context.Background(), previous, source, "https://old.invalid", control, func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	p := &canceledStart{Adapter: a.Platform, cancel: cancel, running: true}
+	a.Platform = p
+	control.Port = 9191
+	if err := a.applyConfig(ctx, randomID(), source, "https://new.invalid", control, func(string) {}); err == nil {
+		t.Fatal("reported success after canceled start")
+	}
+	if active, err := a.activeGeneration(); err != nil || active != previous || !p.running || p.starts != 2 {
+		t.Fatal("failed to restore running generation", active, p.running, p.starts, err)
+	}
+	if current, err := a.configuration(); err != nil || current.URL != "https://old.invalid" || current.Controller.Port != 9090 {
+		t.Fatal("rollback lost configuration metadata", err)
+	}
+}
 
 func TestDeviceControllerOverridesSubscriptionWithoutSecret(t *testing.T) {
 	a := testAgent(t)
@@ -86,7 +137,7 @@ func TestControllerSettingsCommitWithConfigAndRollbackOnFailure(t *testing.T) {
 	if err := a.applyConfig(context.Background(), randomID(), source, "https://fixture.invalid", control, func(string) {}); err != nil {
 		t.Fatal(err)
 	}
-	request := Request{ID: randomID(), Params: Params{Controller: &ControllerInput{Enabled: ptr(true), Port: 9191, Reset: true}}}
+	request := Request{ID: randomID(), Params: Params{Controller: &ControllerInput{Enabled: new(true), Port: 9191, Reset: true}}}
 	if _, err := a.saveController(context.Background(), request, func(string) {}); err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +148,7 @@ func TestControllerSettingsCommitWithConfigAndRollbackOnFailure(t *testing.T) {
 	active, _ := a.activeGeneration()
 	a.runCommand = func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("invalid config") }
 	request.ID = randomID()
-	request.Params.Controller = &ControllerInput{Enabled: ptr(false), Port: 9292}
+	request.Params.Controller = &ControllerInput{Enabled: new(false), Port: 9292}
 	if _, err := a.saveController(context.Background(), request, func(string) {}); err == nil {
 		t.Fatal("accepted invalid config")
 	}
@@ -148,7 +199,7 @@ func TestDashboardInstallVerifiesAndAppliesLocalUI(t *testing.T) {
 	_ = writer.Close()
 	sum := sha256.Sum256(data.Bytes())
 	version, tampered := "v3.26.0", false
-	if err := a.applyDownloadSettings(ptr("https://mirror.invalid/cache")); err != nil {
+	if err := a.applyDownloadSettings(new("https://mirror.invalid/cache")); err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

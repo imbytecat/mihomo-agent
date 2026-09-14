@@ -48,6 +48,7 @@ test('input validation and shell results preserve the trust boundary', async () 
   expect(interfaces('wlan0, rndis0 wlan0')).toBe('wlan0 rndis0');
   expect(interfaces('')).toBe('auto');
   expect(interfaces(' auto ')).toBe('auto');
+  expect(interfaces('local0')).toBe('local0');
   for (const name of ['lo', 'rmnet_data0', 'wlan0;reboot', '-i'])
     expect(() => interfaces(name)).toThrow();
   expect(() => subscriptionURL('file:///etc/passwd')).toThrow();
@@ -388,6 +389,7 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
   expect(disabledReason('logs', { ...ready, locked: true })).toBe('');
   expect(() => parseState('{"service":true}')).toThrow();
   expect(parseState(JSON.stringify(ready))).toEqual(ready);
+  expect(() => parseState(JSON.stringify({ ...ready, protocol: ready.protocol - 1 }))).toThrow('协议不匹配');
   for (const field of ['coreVersion', 'controller', 'dashboard'] as const) {
     const incomplete = { ...ready } as Partial<typeof ready>;
     delete incomplete[field];
@@ -425,7 +427,7 @@ test('request errors identify network, timeout, HTTP and malformed response stag
   const context = {
     step: '查询最新版本',
     target: '管理浏览器 GET https://api.github.com/releases/latest',
-    hint: 'GitHub Proxy不代理版本查询',
+    hint: '检查 GitHub Proxy 是否支持版本查询',
   };
   const fetch = vi.spyOn(globalThis, 'fetch');
   try {
@@ -441,7 +443,7 @@ test('request errors identify network, timeout, HTTP and malformed response stag
     expect(error.message).toContain('查询最新版本失败');
     expect(error.message).toContain('api.github.com');
     expect(error.message).toContain('TypeError: Failed to fetch');
-    expect(error.message).toContain('GitHub Proxy不代理版本查询');
+    expect(error.message).toContain('检查 GitHub Proxy 是否支持版本查询');
     fetch.mockRejectedValueOnce(new DOMException('aborted', 'AbortError'));
     await expect(
       requestJSON(

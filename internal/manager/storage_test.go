@@ -5,11 +5,31 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/imbytecat/mihomoctl/internal/fsutil"
 	"github.com/imbytecat/mihomoctl/internal/host"
 )
+
+func TestLogTailsDoNotExposeTruncatedSecretLines(t *testing.T) {
+	a := testAgent(t)
+	id := randomID()
+	for _, path := range []string{a.taskPath(id, "log.txt"), a.runtime("core.log"), a.runtime("supervisor.log")} {
+		if err := fsutil.AtomicWrite(path, []byte("password: "+strings.Repeat("s", 32*1024)+"\nsafe final line\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	logs, err := a.Logs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, output := range []string{a.readJobLog(id), logs} {
+		if strings.Contains(output, "ssss") || !strings.Contains(output, "safe final line") {
+			t.Fatal("log tail leaked a partial secret line or lost the final line")
+		}
+	}
+}
 
 func TestAtomicWritesReplaceWithoutFollowingLinks(t *testing.T) {
 	dir := t.TempDir()

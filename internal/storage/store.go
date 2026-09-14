@@ -300,6 +300,9 @@ func (s *Store) Request(id string) ([]byte, error) {
 	return s.queries.Request(context.Background(), id)
 }
 func (s *Store) CreateTask(t Task, fingerprint string, request []byte) error {
+	if t.State != "queued" && t.State != "running" {
+		request = nil
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -325,7 +328,6 @@ func (s *Store) UpdateTask(t Task) error {
 	}
 	return err
 }
-func (s *Store) PruneRequests() error { return s.queries.PruneRequests(context.Background()) }
 
 type ComponentUpdate struct {
 	Current string `json:"current"`

@@ -247,7 +247,7 @@ func (q *Queries) Installed(ctx context.Context) (bool, error) {
 }
 
 const interruptTasks = `-- name: InterruptTasks :exec
-UPDATE tasks SET state='interrupted',error=?,updated=? WHERE state IN ('queued','running')
+UPDATE tasks SET state='interrupted',error=?,updated=?,request=NULL WHERE state IN ('queued','running')
 `
 
 type InterruptTasksParams struct {
@@ -313,15 +313,6 @@ func (q *Queries) Pending(ctx context.Context) (PendingRow, error) {
 	var i PendingRow
 	err := row.Scan(&i.Previous, &i.Next, &i.WasRunning)
 	return i, err
-}
-
-const pruneRequests = `-- name: PruneRequests :exec
-UPDATE tasks SET request=NULL WHERE state NOT IN ('queued','running')
-`
-
-func (q *Queries) PruneRequests(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, pruneRequests)
-	return err
 }
 
 const request = `-- name: Request :one
@@ -537,7 +528,7 @@ func (q *Queries) Task(ctx context.Context, id string) (TaskRow, error) {
 }
 
 const updateTask = `-- name: UpdateTask :execrows
-UPDATE tasks SET state=?,phase=?,updated=?,result=?,error=? WHERE id=?
+UPDATE tasks SET state=?1,phase=?2,updated=?3,result=?4,error=?5,request=CASE ?1 WHEN 'queued' THEN request WHEN 'running' THEN request END WHERE id=?6
 `
 
 type UpdateTaskParams struct {

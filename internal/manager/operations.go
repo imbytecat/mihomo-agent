@@ -3,8 +3,6 @@ package manager
 import (
 	"compress/gzip"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -12,13 +10,18 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"time"
 
+	"github.com/imbytecat/mihomoctl/internal/download"
 	"github.com/imbytecat/mihomoctl/internal/fsutil"
 	"github.com/imbytecat/mihomoctl/internal/platform"
 	"github.com/imbytecat/mihomoctl/internal/storage"
 )
 
 func (a *Manager) Install(githubProxy string) error {
+	if _, err := validateURL(githubProxy, true); err != nil {
+		return err
+	}
 	if err := a.initIdentity(); err != nil {
 		return err
 	}
@@ -48,18 +51,18 @@ func (a *Manager) Install(githubProxy string) error {
 }
 
 func (a *Manager) installRuntime(githubProxy string) error {
-	if err := os.MkdirAll(a.runtime(), 0700); err != nil {
-		return err
-	}
-	if err := a.Platform.Prepare(); err != nil {
-		return err
-	}
 	settings, err := a.settings()
 	if err != nil {
 		return err
 	}
 	settings.GitHubProxy, err = validateURL(githubProxy, true)
 	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(a.runtime(), 0700); err != nil {
+		return err
+	}
+	if err := a.Platform.Prepare(); err != nil {
 		return err
 	}
 	if err := a.store.SaveSettings(settings); err != nil {
@@ -227,7 +230,7 @@ func (a *Manager) downloadCore(ctx context.Context, work string, phase func(stri
 	if err != nil {
 		return "", err
 	}
-	version, address, digest, err := r.asset("MetaCubeX/mihomo", "mihomo-"+assetPlatform+"-"+arch+"-"+r.GetTagName()+".gz")
+	version, address, digest, err := r.asset("MetaCubeX/mihomo", "mihomo-"+assetPlatform+"-"+arch+"-"+r.TagName+".gz")
 	if err != nil {
 		return "", err
 	}
@@ -253,14 +256,10 @@ func (a *Manager) installCore(ctx context.Context, archive, work, digest string,
 		return err
 	}
 	defer f.Close()
-	hash := sha256.New()
-	if _, err = io.Copy(hash, f); err != nil {
+	if err := download.VerifySHA256(f, digest); err != nil {
 		return err
 	}
-	if hex.EncodeToString(hash.Sum(nil)) != digest {
-		return errors.New("内核 SHA-256 不匹配，拒绝安装")
-	}
-	if _, err = f.Seek(0, io.SeekStart); err != nil {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
 	gz, err := gzip.NewReader(f)
@@ -351,7 +350,7 @@ func (a *Manager) applyConfig(ctx context.Context, id string, source []byte, add
 	if err = fsutil.AtomicWrite(filepath.Join(generation, "api-port"), []byte(strconv.Itoa(apiPort)), 0600); err != nil {
 		return err
 	}
-	if err = a.store.SaveConfiguration(storage.Configuration{ID: id, URL: address, Controller: ptrController(control), Dashboard: dashboard && control.Enabled}); err != nil {
+	if err = a.store.SaveConfiguration(storage.Configuration{ID: id, URL: address, Controller: new(storage.Controller(control)), Dashboard: dashboard && control.Enabled}); err != nil {
 		return err
 	}
 	if err = a.testCore(ctx, a.corePath(), filepath.Join(generation, "config.yaml")); err != nil {
@@ -376,7 +375,9 @@ func (a *Manager) applyConfig(ctx context.Context, id string, source []byte, add
 		phase("rollback")
 		resume, rollbackErr := a.recoverConfiguration()
 		if rollbackErr == nil && resume {
-			rollbackErr = a.startRuntime(ctx)
+			recovery, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			rollbackErr = a.startRuntime(recovery)
 		}
 		if rollbackErr != nil {
 			return fmt.Errorf("配置应用失败，恢复也失败：%v", rollbackErr)
@@ -404,5 +405,3 @@ func (a *Manager) applyDownloadSettings(value *string) error {
 	settings.GitHubProxy = normalized
 	return a.store.SaveSettings(settings)
 }
-
-func ptrController(c Controller) *storage.Controller { value := storage.Controller(c); return &value }
