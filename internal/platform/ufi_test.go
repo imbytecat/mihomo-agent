@@ -86,7 +86,15 @@ func TestUFIStartCancellationReapsItsChildWithoutAProcessRecord(t *testing.T) {
 	result := make(chan error, 1)
 	go func() { result <- a.Start(ctx, StartOptions{}) }()
 	deadline := time.Now().Add(2 * time.Second)
-	for !fsutil.RegularFile(pidFile) && time.Now().Before(deadline) {
+	var pid int
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(pidFile)
+		if err == nil {
+			pid, _ = strconv.Atoi(strings.TrimSpace(string(data)))
+		}
+		if pid > 1 {
+			break
+		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	cancel()
@@ -98,13 +106,8 @@ func TestUFIStartCancellationReapsItsChildWithoutAProcessRecord(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("startup cancellation did not finish")
 	}
-	data, err := os.ReadFile(pidFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		t.Fatal(err)
+	if pid <= 1 {
+		t.Fatal("supervisor fixture did not report its PID")
 	}
 	child, err := os.FindProcess(pid)
 	if err != nil {
