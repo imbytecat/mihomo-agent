@@ -69,7 +69,7 @@ func (a *UFIAdapter) Inspect(ctx context.Context) (State, error) {
 	if err != nil {
 		return s, nil
 	}
-	output, err := a.command(ctx, nil, "/system/bin/sh", a.runtime("network.sh"), a.runtime(), "inspect", fw.IPv4, fw.IPv6)
+	output, err := a.command(ctx, nil, "/system/bin/sh", a.runtime("network.sh"), a.runtime(), "inspect", fw.IPv4, fw.IPv6, a.Executable)
 	if err == nil {
 		var n struct{ Listeners, Network bool }
 		if json.Unmarshal(output, &n) == nil {
@@ -115,7 +115,7 @@ func (a *UFIAdapter) network(ctx context.Context, action string) error {
 	if err != nil {
 		return err
 	}
-	output, err := a.command(ctx, []*os.File{lock}, "/system/bin/sh", a.runtime("network.sh"), a.runtime(), action, fw.IPv4, fw.IPv6)
+	output, err := a.command(ctx, []*os.File{lock}, "/system/bin/sh", a.runtime("network.sh"), a.runtime(), action, fw.IPv4, fw.IPv6, a.Executable)
 	if err != nil {
 		return fmt.Errorf("网络规则 %s 失败（%s，%s / %s）：%w\n%s", action, fw.Backend, fw.IPv4, fw.IPv6, err, redact.String(string(output)))
 	}

@@ -43,11 +43,12 @@ ipt() { fake_iptables 4 "$@"; }
 ip6t() { fake_iptables 6 "$@"; }
 ip() {
   case "$*" in
+    -N*) echo 'Option "-N" is unknown, try "ip -help".' >&2; return 1;;
     '-o -4 addr show')
       if [ -f "$DIR/local-addresses" ]; then cat "$DIR/local-addresses"; else echo '1: lo inet 127.0.0.1/8 scope host lo'; fi;;
     '-4 route show table 2026') cat "$DIR/routes";;
-    '-4 route show table all'|'-N -4 route show table all') sed 's/$/ table 2026/' "$DIR/routes";;
-    '-4 rule show'|'-N -4 rule show') cat "$DIR/rules";;
+    '-4 route show table all') sed 's/$/ table 2026/' "$DIR/routes";;
+    '-4 rule show') cat "$DIR/rules";;
     '-4 route add local 0.0.0.0/0 dev lo table 2026') echo 'local default dev lo scope host' > "$DIR/routes";;
     '-4 rule add priority 9000 fwmark 0x40000000/0x40000000 table 2026') echo '9000: from all fwmark 0x40000000/0x40000000 lookup 2026' > "$DIR/rules";;
     '-4 rule del priority 9000 fwmark 0x40000000/0x40000000 table 2026') [ -s "$DIR/rules" ] || return 1; : > "$DIR/rules";;
@@ -57,3 +58,17 @@ ip() {
 }
 listeners_ready() { [ -f "$DIR/ready" ]; }
 network_tools() { return 0; }
+
+# Emulate the read-only native helper, leaving the production error/boolean handling intact.
+CTL=fake_ctl
+fake_ctl() {
+  [ "$1" = network-state ] && [ "$3 $4 $5" = '2026 9000 0x40000000' ] || return 1
+  [ ! -f "$DIR/fail-netlink" ] || { echo 'netlink permission denied'; return 1; }
+  case "$2" in
+    table-empty) if [ -s "$DIR/routes" ]; then echo false; else echo true; fi;;
+    priority-free) if grep -q '^9000:' "$DIR/rules"; then echo false; else echo true; fi;;
+    route-owned) if grep -q '^local default dev lo' "$DIR/routes"; then echo true; else echo false; fi;;
+    rule-owned) if grep -q '^9000: from all fwmark 0x40000000/0x40000000 lookup 2026$' "$DIR/rules"; then echo true; else echo false; fi;;
+    *) return 1;;
+  esac
+}

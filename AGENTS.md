@@ -52,7 +52,7 @@
 - DoH 使用 net/http 与 x/net/dnsmessage，保留引导 IP、Android CA、取消、HTTPS 重定向限制与响应上限。解压使用标准库，调用方保留路径、类型和大小限制。
 - modernc.org/libc 必须与所用 modernc.org/sqlite 的 go.mod 匹配；保持 CGO_ENABLED=0 和 ARM64 / ARMv7 / AMD64 构建。
 - Go、Bun、just、sqlc、GoReleaser 和检查工具的版本集中在 mise.toml，CI 通过 mise 安装；Vitest 与 Playwright 驱动是 ui/ 的锁定开发依赖，GitHub Actions 固定完整提交 SHA。
-- SQLite 的 schema.sql 同时用于初始化与 sqlc；queries.sql 生成 internal/storage/db，生成文件随源码提交，just check 用 sqlc diff 校验。事务与状态锁归 storage，生成层不依赖 Manager；修改状态格式同步升级 schema 与协议，旧安装重装。
+- SQLite 的 schema.sql 同时用于初始化与 sqlc；queries.sql 生成 internal/storage/db，生成文件随源码提交，just check 用 sqlc diff 校验。事务与状态锁归 storage，生成层不依赖 Manager；仅不兼容的持久状态格式变更升级 schema、机器请求或响应契约变更升级协议，旧安装重装。内部实现、界面及缺陷修复保留协议与 schema；相同协议与 schema 的补丁必须支持原位更新。
 - 版本检查快照持久化 SQLite；status 用实际安装版本重新比较缓存 latest，不写回快照或检查时间，check-updates 才显式联网保存结果。比较统一使用 Go semver；前端仅展示与当前版本一致的比较。
 - 根目录为 Go module，前端包与测试独立位于 ui/。构建与验证入口见 justfile；Go 构建不能依赖 Bun 或前端资产；go.mod 用 ignore ./ui 排除前端依赖中附带的 Go 示例，保持 test/tidy 的边界。
 - 交互修改运行 just test-ui；ui/tests/browser 使用 Vitest Browser Mode 和 Playwright 驱动，通过真实 DOMParser 加载生产 IIFE，并验证窄屏布局与宿主隔离。ui/tests/native.test.ts 在 Bun 运行的 Vitest node 项目中验证前端请求 → 纯 Go CLI；platform 测试替换 D-Bus；真实 systemd 验证仅在隔离 CI runner 通过 MIHOMOCTL_SYSTEMD_TEST 显式启用。

@@ -4,6 +4,7 @@ DIR=$1
 ACTION=$2
 IPT=$3
 IP6T=$4
+CTL=$5
 alive() {
   pid=$(cat "$DIR/core.pid" 2>/dev/null)
   case "$pid" in ''|*[!0-9]*) return 1;; esac
@@ -88,9 +89,9 @@ pause_capture() {
   remove_hook ipt mangle PREROUTING UFI_MH && remove_hook ipt nat PREROUTING UFI_MH_DNS
 }
 
-owned_routes() {
-  routes=$(ip -N -4 route show table all) || { echo '无法读取 IPv4 路由表' >&2; return 1; }
-  printf '%s\n' "$routes" | awk -v table="$TABLE" '{ for(i=1;i<NF;i++) if($i=="table" && $(i+1)==table) { print; break } }'
+network_state() {
+  result=$("$CTL" network-state "$1" "$TABLE" "$PRIORITY" "$MARK") || { echo "网络检查 $1 失败：$result" >&2; return 1; }
+  case "$result" in true|false) printf '%s\n' "$result";; *) echo "网络检查 $1 响应无效：$result" >&2; return 1;; esac
 }
 
 # The file descriptors prove these sockets belong to our core, not another process.
@@ -132,18 +133,17 @@ network_stop() {
     if printf '%s\n' "$snapshot" | grep -Eq "^-N ($4|${4}_A|${4}_B)$"; then echo "网络链未完全清理：$4" >&2; return 1; fi
   done
   while :; do
-    rules=$(ip -N -4 rule show) || return 1
-    printf '%s\n' "$rules" | grep -Eq "^$PRIORITY:.*fwmark 0x40000000/0x40000000.*lookup $TABLE( |$)" || break
+    owned=$(network_state rule-owned) || return 1
+    [ "$owned" = true ] || break
     ip -4 rule del priority "$PRIORITY" fwmark "$MARK/$MARK" table "$TABLE" || return 1
   done
-  routes=$(owned_routes) || return 1
-  if printf '%s\n' "$routes" | grep -Eq '^local (default|0.0.0.0/0).*dev lo( |$)'; then
+  owned=$(network_state route-owned) || return 1
+  if [ "$owned" = true ]; then
     ip -4 route del local 0.0.0.0/0 dev lo table "$TABLE" || return 1
   fi
-  routes=$(owned_routes) || return 1
-  rules=$(ip -N -4 rule show) || return 1
-  if printf '%s\n' "$routes" | grep -Eq '^local (default|0.0.0.0/0).*dev lo( |$)' ||
-    printf '%s\n' "$rules" | grep -Eq "^$PRIORITY:.*fwmark 0x40000000/0x40000000.*lookup $TABLE( |$)"; then
+  route=$(network_state route-owned) || return 1
+  rule=$(network_state rule-owned) || return 1
+  if [ "$route" = true ] || [ "$rule" = true ]; then
     echo '网络路由未完全清理，保留运行文件' >&2; return 1
   fi
   rm -f "$DIR/network.active" "$DIR/network.pending" "$DIR/network.active.next" "$DIR/network.owned"
@@ -205,10 +205,9 @@ switch_slot() {
 }
 
 network_routes_ok() {
-  rules=$(ip -N -4 rule show) || return 1
-  routes=$(owned_routes) || return 1
-  printf '%s\n' "$rules" | grep -Eq "^$PRIORITY:.*fwmark 0x40000000/0x40000000.*lookup $TABLE( |$)" &&
-  printf '%s\n' "$routes" | grep -q 'local default dev lo'
+  rule=$(network_state rule-owned) || return 1
+  route=$(network_state route-owned) || return 1
+  [ "$rule" = true ] && [ "$route" = true ]
 }
 
 network_ok() {
@@ -226,10 +225,10 @@ network_ok() {
 
 claim_network() {
   [ ! -f "$DIR/network.owned" ] || return 0
-  routes=$(owned_routes) || return 1
-  [ -z "$routes" ] || { echo '策略路由表已被其他程序占用' >&2; return 1; }
-  rules=$(ip -N -4 rule show) || return 1
-  if printf '%s\n' "$rules" | grep -q "^$PRIORITY:"; then echo '策略路由优先级已被占用' >&2; return 1; fi
+  empty=$(network_state table-empty) || return 1
+  [ "$empty" = true ] || { echo '策略路由表已被其他程序占用' >&2; return 1; }
+  free=$(network_state priority-free) || return 1
+  [ "$free" = true ] || { echo '策略路由优先级已被占用' >&2; return 1; }
   for group in 'ipt mangle UFI_MH' 'ipt nat UFI_MH_DNS' 'ip6t filter UFI_MH6' 'ipt filter UFI_MH_IN' 'ip6t filter UFI_MH_IN6'; do
     # shellcheck disable=SC2086
     set -- $group
@@ -269,12 +268,12 @@ network_start() {
   claim_network || return 1
   if ! network_routes_ok; then
     # Only add missing owned routes; never replace foreign entries.
-    routes=$(owned_routes) || return 1
-    if [ -z "$routes" ]; then
+    empty=$(network_state table-empty) || return 1
+    if [ "$empty" = true ]; then
       ip -4 route add local 0.0.0.0/0 dev lo table "$TABLE" || return 1
     fi
-    rules=$(ip -N -4 rule show) || return 1
-    if ! printf '%s\n' "$rules" | grep -q "^$PRIORITY:"; then
+    free=$(network_state priority-free) || return 1
+    if [ "$free" = true ]; then
       ip -4 rule add priority "$PRIORITY" fwmark "$MARK/$MARK" table "$TABLE" || return 1
     fi
     network_routes_ok || return 1
@@ -296,7 +295,7 @@ network_start() {
 }
 
 network_tools() {
-  for tool in ip "$IPT" "$IP6T"; do
+  for tool in ip "$IPT" "$IP6T" "$CTL"; do
     command -v "$tool" >/dev/null 2>&1 || { echo "缺少系统命令：$tool" >&2; return 1; }
   done
   for group in 'ipt mangle' 'ipt nat' 'ipt filter' 'ip6t filter'; do

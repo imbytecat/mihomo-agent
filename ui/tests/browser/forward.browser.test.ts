@@ -3,6 +3,7 @@ import { app, evaluate, idle, open, reload } from './app';
 
 test('custom forwarding is used before installation and restored from the device', async () => {
   await open('missing-service');
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   const input = app.getByCSS('[data-release-proxy]');
   await expect.element(app.getByRole('link', { name: '自行部署' })).toHaveAttribute('href', 'https://github.com/netnr/workers');
   await input.fill('https://mirror.example.com/?token=private');
@@ -11,6 +12,7 @@ test('custom forwarding is used before installation and restored from the device
   await expect.element(input).toHaveAttribute('aria-invalid', 'true');
   expect(evaluate('mockRequests.some(u => u.includes("api.github.com"))')).toBe(false);
 
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   await input.fill('https://mirror.example.com/');
   await app.getByCSS('[data-primary=true][data-action=install]').click();
   await expect.poll(() => evaluate('mockDeviceState.service')).toBe(true);
@@ -23,14 +25,13 @@ test('custom forwarding is used before installation and restored from the device
   await reload();
   await app.getByCSS('[data-plugin] > summary').click();
   await idle();
-  if (!evaluate('document.querySelector("[data-settings]").open'))
-    await app.getByCSS('[data-settings] > summary').click();
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   await expect.element(input).toHaveValue('https://mirror.example.com');
 });
 
 test('saving forwarding preserves newer edits, survives refresh and can restore direct access', async () => {
   await open('running');
-  await app.getByCSS('[data-settings] > summary').click();
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   const input = app.getByCSS('[data-release-proxy]');
   const save = app.getByCSS('[data-action=save-release-proxy]');
   await evaluate('mockTaskDelayMs = 2000');
@@ -47,7 +48,7 @@ test('saving forwarding preserves newer edits, survives refresh and can restore 
   await reload();
   await app.getByCSS('[data-plugin] > summary').click();
   await idle();
-  await app.getByCSS('[data-settings] > summary').click();
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   await expect.element(input).toHaveValue('https://new.example.com');
   await input.fill('');
   await save.click();

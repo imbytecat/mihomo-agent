@@ -7,7 +7,7 @@ for (const width of [360, 1280]) {
     await page.viewport(width, 900);
     frame.style.width = `${width}px`;
     await open('ready');
-    await app.getByCSS('[data-settings] > summary').click();
+    await app.getByRole('tab', { name: '设置', exact: true }).click();
     await expect
       .element(app.getByCSS('#host-probe'))
       .toHaveStyle({ display: 'block', marginTop: '19px' });
@@ -21,6 +21,9 @@ for (const width of [360, 1280]) {
         fontSize: '14px',
         backgroundImage: 'none',
       });
+    await expect.element(app.getByRole('tab', { name: '设置', exact: true })).toHaveStyle({
+      marginTop: '0px', backgroundImage: 'none', fontSize: '14px', borderTopWidth: '0px',
+    });
     await expect
       .element(app.getByCSS('#ufi-control-port'))
       .toHaveStyle({ fontSize: '16px' });
@@ -40,6 +43,6 @@ for (const width of [360, 1280]) {
     expect(app.getByCSS('[data-output]').element().getBoundingClientRect().height).toBeLessThanOrEqual(320);
     expect(bounds!.width).toBeLessThanOrEqual(width - 32);
     await app.getByRole('button', { name: '关闭详情', exact: true }).click();
-    await expect.element(dialog).not.toHaveAttribute('open');
+    await expect.element(dialog).not.toBeVisible();
   });
 }

@@ -220,6 +220,15 @@ test('firewall probe uses unhooked rules and cleanup never treats failed reads a
   const source = await networkFunctions();
   const harness = await readFile('tests/fake-net.sh', 'utf8');
   const run = (action: string) => spawnSync('sh', ['-c', `DIR=${quote(dir)}\n${source}\n${harness}\n${action}`], { encoding: 'utf8', timeout: 10_000 });
+  const unsupportedFlag = run('ip -N -4 rule show');
+  expect(unsupportedFlag.status).toBe(1);
+  expect(unsupportedFlag.stderr).toContain('Option "-N" is unknown');
+  await writeFile(join(dir, 'fail-netlink'), '');
+  const unreadable = run('network_check');
+  expect(unreadable.status).toBe(1);
+  expect(unreadable.stderr).toContain('netlink permission denied');
+  expect(existsSync(join(dir, 'network.owned'))).toBe(false);
+  await rm(join(dir, 'fail-netlink'));
   await writeFile(join(dir, 'no-tproxy'), '');
   const unsupported = run('network_check');
   expect(unsupported.status).toBe(1);
@@ -235,6 +244,11 @@ test('firewall probe uses unhooked rules and cleanup never treats failed reads a
   expect(calls).not.toContain(' -I ');
   expect(existsSync(join(dir, 'network.active'))).toBe(false);
 
+  expect(run('network_start').status).toBe(0);
+  await writeFile(join(dir, 'fail-netlink'), '');
+  expect(run('network_stop').status).toBe(1);
+  expect(existsSync(join(dir, 'network.owned'))).toBe(true);
+  await rm(join(dir, 'fail-netlink'));
   expect(run('network_start').status).toBe(0);
   await writeFile(join(dir, 'fail-query'), '');
   const failedRead = run('network_stop');

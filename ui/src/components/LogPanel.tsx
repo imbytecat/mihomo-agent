@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
 import type { GatewayModel } from '../use-gateway';
-import { Button, focus, Hint } from './ui';
+import { Button, Hint } from './ui';
 
 export function LogPanel({ model }: { model: GatewayModel }) {
   const [live, setLive] = useState(true);
@@ -31,20 +30,15 @@ export function LogPanel({ model }: { model: GatewayModel }) {
     if (following && output.current) output.current.scrollTop = output.current.scrollHeight;
   }, [model.detail, model.detailOpen, following]);
   return (
-    <details data-log-panel open={model.detailOpen}
-      className="ufi:group/logs ufi:mt-4 ufi:rounded-2xl ufi:bg-[var(--mh-group)]"
-      onToggle={(event) => { if (event.target === event.currentTarget) model.setDetailOpen(event.currentTarget.open); }}>
-      <summary className={`ufi:flex ufi:min-h-14 ufi:list-none ufi:items-center ufi:justify-between ufi:px-4 ufi:py-3 ufi:cursor-pointer ufi:[&::-webkit-details-marker]:hidden ${focus}`}>
-        <span>任务与日志</span><ChevronDown size={16} className="ufi:group-open/logs:rotate-180" aria-hidden />
-      </summary>
-      <div className="ufi:p-4 ufi:pt-0">
+    <div data-log-panel className="ufi:mt-4 ufi:rounded-2xl ufi:bg-[var(--mh-group)]">
+      <div className="ufi:p-4">
         <div className="ufi:mb-3 ufi:flex ufi:flex-wrap ufi:items-center ufi:gap-2">
           <Button disabled={!model.task} onClick={() => void model.showTask()}>当前任务</Button>
           <Button disabled={!model.device?.agent} onClick={() => void model.showRuntimeLogs()}>运行日志</Button>
           <Button aria-pressed={live} onClick={() => setLive(!live)}>{live ? '暂停刷新' : '继续刷新'}</Button>
           {!following && <Button onClick={() => setFollowing(true)}>跟随最新</Button>}
           {model.task?.cancellable && <Button disabled={model.cancelling || model.task.cancelRequested} onClick={() => void model.cancelTask()}>取消当前任务</Button>}
-          <Button aria-label="关闭详情" onClick={() => model.setDetailOpen(false)}>收起</Button>
+          <Button aria-label="关闭详情" onClick={() => model.setDetailOpen(false)}>返回</Button>
         </div>
         <p data-log-source className="ufi:mb-2 ufi:mt-0 ufi:text-xs ufi:opacity-65">{source}</p>
         <pre ref={output} data-output tabIndex={0} aria-label={source}
@@ -54,6 +48,6 @@ export function LogPanel({ model }: { model: GatewayModel }) {
         </pre>
         <Hint error>{error && `日志刷新失败：${error}`}</Hint>
       </div>
-    </details>
+    </div>
   );
 }

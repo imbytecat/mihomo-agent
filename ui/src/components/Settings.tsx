@@ -1,5 +1,5 @@
 import { Controller } from 'react-hook-form';
-import { ChevronDown, Check, Settings2 } from 'lucide-react';
+import { Check } from 'lucide-react';
 import {
   componentVersion,
   disabledReason,
@@ -377,14 +377,10 @@ function Installation({
 
 export function Settings({
   model,
-  open,
-  onOpenChange,
   setup,
   confirmUninstall,
 }: {
   model: GatewayModel;
-  open: boolean;
-  onOpenChange: (value: boolean) => void;
   setup: boolean;
   confirmUninstall: () => void;
 }) {
@@ -403,29 +399,8 @@ export function Settings({
     ? ['maintenance', 'runtime', 'controller']
     : ['runtime', 'controller', 'maintenance'];
   return (
-    <details
-      data-settings
-      open={open}
-      className="ufi:group/settings ufi:mt-4 ufi:overflow-hidden ufi:rounded-2xl ufi:bg-[var(--mh-group)]"
-      onToggle={(event) => {
-        if (event.target === event.currentTarget)
-          onOpenChange(event.currentTarget.open);
-      }}
-    >
-      <summary
-        className={`ufi:flex ufi:min-h-14 ufi:list-none ufi:items-center ufi:justify-between ufi:px-4 ufi:py-3 ufi:cursor-pointer ufi:[&::-webkit-details-marker]:hidden ${focus}`}
-      >
-        <span className="ufi:flex ufi:items-center ufi:gap-2">
-          <Settings2 size={18} aria-hidden />
-          设置
-        </span>
-        <ChevronDown
-          size={16}
-          className="ufi:group-open/settings:rotate-180"
-          aria-hidden
-        />
-      </summary>
+    <div data-settings className="ufi:mt-4 ufi:overflow-hidden ufi:rounded-2xl ufi:bg-[var(--mh-group)]">
       {order.map((name) => groups[name])}
-    </details>
+    </div>
   );
 }

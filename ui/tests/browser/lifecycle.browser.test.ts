@@ -9,11 +9,13 @@ test('install, encrypted subscription, runtime, autostart and uninstall', async 
   expect(evaluate('mockRequests.filter(u => u.includes("api.github.com"))')).toEqual([
     'https://api.github.com/repos/imbytecat/mihomoctl/releases/latest',
   ]);
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   await app.getByCSS('[data-group=maintenance] [data-action=download]').click();
   await expect
     .element(app.getByCSS('[data-version=core]'))
     .toHaveTextContent('v9.8.7');
   await idle();
+  await app.getByRole('tab', { name: '概览', exact: true }).click();
   await app.getByCSS('[data-url]').fill('https://example.com/subscription');
   await app.getByRole('button', { name: '保存并更新', exact: true }).click();
   await expect
@@ -32,13 +34,14 @@ test('install, encrypted subscription, runtime, autostart and uninstall', async 
   await app.getByRole('button', { name: '启动代理', exact: true }).click();
   await expect.poll(() => evaluate('mockDeviceState.running')).toBeTruthy();
   await idle();
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   await app.getByCSS('[data-boot]').click();
   await expect.poll(() => evaluate('mockDeviceState.boot')).toBeTruthy();
   await idle();
   await app.getByRole('button', { name: '更多操作', exact: true }).click();
   await app.getByRole('menuitem', { name: '运行日志', exact: true }).click();
   await expect
-    .element(app.getByCSS('[data-log-panel][open]'))
+    .element(app.getByCSS('[data-log-panel]'))
     .toBeVisible();
   await closeModal();
   await app.getByRole('button', { name: '卸载', exact: true }).click();
@@ -76,6 +79,7 @@ test('reconnect observes the original task without resubmitting', async () => {
   await evaluate(
     'window.mockTaskFailure = "设备 TLS 握手失败：api.github.com"; window.mockTaskDelayMs = 9000',
   );
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   await app.getByCSS('[data-group=maintenance] [data-action=download]').click();
   await expect.poll(() => evaluate('mockDeviceState.locked')).toBeTruthy();
   await reload();
@@ -86,7 +90,7 @@ test('reconnect observes the original task without resubmitting', async () => {
     .toBeTruthy();
   await app.getByCSS('[data-task]').click();
   await expect
-    .element(app.getByCSS('[data-log-panel][open]'))
+    .element(app.getByCSS('[data-log-panel]'))
     .toBeVisible();
   await expect
     .element(app.getByCSS('[data-output]'))
@@ -100,6 +104,7 @@ test('reconnect observes the original task without resubmitting', async () => {
     .toBe(true);
   await closeModal();
   await evaluate('window.mockTaskFailure = ""; window.mockTaskDelayMs = 8000');
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   await app.getByCSS('[data-group=maintenance] [data-action=download]').click();
   await expect.poll(() => evaluate('mockDeviceState.locked')).toBeTruthy();
   await reload();
@@ -121,7 +126,7 @@ test('reconnect observes the original task without resubmitting', async () => {
 
 test('Linux exposes shared capabilities without claiming network capture', async () => {
   await open('managed-linux');
-  await app.getByCSS('[data-settings] > summary').click();
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   await expect
     .element(app.getByCSS('[data-status]'))
     .toHaveTextContent('运行中');

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import { Tabs } from '@base-ui/react/tabs';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ShieldCheck } from 'lucide-react';
 import { Toaster } from 'sonner';
@@ -13,27 +14,11 @@ import { Button, Input, Modal, focus } from './components/ui';
 
 export default function Gateway({ container }: { container: HTMLElement }) {
   const model = useGateway();
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [tab, setTab] = useState('overview');
   const [uninstallOpen, setUninstallOpen] = useState(false);
   const subscription = useRef<HTMLDivElement>(null);
   const setup = ['unknown', 'agent', 'service', 'core'].includes(
     stageOf(model),
-  );
-  useEffect(() => {
-    if (model.device && setup) setSettingsOpen(true);
-  }, [setup, model.device?.agent, model.device?.core]);
-  const subscriptionCard = (
-    <Subscription key="subscription" model={model} anchor={subscription} />
-  );
-  const settingsCard = (
-    <Settings
-      key="settings"
-      model={model}
-      open={settingsOpen}
-      onOpenChange={setSettingsOpen}
-      setup={setup}
-      confirmUninstall={() => setUninstallOpen(true)}
-    />
   );
 
   return (
@@ -82,11 +67,15 @@ export default function Gateway({ container }: { container: HTMLElement }) {
             container={container}
             confirmUninstall={() => setUninstallOpen(true)}
             addSubscription={() => {
-              subscription.current?.scrollIntoView({
-                block: 'center',
-                behavior: 'smooth',
+              setTab('overview');
+              model.setDetailOpen(false);
+              requestAnimationFrame(() => {
+                subscription.current?.scrollIntoView({
+                  block: 'center',
+                  behavior: 'smooth',
+                });
+                model.form.setFocus('subscription');
               });
-              model.form.setFocus('subscription');
             }}
           />
           {model.error ? (
@@ -105,10 +94,27 @@ export default function Gateway({ container }: { container: HTMLElement }) {
               <TaskNotice model={model} job={model.task} />
             )
           )}
-          {setup
-            ? [settingsCard, subscriptionCard]
-            : [subscriptionCard, settingsCard]}
-          <LogPanel model={model} />
+          <Tabs.Root value={model.detailOpen ? 'logs' : tab} onValueChange={(value) => {
+            if (value === 'logs') model.setDetailOpen(true);
+            else { setTab(String(value)); model.setDetailOpen(false); }
+          }} className="ufi:mt-4">
+            <Tabs.List aria-label="Mihomo 功能" className="ufi:flex ufi:gap-1 ufi:rounded-xl ufi:bg-[var(--mh-group)] ufi:p-1">
+              {([['overview', '概览'], ['settings', '设置'], ['logs', '日志']] as const).map(([value, label]) => (
+                <Tabs.Tab key={value} value={value} className={`ufi:m-0 ufi:min-h-11 ufi:min-w-0 ufi:flex-1 ufi:rounded-lg ufi:border-0 ufi:bg-none ufi:bg-transparent ufi:px-3 ufi:text-sm ufi:font-medium ufi:text-[var(--mh-text)] ufi:cursor-pointer ufi:data-[active]:bg-[#0a84ff] ufi:data-[active]:text-white ${focus}`}>
+                  {label}
+                </Tabs.Tab>
+              ))}
+            </Tabs.List>
+            <Tabs.Panel value="overview" keepMounted className="ufi:data-[hidden]:hidden">
+              <Subscription model={model} anchor={subscription} />
+            </Tabs.Panel>
+            <Tabs.Panel value="settings" keepMounted className="ufi:data-[hidden]:hidden">
+              <Settings model={model} setup={setup} confirmUninstall={() => setUninstallOpen(true)} />
+            </Tabs.Panel>
+            <Tabs.Panel value="logs" keepMounted className="ufi:data-[hidden]:hidden">
+              <LogPanel model={model} />
+            </Tabs.Panel>
+          </Tabs.Root>
         </div>
       </details>
       <Modal

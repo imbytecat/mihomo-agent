@@ -8,13 +8,21 @@ test('unsaved drafts cancel navigation with the current browser event API', asyn
   expect(canLeave()).toBe(true);
   await app.getByCSS('[data-url]').fill('https://draft.example/subscription');
   expect(canLeave()).toBe(false);
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
+  await app.getByCSS('#ufi-control-port').fill('9191');
+  await app.getByRole('tab', { name: '日志', exact: true }).click();
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
+  await expect.element(app.getByCSS('#ufi-control-port')).toHaveValue('9191');
+  await app.getByCSS('#ufi-control-port').fill('9090');
+  await app.getByRole('tab', { name: '概览', exact: true }).click();
+  await expect.element(app.getByCSS('[data-url]')).toHaveValue('https://draft.example/subscription');
   await app.getByCSS('[data-url]').fill('');
   expect(canLeave()).toBe(true);
 });
 
 test('interface autosave preserves newer drafts and handles failures', async () => {
   await open('ready');
-  await app.getByCSS('[data-settings] > summary').click();
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   const input = app.getByCSS('[data-setting=interfaces]');
   await input.fill('wlan0');
   await evaluate('window.mockUploadDelayMs = 900');
@@ -55,10 +63,11 @@ test('interface autosave preserves newer drafts and handles failures', async () 
 
 test('controller transactions, encrypted secrets and task details', async () => {
   await open('running');
-  await app.getByCSS('[data-settings] > summary').click();
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   await app.getByCSS('#ufi-control-port').fill('07894');
   await app.getByCSS('[data-action=save-controller]').click();
   await idle();
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   await expect.element(app.getByCSS('#ufi-port-error')).toBeVisible();
   expect(evaluate('mockIntents.length')).toBe(0);
   await expect
@@ -99,7 +108,7 @@ test('controller transactions, encrypted secrets and task details', async () => 
   await app.getByRole('button', { name: '更多操作', exact: true }).click();
   await app.getByRole('menuitem', { name: '运行日志', exact: true }).click();
   await expect
-    .element(app.getByCSS('[data-log-panel][open]'))
+    .element(app.getByCSS('[data-log-panel]'))
     .toBeVisible();
   await expect
     .element(app.getByCSS('[data-log-source]'))
@@ -108,7 +117,7 @@ test('controller transactions, encrypted secrets and task details', async () => 
   await app.getByRole('button', { name: '更多操作', exact: true }).click();
   await app.getByRole('menuitem', { name: '最近任务', exact: true }).click();
   await expect
-    .element(app.getByCSS('[data-log-panel][open]'))
+    .element(app.getByCSS('[data-log-panel]'))
     .toBeVisible();
   await expect
     .element(app.getByCSS('[data-log-source]'))
@@ -135,8 +144,8 @@ test('controller transactions, encrypted secrets and task details', async () => 
 
 test('update checks show component results without submitting mutations or clearing drafts', async () => {
   await open('ready');
-  await app.getByCSS('[data-settings] > summary').click();
   await app.getByCSS('[data-url]').fill('https://draft.example/subscription');
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   await app.getByRole('button', { name: '检查更新', exact: true }).click();
   await idle();
   await expect
@@ -167,6 +176,7 @@ test('update checks show component results without submitting mutations or clear
   await expect
     .element(app.getByCSS('[data-update=core]'))
     .toHaveTextContent('已是最新');
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   await evaluate('window.mockUpdateFailure = false');
   await app.getByRole('button', { name: '检查更新', exact: true }).click();
   await idle();
@@ -179,7 +189,7 @@ test('update checks show component results without submitting mutations or clear
   await reload();
   await app.getByCSS('[data-plugin] > summary').click();
   await idle();
-  await app.getByCSS('[data-settings] > summary').click();
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   await expect
     .element(app.getByCSS('[data-update=self]'))
     .toHaveTextContent('可更新至 v9.8.7');
@@ -197,6 +207,7 @@ test('update checks show component results without submitting mutations or clear
 
 test('install after checking updates immediately disables redundant component updates', async () => {
   await open('missing-core');
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   await app.getByRole('button', { name: '检查更新', exact: true }).click();
   await idle();
   const checked = evaluate('mockDeviceState.updates.checkedAt');
@@ -210,7 +221,7 @@ test('install after checking updates immediately disables redundant component up
   await reload();
   await app.getByCSS('[data-plugin] > summary').click();
   await idle();
-  if (!evaluate('document.querySelector("[data-settings]").open')) await app.getByCSS('[data-settings] > summary').click();
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   await expect.element(app.getByCSS('[data-group=maintenance] [data-action=download]')).toBeDisabled();
   await expect.element(app.getByCSS('[data-group=maintenance] [data-action=download-dashboard]')).toBeDisabled();
   expect(evaluate('mockCommands.some(c => c.includes("check-updates"))')).toBe(false);

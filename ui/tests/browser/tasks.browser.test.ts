@@ -3,6 +3,7 @@ import { app, evaluate, idle, open, reload } from './app';
 
 test('download progress stays visible after reconnect and cancellation stops the original task', async () => {
   await open('missing-core');
+  await app.getByRole('tab', { name: '设置', exact: true }).click();
   await evaluate('mockTaskDelayMs = 60000');
   await app.getByCSS('[data-group=maintenance] [data-action=download]').click();
   await expect.poll(() => evaluate('mockDeviceState.locked')).toBe(true);
@@ -15,6 +16,10 @@ test('download progress stays visible after reconnect and cancellation stops the
   await expect.element(app.getByCSS('[data-transfer]')).toMatchTextContent('无新数据');
   await evaluate('mockDeviceState.task.total = 0');
   await expect.element(app.getByCSS('[data-transfer]')).toMatchTextContent('总大小未知');
+  for (const name of ['设置', '日志', '概览']) {
+    await app.getByRole('tab', { name, exact: true }).click();
+    await expect.element(app.getByRole('button', { name: '取消任务', exact: true })).toBeEnabled();
+  }
   await app.getByRole('button', { name: '取消任务', exact: true }).click();
   await expect.poll(() => evaluate('mockDeviceState.task.state')).toBe('cancelled');
   expect(evaluate('mockDeviceState.core')).toBe(false);

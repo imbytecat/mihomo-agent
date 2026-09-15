@@ -19,6 +19,10 @@ func TestCommandsValidateArgumentsBeforeDeviceAccess(t *testing.T) {
 		{"task", "start"}, {"start", "--wait"}, {"self-update", "unexpected"},
 		{"logs", "unexpected"}, {"diagnose", "unexpected"}, {"version", "unexpected"},
 		{"job-log", "id", "unexpected"},
+		{"network-state"}, {"network-state", "unknown", "2026", "9000", "0x40000000"},
+		{"network-state", "table-empty", "-1", "9000", "0x40000000"},
+		{"network-state", "table-empty", "2026", "0", "0x40000000"},
+		{"network-state", "table-empty", "2026", "9000", "4294967296"},
 		{"install", "--unknown"}, {"install", "--core", "/usr/bin/mihomo"}, {"unit"}, {"unknown"},
 	} {
 		cmd := New("test")

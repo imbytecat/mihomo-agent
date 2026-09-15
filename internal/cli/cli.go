@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/imbytecat/mihomoctl/internal/manager"
@@ -51,6 +52,25 @@ func New(version string) *cobra.Command {
 	}
 	command.AddCommand(&cobra.Command{Use: "version", Short: "Print version and protocol as JSON", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{"version": version, "protocol": manager.Protocol})
+	}})
+	command.AddCommand(&cobra.Command{Use: "network-state FIELD TABLE PRIORITY MARK", Hidden: true, Args: cobra.ExactArgs(4), RunE: func(cmd *cobra.Command, args []string) error {
+		var numbers [3]uint64
+		for i, value := range args[1:] {
+			bits := 31
+			if i == 2 {
+				bits = 32
+			}
+			number, err := strconv.ParseUint(value, 0, bits)
+			if err != nil || number == 0 {
+				return fmt.Errorf("无效网络检查参数：%s", value)
+			}
+			numbers[i] = number
+		}
+		result, err := platform.NetworkState(args[0], int(numbers[0]), int(numbers[1]), uint32(numbers[2]))
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 	}})
 	type commandEntry struct {
 		use, short string

@@ -11,9 +11,11 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/prometheus/procfs v0.22.0
 	github.com/spf13/cobra v1.10.2
+	github.com/vishvananda/netlink v1.3.1
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.59.0
+	golang.org/x/sys v0.48.0
 	modernc.org/sqlite v1.58.0
 )
 
@@ -25,7 +27,7 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	golang.org/x/sys v0.48.0 // indirect
+	github.com/vishvananda/netns v0.0.5 // indirect
 	golang.org/x/tools v0.50.0 // indirect
 	modernc.org/cc/v4 v4.29.7 // indirect
 	modernc.org/libc v1.75.6 // indirect
