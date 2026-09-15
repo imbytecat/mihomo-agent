@@ -1,6 +1,6 @@
 CREATE TABLE identity (singleton INTEGER PRIMARY KEY CHECK(singleton=1), protocol INTEGER NOT NULL, public_key BLOB NOT NULL CHECK(length(public_key)=32), private_key BLOB NOT NULL CHECK(length(private_key)=32));
 CREATE TABLE deployment (singleton INTEGER PRIMARY KEY CHECK(singleton=1), kind TEXT NOT NULL, unit TEXT NOT NULL, listen_address TEXT NOT NULL);
-CREATE TABLE settings (singleton INTEGER PRIMARY KEY CHECK(singleton=1), installed BOOLEAN NOT NULL DEFAULT 0, interfaces TEXT NOT NULL DEFAULT '', latest_task TEXT REFERENCES tasks(id));
+CREATE TABLE settings (singleton INTEGER PRIMARY KEY CHECK(singleton=1), installed BOOLEAN NOT NULL DEFAULT 0, interfaces TEXT NOT NULL DEFAULT '', release_proxy TEXT NOT NULL DEFAULT '', latest_task TEXT REFERENCES tasks(id));
 CREATE TABLE controller (singleton INTEGER PRIMARY KEY CHECK(singleton=1), enabled BOOLEAN NOT NULL, port INTEGER NOT NULL, secret TEXT NOT NULL);
 CREATE TABLE tasks (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, action TEXT NOT NULL, state TEXT NOT NULL, phase TEXT NOT NULL, updated TEXT NOT NULL, result TEXT NOT NULL, error TEXT NOT NULL, hash TEXT NOT NULL, fingerprint TEXT NOT NULL, request BLOB);
 CREATE INDEX tasks_state ON tasks(state);
@@ -9,4 +9,4 @@ CREATE TABLE pending (singleton INTEGER PRIMARY KEY CHECK(singleton=1), previous
 CREATE TABLE dashboards (id TEXT PRIMARY KEY, version TEXT NOT NULL);
 CREATE TABLE core_version (singleton INTEGER PRIMARY KEY CHECK(singleton=1), identity TEXT NOT NULL, version TEXT NOT NULL);
 CREATE TABLE update_checks (singleton INTEGER PRIMARY KEY CHECK(singleton=1), checked_at TEXT NOT NULL, self_current TEXT NOT NULL, self_latest TEXT NOT NULL, self_state TEXT NOT NULL, self_error TEXT NOT NULL, core_current TEXT NOT NULL, core_latest TEXT NOT NULL, core_state TEXT NOT NULL, core_error TEXT NOT NULL, dashboard_current TEXT NOT NULL, dashboard_latest TEXT NOT NULL, dashboard_state TEXT NOT NULL, dashboard_error TEXT NOT NULL);
-PRAGMA user_version=4;
+PRAGMA user_version=5;

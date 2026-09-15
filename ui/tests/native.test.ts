@@ -67,11 +67,12 @@ test('sealed browser intents run in a detached native worker; failed updates pre
       );
       return JSON.parse(stdout);
     }
-    await cli('install');
+    await cli('install', '--release-proxy', 'https://mirror.example.com/');
     const inspect = () =>
       cli('status').then((value) => parseState(JSON.stringify(value)));
     const initial = await inspect();
     expect(initial.service).toBe(true);
+    expect(initial.settings.releaseProxy).toBe('https://mirror.example.com');
     expect(initial.publicKey).toHaveLength(44);
     const submit = async (action: TaskAction, params: TaskParams) => {
       const id = taskID();
@@ -95,11 +96,14 @@ test('sealed browser intents run in a detached native worker; failed updates pre
       }
       throw new Error('Worker did not finish');
     };
+    expect((await submit('save-release-proxy', { releaseProxy: 'https://forward.example.com/' })).state).toBe('succeeded');
+    expect((await inspect()).settings.releaseProxy).toBe('https://forward.example.com');
     expect(
       (await submit('save-interfaces', { interfaces: 'wlan0' }))
         .state,
     ).toBe('succeeded');
     expect((await inspect()).settings.interfaces).toEqual(['wlan0']);
+    expect((await inspect()).settings.releaseProxy).toBe('https://forward.example.com');
     // Fake only mihomo validation; real Go performs HTTP, YAML, storage and job lifecycle.
     await writeFile(
       join(root, 'runtime/mihomo'),

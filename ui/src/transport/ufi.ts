@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { rootShell, uploadFile } from '@imbytecat/ufi-sdk';
 import { createUfiHostClient, hostFetch } from '@imbytecat/ufi-sdk/host';
 import bootstrapScript from './ufi-bootstrap.sh?raw';
+import { releaseProxy, releaseURL } from '../config';
 import {
   emptyState,
   protocol,
@@ -262,17 +263,18 @@ const agentReleaseSchema = z.object({
     }),
   ),
 });
-export async function latestAgentAssets() {
+export async function latestAgentAssets(proxy = '') {
   const address =
     'https://api.github.com/repos/imbytecat/mihomoctl/releases/latest';
+  const target = releaseURL(proxy, address);
   const context = {
     step: '检查 mihomoctl 最新版本',
-    target: address,
+    target,
     hint: '检查浏览器能否访问 GitHub API，以及网络和跨域请求是否可用。',
   };
   const release = await requestJSON(
-    address,
-    { credentials: 'omit', signal: AbortSignal.timeout(30_000) },
+    target,
+    { credentials: 'omit', redirect: proxy ? 'error' : 'follow', signal: AbortSignal.timeout(30_000) },
     context,
     agentReleaseSchema,
     hostFetch,
@@ -286,13 +288,14 @@ export async function latestAgentAssets() {
       !/^sha256:[a-f0-9]{64}$/i.test(value.digest || '')
     )
       throw requestFailure(context, `官方版本缺少 ${arch} 文件或有效 SHA-256`);
-    return { url, sha256: value.digest!.slice(7).toLowerCase() };
+    return { url: releaseURL(proxy, url), sha256: value.digest!.slice(7).toLowerCase() };
   };
   return { arm64: asset('arm64'), armv7: asset('armv7') };
 }
 
-export async function bootstrapAgent() {
-  const assets = await latestAgentAssets();
+export async function bootstrapAgent(value = '') {
+  const proxy = releaseProxy(value);
+  const assets = await latestAgentAssets(proxy);
   await sodium.ready;
   const id = taskID();
   const data = sodium.from_string(bootstrapScript);
@@ -313,7 +316,7 @@ export async function bootstrapAgent() {
     hash=$(sha256sum ${folder}/bootstrap.sh)
     [ "\${hash%% *}" = ${quote(hash)} ] || { echo '安装脚本校验失败'; exit 1; }
     rm -f ${quote(source)}
-    sh ${folder}/bootstrap.sh submit ${quote(id)} ${quote(asset64.url)} ${quote(asset64.sha256)} ${quote(asset7.url)} ${quote(asset7.sha256)} ${protocol}
+    sh ${folder}/bootstrap.sh submit ${quote(id)} ${quote(asset64.url)} ${quote(asset64.sha256)} ${quote(asset7.url)} ${quote(asset7.sha256)} ${protocol} ${quote(proxy)}
   `);
   return parseJob(JSON.parse(result));
 }

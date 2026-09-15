@@ -18,7 +18,11 @@ import (
 	"github.com/imbytecat/mihomoctl/internal/storage"
 )
 
-func (a *Manager) Install() error {
+func (a *Manager) Install(releaseProxy string) error {
+	releaseProxy, err := download.ForwardOrigin(releaseProxy)
+	if err != nil {
+		return err
+	}
 	if err := a.initIdentity(); err != nil {
 		return err
 	}
@@ -29,6 +33,14 @@ func (a *Manager) Install() error {
 	defer lock.Close()
 	if a.running() {
 		return errors.New("请先停止代理")
+	}
+	settings, err := a.settings()
+	if err != nil {
+		return err
+	}
+	settings.ReleaseProxy = releaseProxy
+	if err := a.store.SaveSettings(settings); err != nil {
+		return err
 	}
 	self, err := os.Executable()
 	if err != nil {
@@ -89,6 +101,18 @@ func (a *Manager) execute(ctx context.Context, request Request, phase func(strin
 	}
 	defer os.RemoveAll(work)
 	switch request.Action {
+	case "save-release-proxy":
+		phase("saving")
+		proxy, err := download.ForwardOrigin(*params.ReleaseProxy)
+		if err != nil {
+			return "", err
+		}
+		settings, err := a.settings()
+		if err != nil {
+			return "", err
+		}
+		settings.ReleaseProxy = proxy
+		return "发行转发设置已保存", a.store.SaveSettings(settings)
 	case "save-interfaces":
 		phase("saving")
 		if a.running() {
@@ -197,7 +221,7 @@ func (a *Manager) downloadCore(ctx context.Context, work string, phase func(stri
 	}
 	phase("download")
 	archive := filepath.Join(work, "core.gz")
-	if err := a.fetch(ctx, address, archive, 64<<20); err != nil {
+	if err := a.fetchRelease(ctx, address, archive, 64<<20); err != nil {
 		return "", err
 	}
 	phase("verify")

@@ -20,7 +20,7 @@ import (
 func New(version string) *cobra.Command {
 	var root string
 	var config platform.Config
-	var uploads, input, id string
+	var uploads, input, id, releaseProxy string
 	var noWait bool
 	command := &cobra.Command{Use: "mihomoctl", Short: "Manage Mihomo independently of its user interface", Version: version, SilenceUsage: true, SilenceErrors: true}
 	command.PersistentFlags().StringVar(&root, "root", "", "State directory (platform default when omitted)")
@@ -60,7 +60,7 @@ func New(version string) *cobra.Command {
 	}
 	entries := []commandEntry{
 		{"install", "Initialize this platform deployment", cobra.NoArgs, false, func(_ *cobra.Command, m *manager.Manager, _ []string) (any, error) {
-			return map[string]any{"ok": true, "executable": m.Executable}, m.Install()
+			return map[string]any{"ok": true, "executable": m.Executable}, m.Install(releaseProxy)
 		}},
 		{"status", "Print platform, capabilities and runtime state", cobra.NoArgs, false, func(_ *cobra.Command, m *manager.Manager, _ []string) (any, error) { return m.Inspect() }},
 		{"check-updates", "Check official component releases and cache the comparison", cobra.NoArgs, false, func(cmd *cobra.Command, m *manager.Manager, _ []string) (any, error) {
@@ -91,6 +91,7 @@ func New(version string) *cobra.Command {
 		{"supervise", "Run the UFI runtime supervisor", cobra.NoArgs, true, func(_ *cobra.Command, m *manager.Manager, _ []string) (any, error) { return nil, m.Supervise() }},
 	}
 	operations := map[string]string{
+		"save-release-proxy": "Save the public release forwarding origin",
 		"download":           "Install or update the Mihomo core",
 		"download-dashboard": "Install or update Zashboard",
 		"update":             "Fetch and apply the subscription configuration",
@@ -154,6 +155,7 @@ func New(version string) *cobra.Command {
 		}}
 		switch child.Name() {
 		case "install":
+			child.Flags().StringVar(&releaseProxy, "release-proxy", "", "Public HTTPS origin hosting netnr/workers cors.js (empty: direct)")
 			child.Flags().StringVar(&config.Unit, "unit", "", "Service name (Linux)")
 			child.Flags().StringVar(&config.ListenAddress, "listen-address", "", "Local IPv4 listen address (Linux; loopback by default)")
 		case "submit":

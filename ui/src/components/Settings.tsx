@@ -208,6 +208,51 @@ function Installation({
         </h3>
         <ActionButton model={model} action="check-updates" label="检查更新" />
       </div>
+      <div className="ufi:border-0 ufi:border-b ufi:border-solid ufi:border-[var(--mh-line)] ufi:p-4">
+        <div className="ufi:mb-2.5 ufi:flex ufi:items-center ufi:justify-between ufi:gap-2">
+          <label htmlFor="ufi-release-proxy">发行转发地址</label>
+          <a
+            href="https://github.com/netnr/workers"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`ufi:text-xs ufi:text-[#0a84ff] ufi:no-underline ${focus}`}
+          >
+            自行部署
+          </a>
+        </div>
+        <Input
+          id="ufi-release-proxy"
+          data-release-proxy
+          type="text"
+          inputMode="url"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="https://mirror.example.com"
+          disabled={!device}
+          {...model.form.register('releaseProxy', {
+            validate: (value) => model.validate('releaseProxy', value),
+          })}
+          aria-invalid={!!model.form.formState.errors.releaseProxy}
+          aria-describedby="ufi-release-proxy-help"
+        />
+        <Hint id="ufi-release-proxy-help" error={!!model.form.formState.errors.releaseProxy}>
+          {model.form.formState.errors.releaseProxy?.message ||
+            (device?.service
+              ? model.values.releaseProxy !== device.settings.releaseProxy
+                ? '地址待保存；留空恢复直连 GitHub。'
+                : '用于检查更新和下载组件；留空直连 GitHub。'
+              : '留空直连 GitHub；自定义地址将在安装时保存到设备。')}
+        </Hint>
+        {device?.service && (
+          <ActionButton
+            model={model}
+            action="save-release-proxy"
+            label="保存转发设置"
+            icon={Check}
+            extraReason={model.values.releaseProxy === device.settings.releaseProxy ? '设置未改变' : ''}
+          />
+        )}
+      </div>
       {model.updates && (
         <p
           data-update-checked

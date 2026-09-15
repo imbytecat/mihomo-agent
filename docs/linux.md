@@ -23,6 +23,10 @@ sudo ./mihomoctl-linux-amd64 --root /opt/mihomoctl install \
 
 自定义目录安装后，后续命令也传同一个 `--root`。下载会按架构选择官方 Linux 资产；AMD64 使用兼容版，不要求新 CPU 指令集。内核和 mihomoctl 更新均需先执行 `stop`，成功后用 `start` 启动。
 
+如需发行转发，可在安装时加 `--release-proxy https://mirror.example.com`，指向自行部署的 [netnr/workers cors.js](https://github.com/netnr/workers)。安装后使用 `save-release-proxy --input 文件` 保存 `{"releaseProxy":"https://mirror.example.com"}`，空字符串恢复直连。设置保存在设备 SQLite，后台任务和三组件版本检查、下载都会读取；订阅不走转发。入口只接受无路径、参数及凭据的 HTTPS 域名。
+
+当前数据库 schema 为 5、协议为 7；旧安装须先用原安装目录内的 CLI 卸载，再用新二进制安装，不迁移旧状态。
+
 ## 监听与面板
 
 默认只监听 `127.0.0.1`。LAN 地址必须实际存在于本机接口；地址绑定不等于入口隔离。转发、TPROXY、DNS 接管、IPv6 和故障策略仍需配置系统网络和防火墙，mihomoctl 不会自动部署这些规则，也不会显示“已接管网络”。`diagnose` 使用系统 `ip` 命令读取网络信息，`logs` 通过 `journalctl` 读取 service 日志。

@@ -17,7 +17,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { subscriptionURL, interfaces } from '../src/config';
+import { subscriptionURL, interfaces, releaseProxy, releaseURL } from '../src/config';
 import { quote, shellCommand, shellResult } from '../src/transport/ufi';
 import {
   disabledReason,
@@ -54,6 +54,14 @@ test('input validation and shell results preserve the trust boundary', async () 
   expect(() => subscriptionURL('file:///etc/passwd')).toThrow();
   expect(() => subscriptionURL('https://example.com/\noutput=/bad')).toThrow();
   expect(subscriptionURL('https://example.com/?key=x')).toContain('key=x');
+  for (const invalid of ['http://mirror.test', 'https://user:pass@mirror.test', 'https://mirror.test/path', 'https://mirror.test/?token=x', 'https://mirror.test/#', 'https://mirror.test/?', 'https://mirror.test/../', 'https://mirror.test\\evil'])
+    expect(() => releaseProxy(invalid)).toThrow();
+  expect(releaseProxy(' https://MIRROR.test/ ')).toBe('https://mirror.test');
+  const upstream = 'https://github.com/o/r/releases/download/v1/a%2Fb?x=a+b&y=x%26y';
+  const forwarded = new URL(releaseURL('https://mirror.test', upstream));
+  expect(decodeURIComponent(forwarded.pathname.slice(1))).toBe(upstream);
+  expect(forwarded.search).toBe('');
+  expect(releaseURL('', upstream)).toBe(upstream);
   const value = "a'b ! \\! $(printf injected) `printf injected`\n中文";
   const proc = spawnSync(
     'sh',

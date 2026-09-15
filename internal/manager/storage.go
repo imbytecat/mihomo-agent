@@ -16,7 +16,7 @@ import (
 	"github.com/imbytecat/mihomoctl/internal/storage"
 )
 
-const Protocol = 6
+const Protocol = 7
 
 type Manager struct {
 	Root, Version, Executable string

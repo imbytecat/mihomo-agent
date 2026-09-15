@@ -15,9 +15,10 @@ type ControllerInput struct {
 	Reset   bool    `json:"reset,omitempty"`
 }
 type Params struct {
-	URL        string           `json:"url,omitempty"`
-	Interfaces *string          `json:"interfaces,omitempty"`
-	Controller *ControllerInput `json:"controller,omitempty"`
+	ReleaseProxy *string          `json:"releaseProxy,omitempty"`
+	URL          string           `json:"url,omitempty"`
+	Interfaces   *string          `json:"interfaces,omitempty"`
+	Controller   *ControllerInput `json:"controller,omitempty"`
 }
 type Request struct {
 	ID     string `json:"id"`
@@ -54,8 +55,13 @@ func (r Request) validate(provided map[string]bool) error {
 		return errors.New("无效任务 ID")
 	}
 	p := r.Params
-	allowInterfaces, allowURL, allowController := false, false, false
+	allowInterfaces, allowURL, allowController, allowProxy := false, false, false, false
 	switch r.Action {
+	case "save-release-proxy":
+		allowProxy = true
+		if p.ReleaseProxy == nil {
+			return errors.New("缺少发行转发参数")
+		}
 	case "save-interfaces":
 		allowInterfaces = true
 		if p.Interfaces == nil {
@@ -74,7 +80,7 @@ func (r Request) validate(provided map[string]bool) error {
 	default:
 		return errors.New("未知设备操作")
 	}
-	if (provided["interfaces"] || p.Interfaces != nil) && !allowInterfaces || (provided["url"] || p.URL != "") && !allowURL || (provided["controller"] || p.Controller != nil) && !allowController {
+	if (provided["releaseproxy"] || p.ReleaseProxy != nil) && !allowProxy || (provided["interfaces"] || p.Interfaces != nil) && !allowInterfaces || (provided["url"] || p.URL != "") && !allowURL || (provided["controller"] || p.Controller != nil) && !allowController {
 		return errors.New("该操作不接受这些参数")
 	}
 	return nil

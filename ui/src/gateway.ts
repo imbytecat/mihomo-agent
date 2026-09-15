@@ -81,6 +81,7 @@ export function describeTask(job: DeviceJob) {
     'boot-off': '关闭开机启动',
     uninstall: '卸载 Mihomo 服务',
     'save-interfaces': '保存接口',
+    'save-release-proxy': '保存发行转发',
     'save-controller': '应用面板设置',
     'download-dashboard': '安装 / 更新 Zashboard',
   };

@@ -53,7 +53,10 @@ func (r release) asset(repo, name string) (string, string, string, error) {
 }
 
 func (a *Manager) latestRelease(ctx context.Context, owner, repo string) (release, error) {
-	client := a.deviceClient()
+	client, err := a.releaseClient()
+	if err != nil {
+		return release{}, err
+	}
 	defer client.CloseIdleConnections()
 	api, err := github.NewClient(github.WithHTTPClient(client), github.WithUserAgent("mihomoctl/"+a.Version))
 	if err != nil {
@@ -98,7 +101,7 @@ func (a *Manager) updateAgent(ctx context.Context, work string, phase func(strin
 	}
 	phase("download")
 	path := filepath.Join(work, "mihomoctl")
-	if err := a.fetch(ctx, address, path, 32<<20); err != nil {
+	if err := a.fetchRelease(ctx, address, path, 32<<20); err != nil {
 		return "", err
 	}
 	phase("verify")

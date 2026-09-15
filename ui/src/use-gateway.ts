@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import PQueue from 'p-queue';
 import { toast } from 'sonner';
-import { subscriptionURL, interfaces } from './config';
+import { subscriptionURL, interfaces, releaseProxy } from './config';
 import {
   bootstrapAgent,
   checkUpdates,
@@ -24,6 +24,7 @@ import {
 } from './state';
 
 type Fields = {
+  releaseProxy: string;
   subscription: string;
   interfaces: string;
   controlEnabled: boolean;
@@ -33,6 +34,7 @@ type Fields = {
 };
 export type Operation = Exclude<Action, 'save-interfaces' | 'open-dashboard'>;
 const defaults: Fields = {
+  releaseProxy: '',
   subscription: '',
   interfaces: '',
   controlEnabled: true,
@@ -100,6 +102,8 @@ export function useGateway() {
   };
   const refresh = async () => {
     const state = await readState();
+    if (state.agent && !form.getFieldState('releaseProxy').isDirty)
+      form.resetField('releaseProxy', { defaultValue: state.settings.releaseProxy });
     if (state.service) {
       try {
         const value = interfaces(state.settings.interfaces.join(' '));
@@ -264,14 +268,30 @@ export function useGateway() {
         let result = '';
         switch (id) {
           case 'install':
+            if (!state?.agent && !(await form.trigger('releaseProxy')))
+              throw new Error('请检查发行转发地址');
             result = await waitTask(
               !state?.agent
-                ? await bootstrapAgent()
+                ? await bootstrapAgent(snapshot.releaseProxy)
                 : await submitTask('install'),
               observe,
             );
+            if (!state?.agent && form.getValues('releaseProxy') === snapshot.releaseProxy)
+              form.resetField('releaseProxy', { defaultValue: releaseProxy(snapshot.releaseProxy) });
             result = 'Mihomo 服务已安装';
             break;
+          case 'save-release-proxy': {
+            if (!(await form.trigger('releaseProxy')))
+              throw new Error('请检查发行转发地址');
+            const value = releaseProxy(snapshot.releaseProxy);
+            result = await waitTask(
+              await submitTask('save-release-proxy', { releaseProxy: value }),
+              observe,
+            );
+            if (form.getValues('releaseProxy') === snapshot.releaseProxy)
+              form.resetField('releaseProxy', { defaultValue: value });
+            break;
+          }
           case 'stop':
             result = await waitTask(
               state ? await submitTask('stop') : await stopAgent(),
@@ -450,6 +470,7 @@ export function useGateway() {
         form.getValues('subscription').trim() ||
         (
           [
+            'releaseProxy',
             'controlEnabled',
             'controlPort',
             'controlSecret',
@@ -469,10 +490,14 @@ export function useGateway() {
   }, []);
 
   const validate = (
-    name: 'subscription' | 'interfaces' | 'controlPort' | 'controlSecret',
+    name: 'subscription' | 'interfaces' | 'controlPort' | 'controlSecret' | 'releaseProxy',
     value: string,
   ) => {
     try {
+      if (name === 'releaseProxy') {
+        releaseProxy(value);
+        return true;
+      }
       if (name === 'controlPort')
         return (
           (/^\d+$/.test(value) &&

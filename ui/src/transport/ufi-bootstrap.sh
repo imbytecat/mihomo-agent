@@ -53,6 +53,7 @@ trap cleanup EXIT
 trap '' HUP
 state running download
 protocol=$7
+forward=$8
 case "$(getprop ro.product.cpu.abi)" in
   arm64-v8a) address=$3; digest=$4;;
   armeabi-v7a|armeabi) address=$5; digest=$6;;
@@ -64,8 +65,9 @@ for cert in /system/etc/security/cacerts/* /apex/com.android.conscrypt/cacerts/*
   if [ -f "$cert" ]; then cat "$cert"; printf '\n'; fi
 done > "$job/ca.pem"
 set --
-[ ! -s "$job/ca.pem" ] || set -- --cacert "$job/ca.pem"
-"$CURL" -q -fL "$@" --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 300 --max-filesize 33554432 "$address" -o "$job/mihomoctl" || exit 1
+[ -n "$forward" ] || set -- -L
+[ ! -s "$job/ca.pem" ] || set -- "$@" --cacert "$job/ca.pem"
+"$CURL" -q -f "$@" --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 300 --max-filesize 33554432 "$address" -o "$job/mihomoctl" || exit 1
 state running verify
 actual=$(sha256sum "$job/mihomoctl") || exit 1
 [ "${actual%% *}" = "$digest" ] || { echo 'mihomoctl 文件校验失败'; exit 1; }
@@ -74,5 +76,5 @@ case "$protocol" in ''|*[!0-9]*) exit 1;; esac
 info=$("$job/mihomoctl" version) || exit 1
 printf '%s' "$info" | grep -Eq "\"protocol\"[[:space:]]*:[[:space:]]*$protocol([[:space:]]*[,}])" || { echo 'mihomoctl 协议已变化，请更新 UFI 插件'; exit 1; }
 state running installing
-"$job/mihomoctl" --platform ufi install || exit 1
+"$job/mihomoctl" --platform ufi install --release-proxy "$forward" || exit 1
 state succeeded "done"

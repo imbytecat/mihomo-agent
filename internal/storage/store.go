@@ -19,7 +19,7 @@ import (
 
 const Filename = "state.db"
 const Lockfile = "state.lock"
-const schemaVersion = 4
+const schemaVersion = 5
 
 type Store struct {
 	db      *sql.DB
@@ -36,7 +36,8 @@ type Identity struct {
 	Public, Private [32]byte
 }
 type Settings struct {
-	Interfaces []string `json:"interfaces"`
+	Interfaces   []string `json:"interfaces"`
+	ReleaseProxy string   `json:"releaseProxy"`
 }
 type Controller struct {
 	Enabled bool   `json:"enabled"`
@@ -234,10 +235,10 @@ func (s *Store) SetInstalled() error {
 }
 func (s *Store) Settings() (Settings, error) {
 	value, err := s.queries.Settings(context.Background())
-	return Settings{Interfaces: strings.Fields(value)}, err
+	return Settings{Interfaces: strings.Fields(value.Interfaces), ReleaseProxy: value.ReleaseProxy}, err
 }
 func (s *Store) SaveSettings(p Settings) error {
-	return s.queries.SaveSettings(context.Background(), strings.Join(p.Interfaces, " "))
+	return s.queries.SaveSettings(context.Background(), db.SaveSettingsParams{Interfaces: strings.Join(p.Interfaces, " "), ReleaseProxy: p.ReleaseProxy})
 }
 func (s *Store) Controller() (Controller, error) {
 	value, err := s.queries.Controller(context.Background())

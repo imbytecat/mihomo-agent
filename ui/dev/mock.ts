@@ -104,6 +104,7 @@ function advance() {
       case 'bootstrap':
       case 'install':
         state.agent = state.service = true;
+        if (intent.action === 'bootstrap') state.settings.releaseProxy = intent.params.releaseProxy || '';
         state.version = 'v9.8.7';
         state.controller = { enabled: true, port: 9090, applied: false };
         job.result = 'Mihomo 服务已安装';
@@ -111,6 +112,10 @@ function advance() {
       case 'self-update':
         state.version = 'v9.8.7';
         job.result = 'mihomoctl 已是最新版本';
+        break;
+      case 'save-release-proxy':
+        state.settings.releaseProxy = intent.params.releaseProxy || '';
+        job.result = '发行转发设置已保存';
         break;
       case 'save-interfaces':
         state.settings.interfaces =
@@ -331,7 +336,7 @@ Object.assign(globalThis, {
         result = submit({
           id: args[at + 1]!,
           action: 'bootstrap',
-          params: {},
+          params: { releaseProxy: args[at + 7] || '' },
         });
       } else if (inner.includes('bootstrap.sh'))
         result = state.task?.action === 'bootstrap' ? state.task : null;
@@ -352,13 +357,15 @@ const mockFetch = async (
   input: Parameters<typeof fetch>[0],
   init?: Parameters<typeof fetch>[1],
 ) => {
-  const url =
+  let url =
     typeof input === 'string'
       ? input
       : input instanceof URL
         ? input.href
         : input.url;
   requests.push(url);
+  if (new URL(url, location.href).hostname === 'mirror.example.com')
+    url = decodeURIComponent(new URL(url).pathname.slice(1));
   if (url === 'https://api.github.com/repos/imbytecat/mihomoctl/releases/latest') {
     const headers = new Headers(input instanceof Request ? input.headers : init?.headers);
     if (['authorization', 'kano-t', 'kano-sign'].some((name) => headers.has(name)))

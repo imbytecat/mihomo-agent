@@ -117,7 +117,7 @@ func (a *Manager) downloadDashboard(ctx context.Context, request Request, work s
 	}
 	phase("download")
 	archive := filepath.Join(work, "dashboard.zip")
-	if err := a.fetch(ctx, address, archive, 16<<20); err != nil {
+	if err := a.fetchRelease(ctx, address, archive, 16<<20); err != nil {
 		return "", err
 	}
 	phase("verify")

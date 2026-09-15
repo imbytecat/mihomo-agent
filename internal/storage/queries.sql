@@ -15,9 +15,9 @@ SELECT installed FROM settings WHERE singleton=1;
 -- name: SetInstalled :exec
 UPDATE settings SET installed=1 WHERE singleton=1;
 -- name: Settings :one
-SELECT interfaces FROM settings WHERE singleton=1;
+SELECT interfaces,release_proxy FROM settings WHERE singleton=1;
 -- name: SaveSettings :exec
-UPDATE settings SET interfaces=? WHERE singleton=1;
+UPDATE settings SET interfaces=?,release_proxy=? WHERE singleton=1;
 -- name: Controller :one
 SELECT enabled,port,secret FROM controller WHERE singleton=1;
 -- name: SaveController :exec

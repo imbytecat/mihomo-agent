@@ -58,7 +58,7 @@
 ## 发布
 
 - 使用 mise 的官方 Go 与 GoReleaser；构建环境、架构、资产及校验以 .goreleaser.yaml 为准，工具版本以 mise.toml 为准。just snapshot 用于预览，just release 从当前 Git 标签构建且不上传；Release workflow 完成检查后发布，已有标签和资产不可覆盖。
-- 发行查询与组件下载使用 GitHub 官方 API 和 Release 地址；浏览器发行请求省略凭据并要求 CORS。执行前校验摘要和协议，后续 Agent 更新统一走 Manager，不用前端引导覆盖已有安装。
+- 发行来源仍校验 GitHub 官方 API 和 Release 地址；可选 releaseProxy 使用 netnr/workers cors.js 的 `/encodeURIComponent(完整 URL)` 协议，入口只接受公开 HTTPS origin。浏览器初装、设备引导及三组件请求共用此设置，安装后持久化 SQLite；订阅与 UFI 私有通信独立。浏览器省略凭据，转发由服务端完成重定向；Go 专用发行客户端负责映射，普通下载客户端不转发。保留摘要、大小与协议校验，README 明确同源摘要的信任边界；后续 Agent 更新统一走 Manager。
 - 发布前通过 Check 和 Release CI；从公开地址下载所有资产，校验 SHA256SUMS 并与本地构建对比。插件保持单 JS，不增加 CDN / WASM 请求。
 - 项目与 Go module 统一命名为 mihomoctl；UFI 插件资产为 mihomoctl-ufi.js。只维护当前名称、目录和协议，不提供历史别名或状态迁移。
 

@@ -29,7 +29,7 @@ flowchart TD
 - **ctl 负责完整操作**：本地 CLI 与 UFI 请求进入同一个 Manager。任务接收后写入 SQLite，并启动独立的 `mihomoctl worker`，由它完成下载、校验、配置切换、重启验证与失败回滚。终端或页面关闭不会取消已接收任务；重新连接后查询原任务。worker 执行结束便退出，进程意外中断会标记任务中断，不会自动重放请求。
 - **平台负责持续运行**：Linux 的 systemd service 直接运行 Mihomo，短期 worker 通过 systemd scope 托管；Android 上的 `mihomoctl supervise` 持续守护 Mihomo 并同步共享网络规则。自启分别交给 systemd 和 UFI 自启机制。CLI 命令退出后，内核仍能继续运行。
 
-发行查询与组件下载直接访问 GitHub 官方 API 和 Release 地址；订阅由设备访问用户提供的地址。
+发行查询与组件下载默认直连 GitHub；可配置自建转发服务。订阅由设备访问用户提供的地址。
 
 ## UFI 安装
 
@@ -39,6 +39,10 @@ flowchart TD
 2. 下载 `mihomoctl-ufi.js`，在 UFI 插件管理导入、保存并刷新。
 3. 安装 mihomoctl / 服务和内核，粘贴完整 YAML 订阅，点击「保存并更新」。
 4. 启动代理，确认客户端能正常上网后再开启自启；需要控制面板时安装 Zashboard。
+
+GitHub 连接不佳时，可自行部署 [netnr/workers 的 cors.js](https://github.com/netnr/workers)，在「设置 → 安装与更新 → 发行转发地址」填写 HTTPS 域名，例如 `https://mirror.example.com`，不附路径、参数或口令。首次安装直接使用所填地址并保存到设备；安装后修改需点击「保存转发设置」，留空恢复直连。初装、三组件版本检查与下载共用设置，订阅和 UFI 通信不经过转发。请使用自己部署或信任的服务；同一服务提供的文件与摘要不是独立来源证明。
+
+当前协议为 7、数据库 schema 为 5。旧安装请先用原插件或原 CLI 卸载，再导入新插件并安装；不提供旧状态迁移。
 
 ## Linux 安装
 
@@ -82,6 +86,7 @@ ctl=/var/lib/mihomoctl/mihomoctl
 | 关闭自启 | `boot-off` |
 | 安装或更新 Zashboard | `download-dashboard` |
 | 检查 mihomoctl / 内核 / 面板更新 | `check-updates` |
+| 保存发行转发地址 | `save-release-proxy --input 文件`，JSON：`{"releaseProxy":"https://mirror.example.com"}`；空字符串恢复直连 |
 | 查看日志 / 网络诊断 | `logs` / `diagnose` |
 | 卸载 mihomoctl、内核及全部数据 | `uninstall` |
 

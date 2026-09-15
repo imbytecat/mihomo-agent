@@ -1,11 +1,12 @@
 import { z } from 'zod';
 
-export const protocol = 6;
+export const protocol = 7;
 const capabilitiesSchema = z.object({
   interfaces: z.boolean(),
   capture: z.boolean(),
 });
 export type TaskParams = {
+  releaseProxy?: string;
   url?: string;
   interfaces?: string;
   controller?: {
@@ -30,6 +31,7 @@ export const jobSchema = z.object({
     'boot-on',
     'boot-off',
     'uninstall',
+    'save-release-proxy',
     'save-interfaces',
     'save-controller',
     'download-dashboard',
@@ -81,6 +83,7 @@ const stateSchema = z.object({
   capture: z.boolean(),
   coreVersion: z.string(),
   settings: z.object({
+    releaseProxy: z.string(),
     interfaces: z.array(z.string()),
   }),
   task: jobSchema.nullable(),
@@ -122,7 +125,7 @@ export const emptyState: DeviceState = {
   },
   version: '',
   publicKey: '',
-  settings: { interfaces: [] },
+  settings: { interfaces: [], releaseProxy: '' },
   task: null,
   updates: null,
   controller: null,
@@ -211,6 +214,7 @@ export function disabledReason(
         : '';
   if (!state.service) return '请先安装 Mihomo 服务';
   if (
+    action === 'save-release-proxy' ||
     action === 'save-controller' ||
     action === 'download-dashboard' ||
     action === 'view-secret'

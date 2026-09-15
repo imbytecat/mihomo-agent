@@ -20,8 +20,32 @@ func (a *Manager) deviceClient() *http.Client {
 	return client
 }
 
+func (a *Manager) releaseClient() (*http.Client, error) {
+	settings, err := a.settings()
+	if err != nil {
+		return nil, err
+	}
+	client := a.deviceClient()
+	if err := download.Forward(client, settings.ReleaseProxy); err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
+func (a *Manager) fetchRelease(ctx context.Context, address, destination string, max int64) error {
+	client, err := a.releaseClient()
+	if err != nil {
+		return err
+	}
+	return a.fetchWithClient(ctx, client, address, destination, max)
+}
+
 // Every outbound request is made by the device. TLS remains verified on DNS fallback.
 func (a *Manager) fetch(ctx context.Context, address, destination string, max int64) error {
+	return a.fetchWithClient(ctx, a.deviceClient(), address, destination, max)
+}
+func (a *Manager) fetchWithClient(ctx context.Context, client *http.Client, address, destination string, max int64) error {
+	defer client.CloseIdleConnections()
 	parsed, err := url.Parse(address)
 	if err != nil {
 		return errors.New("下载地址无效")
@@ -31,8 +55,6 @@ func (a *Manager) fetch(ctx context.Context, address, destination string, max in
 		return errors.New("下载地址无效")
 	}
 	request.Header.Set("User-Agent", "mihomoctl/"+a.Version)
-	client := a.deviceClient()
-	defer client.CloseIdleConnections()
 	response, err := client.Do(request)
 	if err != nil {
 		return fmt.Errorf("设备访问 %s 失败：%w", parsed.Hostname(), download.Cause(err))

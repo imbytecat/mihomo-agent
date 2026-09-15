@@ -67,6 +67,10 @@ func (a *Manager) Inspect() (Status, error) {
 		return status, err
 	}
 	status.Running, status.Supervisor, status.Listeners, status.Network, status.Capture, status.Boot = state.Running, state.Supervisor, state.Listeners, state.Network, state.Capture, state.Boot
+	status.Settings, err = a.settings()
+	if err != nil {
+		return status, err
+	}
 	if status.Service {
 		control, e := a.controller()
 		if e != nil {
@@ -75,10 +79,6 @@ func (a *Manager) Inspect() (Status, error) {
 		config, _ := a.configuration()
 		status.Controller = &ControllerStatus{Enabled: control.Enabled, Port: control.Port, Applied: config.Controller != nil}
 		status.Dashboard = a.dashboard()
-		status.Settings, err = a.settings()
-		if err != nil {
-			return status, err
-		}
 	}
 	if status.Settings.Interfaces == nil {
 		status.Settings.Interfaces = []string{}

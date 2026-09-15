@@ -31,7 +31,7 @@ func TestOldProtocolIsRejectedWithoutMigration(t *testing.T) {
 	if _, err := a.Submit(Request{Action: "stop"}); err == nil {
 		t.Fatal("accepted task for old protocol")
 	}
-	if err := a.Install(); err == nil {
+	if err := a.Install(""); err == nil {
 		t.Fatal("installed over old protocol")
 	}
 	if identity, err := a.store.Identity(); err != nil || identity.Protocol != Protocol-1 {
@@ -78,6 +78,9 @@ func TestWorkerGateAndTypedRequests(t *testing.T) {
 		`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","action":"stop","params":{"URL":""}}`,
 		`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","action":"stop","params":{"interfaces":null}}`,
 		`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","action":"stop","params":{"controller":null}}`,
+		`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","action":"stop","params":{"releaseProxy":""}}`,
+		`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","action":"stop","params":{"releaseProxy":null}}`,
+		`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","action":"save-release-proxy","params":{}}`,
 		`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","action":"save-controller","params":{"controller":{"enabled":true,"port":9090,"unknown":1}}}`,
 	} {
 		if _, err := DecodeRequest([]byte(data)); err == nil {

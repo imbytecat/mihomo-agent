@@ -33,3 +33,22 @@ export function subscriptionURL(value: string): string {
     throw new Error('订阅必须是无认证的 HTTP(S) 链接');
   return url.href;
 }
+
+export function releaseProxy(value: string): string {
+  value = value.trim();
+  if (!value) return '';
+  const message = '填写 HTTPS 域名，不含路径、参数或凭据';
+  if (value.length > 2048 || !/^https:\/\/[^/?#\\\s@%]+\/?$/.test(value))
+    throw new Error(message);
+  try {
+    return new URL(value).origin;
+  } catch {
+    throw new Error(message);
+  }
+}
+
+// cors.js decodes the path once; encode the entire upstream URL, including %.
+export function releaseURL(origin: string, address: string): string {
+  const proxy = releaseProxy(origin);
+  return proxy ? `${proxy}/${encodeURIComponent(address)}` : address;
+}

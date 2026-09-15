@@ -62,7 +62,7 @@ test('bootstrap verifies bytes before execution and reports failures without los
     marker = join(base, 'executed'),
     curl = join(base, 'curl');
   const script = join(job, 'bootstrap.sh');
-  const binary = `#!/bin/sh\nif [ "$1" = version ]; then printf '{"protocol":${protocol}}'; exit 0; fi\nprintf verified > "$UFI_TEST_EXEC_MARK"\n`;
+  const binary = `#!/bin/sh\nif [ "$1" = version ]; then printf '{"protocol":${protocol}}'; exit 0; fi\nprintf verified > "$UFI_TEST_EXEC_MARK"\nprintf '%s\\n' "$@" > "$UFI_TEST_INSTALL_ARGS"\n`;
   await writeFile(fixture, binary);
   await writeFile(
     curl,
@@ -77,7 +77,7 @@ test('bootstrap verifies bytes before execution and reports failures without los
     )
     .replace('umask 077', 'getprop() { echo arm64-v8a; }\numask 077');
   await writeFile(script, source);
-  async function run(mode: string, digest = '', expectedProtocol = protocol) {
+  async function run(mode: string, digest = '', expectedProtocol = protocol, proxy = '') {
     const child = spawnSync(
       'sh',
       [
@@ -89,6 +89,7 @@ test('bootstrap verifies bytes before execution and reports failures without los
         '',
         '',
         String(expectedProtocol),
+        proxy,
       ],
       {
         env: {
@@ -96,6 +97,7 @@ test('bootstrap verifies bytes before execution and reports failures without los
           UFI_TEST_FIXTURE: fixture,
           UFI_TEST_CURL_ARGS: join(base, 'curl-args'),
           UFI_TEST_EXEC_MARK: marker,
+          UFI_TEST_INSTALL_ARGS: join(base, 'install-args'),
         },
         encoding: 'utf8',
         timeout: 10_000,
@@ -118,6 +120,9 @@ test('bootstrap verifies bytes before execution and reports failures without los
     expect(await readFile(join(base, 'curl-args'), 'utf8')).toContain('https://fixture.invalid/mihomoctl');
     expect(JSON.parse((await run('status')).output).state).toBe('succeeded');
     expect(existsSync(join(job, 'mihomoctl'))).toBe(false);
+    expect((await run('worker', digest, protocol, 'https://mirror.example.com')).code).toBe(0);
+    expect(await readFile(join(base, 'install-args'), 'utf8')).toBe('--platform\nufi\ninstall\n--release-proxy\nhttps://mirror.example.com\n');
+    expect((await readFile(join(base, 'curl-args'), 'utf8')).split('\n')).not.toContain('-L');
     const stale = JSON.stringify({
       id,
       action: 'bootstrap',
@@ -158,6 +163,15 @@ test('initial metadata uses official GitHub and rejects malformed releases', asy
   expect(
     (fetch.mock.calls[0]![0] as Request).headers.has('Authorization'),
   ).toBe(false);
+  fetch.mockResolvedValueOnce(Response.json(release));
+  const forwarded = await latestAgentAssets('https://mirror.example.com/');
+  expect((fetch.mock.calls[1]![0] as Request).url).toBe(
+    'https://mirror.example.com/' + encodeURIComponent('https://api.github.com/repos/imbytecat/mihomoctl/releases/latest'),
+  );
+  expect(forwarded.arm64.url).toBe(
+    'https://mirror.example.com/' + encodeURIComponent(release.assets[0]!.browser_download_url),
+  );
+  expect((fetch.mock.calls[1]![0] as Request).redirect).toBe('error');
   fetch.mockResolvedValueOnce(Response.json({ ...release, prerelease: true }));
   await expect(latestAgentAssets()).rejects.toThrow('预期格式');
   release.assets[0]!.digest = '';

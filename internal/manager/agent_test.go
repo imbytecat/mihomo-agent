@@ -78,7 +78,7 @@ func testAgent(t *testing.T) *Manager {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = a.Close() })
-	if err = a.Install(); err != nil {
+	if err = a.Install(""); err != nil {
 		t.Fatal(err)
 	}
 	a.runCommand = func(context.Context, string, ...string) ([]byte, error) {
@@ -188,7 +188,7 @@ func TestUnmanagedDataAndInvalidRequestsArePreserved(t *testing.T) {
 	_ = os.Mkdir(root, 0700)
 	_ = os.WriteFile(filepath.Join(root, "keep"), []byte("data"), 0600)
 	a, _ := testManager(root)
-	if a.Install() == nil {
+	if a.Install("") == nil {
 		t.Fatal("overwrote unmanaged directory")
 	}
 	if data, _ := os.ReadFile(filepath.Join(root, "keep")); string(data) != "data" {
@@ -362,7 +362,7 @@ func TestUninstallPreservesRuntimeOnCleanupFailure(t *testing.T) {
 	if data, _ := os.ReadFile(a.Platform.(*platform.UFIAdapter).BootPath); string(data) != "other-plugin start\n" {
 		t.Fatal("changed another plugin's boot entry")
 	}
-	if err := a.Install(); err != nil {
+	if err := a.Install(""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.execute(context.Background(), Request{ID: randomID(), Action: "install"}, func(string) {}); err == nil {
