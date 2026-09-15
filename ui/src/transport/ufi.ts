@@ -159,8 +159,9 @@ export async function submitTask(action: TaskAction, params: TaskParams = {}) {
         action,
         state: 'running',
         phase: 'removing',
-        updated: '',
+        updated: '', started: new Date().toISOString(),
         hash: sealed.hash,
+        downloaded: 0, total: 0, speed: 0, cancellable: false, cancelRequested: false,
         error: '',
         result: '',
       }).catch(() => null);
@@ -258,6 +259,7 @@ const agentReleaseSchema = z.object({
   assets: z.array(
     z.object({
       name: z.string(),
+      size: z.number().int().positive(),
       browser_download_url: z.string(),
       digest: z.string().nullable().optional(),
     }),
@@ -288,7 +290,7 @@ export async function latestAgentAssets(proxy = '') {
       !/^sha256:[a-f0-9]{64}$/i.test(value.digest || '')
     )
       throw requestFailure(context, `官方版本缺少 ${arch} 文件或有效 SHA-256`);
-    return { url: releaseURL(proxy, url), sha256: value.digest!.slice(7).toLowerCase() };
+    return { url: releaseURL(proxy, url), sha256: value.digest!.slice(7).toLowerCase(), size: value.size };
   };
   return { arm64: asset('arm64'), armv7: asset('armv7') };
 }
@@ -316,11 +318,18 @@ export async function bootstrapAgent(value = '') {
     hash=$(sha256sum ${folder}/bootstrap.sh)
     [ "\${hash%% *}" = ${quote(hash)} ] || { echo '安装脚本校验失败'; exit 1; }
     rm -f ${quote(source)}
-    sh ${folder}/bootstrap.sh submit ${quote(id)} ${quote(asset64.url)} ${quote(asset64.sha256)} ${quote(asset7.url)} ${quote(asset7.sha256)} ${protocol} ${quote(proxy)}
+    sh ${folder}/bootstrap.sh submit ${quote(id)} ${quote(asset64.url)} ${quote(asset64.sha256)} ${quote(asset7.url)} ${quote(asset7.sha256)} ${protocol} ${quote(proxy)} ${asset64.size} ${asset7.size}
   `);
   return parseJob(JSON.parse(result));
 }
 
 export function baseURL() {
   return new URL(KANO_baseURL, location.href).href;
+}
+
+export async function cancelDeviceTask(job: DeviceJob) {
+  if (!/^[a-f0-9]{32}$/.test(job.id)) throw new Error('无效任务 ID');
+  if (job.action === 'bootstrap')
+    return parseJob(JSON.parse(await shell(`sh ${BOOT}/jobs/${job.id}/bootstrap.sh cancel ${job.id}`)));
+  return parseJob(await agent(['cancel', job.id, '--no-wait']));
 }

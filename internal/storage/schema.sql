@@ -2,11 +2,11 @@ CREATE TABLE identity (singleton INTEGER PRIMARY KEY CHECK(singleton=1), protoco
 CREATE TABLE deployment (singleton INTEGER PRIMARY KEY CHECK(singleton=1), kind TEXT NOT NULL, unit TEXT NOT NULL, listen_address TEXT NOT NULL);
 CREATE TABLE settings (singleton INTEGER PRIMARY KEY CHECK(singleton=1), installed BOOLEAN NOT NULL DEFAULT 0, interfaces TEXT NOT NULL DEFAULT '', release_proxy TEXT NOT NULL DEFAULT '', latest_task TEXT REFERENCES tasks(id));
 CREATE TABLE controller (singleton INTEGER PRIMARY KEY CHECK(singleton=1), enabled BOOLEAN NOT NULL, port INTEGER NOT NULL, secret TEXT NOT NULL);
-CREATE TABLE tasks (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, action TEXT NOT NULL, state TEXT NOT NULL, phase TEXT NOT NULL, updated TEXT NOT NULL, result TEXT NOT NULL, error TEXT NOT NULL, hash TEXT NOT NULL, fingerprint TEXT NOT NULL, request BLOB);
+CREATE TABLE tasks (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, action TEXT NOT NULL, state TEXT NOT NULL, phase TEXT NOT NULL, updated TEXT NOT NULL, started TEXT NOT NULL, result TEXT NOT NULL, error TEXT NOT NULL, hash TEXT NOT NULL, fingerprint TEXT NOT NULL, request BLOB, downloaded INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0, speed REAL NOT NULL DEFAULT 0, cancellable BOOLEAN NOT NULL DEFAULT 0, cancel_requested BOOLEAN NOT NULL DEFAULT 0);
 CREATE INDEX tasks_state ON tasks(state);
 CREATE TABLE configurations (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, url TEXT NOT NULL, enabled BOOLEAN NOT NULL, port INTEGER NOT NULL, secret TEXT NOT NULL, dashboard BOOLEAN NOT NULL);
 CREATE TABLE pending (singleton INTEGER PRIMARY KEY CHECK(singleton=1), previous TEXT NOT NULL, next TEXT NOT NULL REFERENCES configurations(id), was_running BOOLEAN NOT NULL);
 CREATE TABLE dashboards (id TEXT PRIMARY KEY, version TEXT NOT NULL);
 CREATE TABLE core_version (singleton INTEGER PRIMARY KEY CHECK(singleton=1), identity TEXT NOT NULL, version TEXT NOT NULL);
 CREATE TABLE update_checks (singleton INTEGER PRIMARY KEY CHECK(singleton=1), checked_at TEXT NOT NULL, self_current TEXT NOT NULL, self_latest TEXT NOT NULL, self_state TEXT NOT NULL, self_error TEXT NOT NULL, core_current TEXT NOT NULL, core_latest TEXT NOT NULL, core_state TEXT NOT NULL, core_error TEXT NOT NULL, dashboard_current TEXT NOT NULL, dashboard_latest TEXT NOT NULL, dashboard_state TEXT NOT NULL, dashboard_error TEXT NOT NULL);
-PRAGMA user_version=5;
+PRAGMA user_version=6;

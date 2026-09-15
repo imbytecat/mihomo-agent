@@ -1,4 +1,4 @@
-import { waitTask, describeTask } from './gateway';
+import { waitTask, describeTask, TaskCancelled } from './gateway';
 import { useEffect, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import PQueue from 'p-queue';
@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { subscriptionURL, interfaces, releaseProxy } from './config';
 import {
   bootstrapAgent,
+  cancelDeviceTask,
   checkUpdates,
   deviceLogs,
   readDeviceState,
@@ -57,6 +58,8 @@ export function useGateway() {
   const [queue] = useState(() => new PQueue({ concurrency: 1 }));
   const [device, setDevice] = useState<DeviceState | null>(null);
   const deviceRef = useRef<DeviceState | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const cancelPending = useRef(false);
   const [busy, setBusy] = useState<Action | null>(null);
   const busyRef = useRef(false);
   const pendingSaves = useRef(0);
@@ -139,6 +142,21 @@ export function useGateway() {
       }
     }
     return state;
+  };
+
+  const cancelTask = async () => {
+    const task = deviceRef.current?.task;
+    if (!task || !task.cancellable || task.cancelRequested || cancelPending.current) return;
+    cancelPending.current = true;
+    setCancelling(true);
+    try {
+      observe(await cancelDeviceTask(task));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error), { toasterId: 'mihomoctl' });
+    } finally {
+      cancelPending.current = false;
+      setCancelling(false);
+    }
   };
 
   const showTask = async () => {
@@ -409,6 +427,11 @@ export function useGateway() {
           );
       });
     } catch (error) {
+      if (error instanceof TaskCancelled) {
+        setDetail(error.message);
+        if (!quiet) toast.message(error.message, notification);
+        return;
+      }
       failed = true;
       const text = error instanceof Error ? error.message : String(error);
       setError(true);
@@ -532,6 +555,8 @@ export function useGateway() {
   };
   return {
     device,
+    cancelling,
+    cancelTask,
     updates: device?.updates ?? null,
     busy,
     form,

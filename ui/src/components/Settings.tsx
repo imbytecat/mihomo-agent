@@ -195,7 +195,7 @@ function Installation({
 }) {
   const { device } = model;
   const task =
-    device?.task && installationTask(device.task.action) ? device.task : null;
+    device?.task && installationTask(device.task.action) && !['queued', 'running'].includes(device.task.state) ? device.task : null;
   const lifecycle = lifecycleAction(device);
   return (
     <section data-group="maintenance" aria-labelledby="ufi-maintenance-heading">

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"syscall"
@@ -98,7 +99,7 @@ func (a *Manager) accept(request Request, sealed []byte) (_ *Job, err error) {
 	if !errors.Is(e, sql.ErrNoRows) {
 		return nil, e
 	}
-	job := &Job{ID: request.ID, Action: request.Action, State: "queued", Phase: "accepted", Hash: digest, Updated: time.Now().UTC().Format(time.RFC3339Nano)}
+	job := &Job{ID: request.ID, Action: request.Action, State: "queued", Phase: "accepted", Hash: digest, Cancellable: cancellableAction(request.Action), Started: time.Now().UTC().Format(time.RFC3339Nano), Updated: time.Now().UTC().Format(time.RFC3339Nano)}
 	if err := a.store.CreateTask(*job, fingerprint, sealed); err != nil {
 		return nil, err
 	}
@@ -214,10 +215,13 @@ func (a *Manager) Worker(id string) (err error) {
 	if job.State != "queued" {
 		return errors.New("任务不能重复执行")
 	}
+	started := time.Now()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil)).With("task", id, "action", job.Action)
 	defer func() {
 		if err != nil {
 			job.State = "failed"
-			job.Error = redact.String(err.Error())
+			job.Error = taskError(err)
+			logger.Error("任务失败", "phase", job.Phase, "error", job.Error, "duration", time.Since(started))
 			_ = a.writeJob(&job)
 		}
 	}()
@@ -238,26 +242,66 @@ func (a *Manager) Worker(id string) (err error) {
 	if err = a.writeJob(&job); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
-	defer cancel()
+	ctx, timeout := context.WithTimeout(context.Background(), 12*time.Minute)
+	defer timeout()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	if job.CancelRequested {
+		cancel(context.Canceled)
+	}
+	if job.Cancellable {
+		done := make(chan struct{})
+		go func(watchCtx context.Context) { defer close(done); a.watchCancellation(watchCtx, id, cancel) }(ctx)
+		defer func() { cancel(nil); <-done }()
+	}
+	ctx = context.WithValue(ctx, taskContextKey{}, taskControl{
+		progress: func(downloaded, total int64, speed float64) error {
+			job.Downloaded, job.Total, job.Speed = int(downloaded), int(total), speed
+			return a.writeJob(&job)
+		},
+		commit: func() error { return a.store.CommitTask(id) },
+	})
 	phase := func(value string) {
 		job.Phase = value
 		_ = a.writeJob(&job)
-		fmt.Println(time.Now().Format(time.RFC3339), value)
+		logger.Info("任务阶段变化", "phase", value)
 	}
 	result, runErr := a.execute(ctx, request, phase)
+	if job.Cancellable {
+		// Close acceptance even on failure so a late cancel cannot be acknowledged
+		// after the terminal outcome has already been chosen.
+		if sealErr := a.store.CommitTask(id); sealErr != nil && runErr == nil {
+			runErr = sealErr
+		}
+	}
 	if request.Action == "uninstall" && runErr == nil {
 		return nil // Never recreate a deleted installation to write a completion record.
 	}
 	if runErr != nil {
 		job.State = "failed"
-		job.Error = redact.String(runErr.Error())
-		fmt.Println(job.Error)
+		current, readErr := a.store.Task(id)
+		if readErr == nil && current.CancelRequested {
+			job.State, job.Phase, job.Result = "cancelled", "cancelled", "任务已取消"
+			runErr = nil
+		}
+		if runErr != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) && errors.Is(runErr, context.DeadlineExceeded) {
+				runErr = errors.New("任务执行超过 12 分钟，已停止；请检查网络或发行转发服务后重试")
+			}
+			job.Error = taskError(runErr)
+		}
+		if runErr != nil {
+			logger.Error("任务失败", "phase", job.Phase, "error", job.Error, "duration", time.Since(started))
+		} else {
+			logger.Info("任务已取消", "phase", job.Phase, "duration", time.Since(started))
+		}
 	} else {
 		job.State = "succeeded"
 		job.Result = result
 		job.Phase = "done"
+		logger.Info("任务已完成", "duration", time.Since(started))
 	}
+	job.Speed = 0
 	if err := a.writeJob(&job); err != nil {
 		return err
 	}

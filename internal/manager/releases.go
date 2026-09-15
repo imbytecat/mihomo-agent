@@ -128,6 +128,9 @@ func (a *Manager) updateAgent(ctx context.Context, work string, phase func(strin
 	if err != nil || !actual.Equal(latest) {
 		return "", errors.New("mihomoctl 版本与发布信息不符")
 	}
+	if err := commitTask(ctx); err != nil {
+		return "", err
+	}
 	phase("installing")
 	// ponytail: keep the verified bytes (at most 32 MiB); stream a verified staging
 	// file if that bound becomes too large. Never reread the probed candidate path.

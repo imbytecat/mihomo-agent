@@ -94,6 +94,11 @@ function advance() {
   if (!pending || Date.now() < pending.end) return;
   const { intent, failure } = pending;
   const job = jobs[intent.id]!;
+  if (job.cancelRequested) {
+    job.state = 'cancelled'; job.phase = 'cancelled'; job.cancellable = false;
+    job.result = '任务已取消'; state.locked = false; state.task = job; pending = null; save(); return;
+  }
+  job.cancellable = false;
   job.state = failure ? 'failed' : 'succeeded';
   job.error = failure;
   job.phase = failure ? 'download' : 'done';
@@ -200,6 +205,14 @@ function advance() {
   pending = null;
   save();
 }
+function cancelJob(id: string) {
+  const job = jobs[id]!;
+  if (!job?.cancellable) throw new Error('任务已进入不可取消阶段');
+  job.cancelRequested = true;
+  if (pending) pending.end = Date.now() + 300;
+  save();
+  return job;
+}
 function submit(intent: Intent, hash = '') {
   if (state.locked) throw new Error('设备任务进行中');
   intents.push(intent);
@@ -209,6 +222,9 @@ function submit(intent: Intent, hash = '') {
     state: 'running',
     phase: 'download',
     hash,
+    started: new Date().toISOString(),
+    downloaded: 0, total: 0, speed: 0,
+    cancellable: ['bootstrap', 'download', 'self-update', 'download-dashboard', 'update'].includes(intent.action), cancelRequested: false,
     result: '',
     error: '',
     updated: new Date().toISOString(),
@@ -271,6 +287,9 @@ Object.assign(globalThis, {
             result = submit(intent, args[3]);
             break;
           }
+          case 'cancel':
+            result = cancelJob(args[2]!);
+            break;
           case 'job':
             result = jobs[args[2]!];
             break;
@@ -331,6 +350,8 @@ Object.assign(globalThis, {
           default:
             throw new Error('未知命令');
         }
+      } else if (args.includes('cancel')) {
+        result = cancelJob(args[args.indexOf('cancel') + 1]!);
       } else if (args.includes('submit')) {
         const at = args.indexOf('submit');
         result = submit({
@@ -379,6 +400,7 @@ const mockFetch = async (
       prerelease: false,
       assets: ['arm64', 'armv7'].map((arch) => ({
         name: `mihomoctl-linux-${arch}`,
+        size: 1048576,
         browser_download_url: `https://github.com/imbytecat/mihomoctl/releases/download/v9.8.7/mihomoctl-linux-${arch}`,
         digest: 'sha256:' + 'a'.repeat(64),
       })),

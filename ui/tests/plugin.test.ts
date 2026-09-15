@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import type { AddressInfo } from 'node:net';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { controllerURL } from '../src/gateway';
+import { controllerURL, describeTask } from '../src/gateway';
 import { afterEach, expect, vi, test } from 'vitest';
 import {
   mkdtemp,
@@ -570,10 +570,14 @@ test('component versions and task placement stay consistent', () => {
     state: 'succeeded',
     phase: 'done',
     updated: '',
-    hash: '',
+    hash: '', started: new Date().toISOString(), downloaded: 0, total: 0, speed: 0, cancellable: false, cancelRequested: false,
   });
   expect(topTask(job)).toBe(false);
-  expect(topTask({ ...job, state: 'running' })).toBe(false);
+  const timed = describeTask({ ...job, started: '2026-09-15T07:51:08Z', updated: '2026-09-15T08:03:08Z', state: 'failed' });
+  expect(timed).toContain('开始时间：');
+  expect(timed).toContain('结束时间：');
+  expect(timed).toContain('耗时：720 秒');
+  expect(topTask({ ...job, state: 'running' })).toBe(true);
   expect(topTask({ ...job, state: 'failed' })).toBe(true);
   expect(topTask({ ...job, action: 'update', state: 'running' })).toBe(true);
   expect(topTask({ ...job, action: 'update' })).toBe(false);

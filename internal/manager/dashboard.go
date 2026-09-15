@@ -133,6 +133,9 @@ func (a *Manager) downloadDashboard(ctx context.Context, request Request, work s
 	if err != nil {
 		return "", err
 	}
+	if err := commitTask(ctx); err != nil {
+		return "", err
+	}
 	if err := a.store.SaveDashboard(request.ID, version); err != nil {
 		return "", err
 	}

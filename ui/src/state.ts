@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const protocol = 7;
+export const protocol = 8;
 const capabilitiesSchema = z.object({
   interfaces: z.boolean(),
   capture: z.boolean(),
@@ -36,12 +36,18 @@ export const jobSchema = z.object({
     'save-controller',
     'download-dashboard',
   ]),
-  state: z.enum(['queued', 'running', 'succeeded', 'failed', 'interrupted']),
+  state: z.enum(['queued', 'running', 'succeeded', 'failed', 'interrupted', 'cancelled']),
   phase: z.string(),
   updated: z.string(),
+  started: z.string(),
   result: z.string().default(''),
   error: z.string().default(''),
   hash: z.string(),
+  downloaded: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+  speed: z.number().nonnegative(),
+  cancellable: z.boolean(),
+  cancelRequested: z.boolean(),
 });
 export type DeviceJob = z.infer<typeof jobSchema>;
 export type TaskAction = Exclude<DeviceJob['action'], 'bootstrap'>;
@@ -185,7 +191,7 @@ export function topTask(job: DeviceJob | null | undefined): boolean {
   return (
     !!job &&
     (['failed', 'interrupted'].includes(job.state) ||
-      (!installationTask(job.action) && job.state !== 'succeeded'))
+      ['queued', 'running'].includes(job.state))
   );
 }
 

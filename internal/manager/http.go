@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/imbytecat/mihomoctl/internal/download"
 )
@@ -46,6 +47,13 @@ func (a *Manager) fetch(ctx context.Context, address, destination string, max in
 }
 func (a *Manager) fetchWithClient(ctx context.Context, client *http.Client, address, destination string, max int64) error {
 	defer client.CloseIdleConnections()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	const idleLimit = 45 * time.Second
+	idle := time.AfterFunc(idleLimit, func() {
+		cancel(errors.New("下载连续 45 秒未收到数据，请检查网络或发行转发地址后重试"))
+	})
+	defer idle.Stop()
 	parsed, err := url.Parse(address)
 	if err != nil {
 		return errors.New("下载地址无效")
@@ -71,7 +79,23 @@ func (a *Manager) fetchWithClient(ctx context.Context, client *http.Client, addr
 		return err
 	}
 	defer f.Close()
-	n, err := io.Copy(f, io.LimitReader(response.Body, max+1))
+	task, _ := ctx.Value(taskContextKey{}).(taskControl)
+	total := response.ContentLength
+	if total < 0 {
+		total = 0
+	}
+	transfer := &transferReader{Reader: response.Body, idle: idle, limit: idleLimit, report: task.progress, total: total, started: time.Now()}
+	if task.progress != nil {
+		if err := task.progress(0, transfer.total, 0); err != nil {
+			return err
+		}
+	}
+	n, err := io.Copy(f, io.LimitReader(transfer, max+1))
+	idle.Stop()
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
+	}
+	err = transfer.flush(err)
 	if err != nil {
 		return err
 	}

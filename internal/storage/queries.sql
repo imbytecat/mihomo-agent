@@ -45,7 +45,7 @@ SELECT version FROM core_version WHERE singleton=1 AND identity=?;
 -- name: SaveCoreVersion :exec
 INSERT INTO core_version(singleton,identity,version) VALUES(1,?,?) ON CONFLICT(singleton) DO UPDATE SET identity=excluded.identity,version=excluded.version;
 -- name: Task :one
-SELECT id,action,state,phase,updated,result,error,hash FROM tasks WHERE id=?;
+SELECT id,action,state,phase,updated,result,error,hash,downloaded,total,speed,cancellable,cancel_requested,started FROM tasks WHERE id=?;
 -- name: LatestTask :one
 SELECT latest_task FROM settings WHERE singleton=1 AND latest_task IS NOT NULL;
 -- name: ClearLatest :exec
@@ -55,14 +55,19 @@ SELECT fingerprint FROM tasks WHERE id=?;
 -- name: Request :one
 SELECT request FROM tasks WHERE id=?;
 -- name: InterruptTasks :exec
-UPDATE tasks SET state='interrupted',error=?,updated=?,request=NULL WHERE state IN ('queued','running');
+UPDATE tasks SET cancellable=0,state='interrupted',error=?,updated=?,request=NULL WHERE state IN ('queued','running');
 -- name: InsertTask :exec
-INSERT INTO tasks(id,action,state,phase,updated,result,error,hash,fingerprint,request) VALUES(?,?,?,?,?,?,?,?,?,?);
+INSERT INTO tasks(id,action,state,phase,updated,result,error,hash,fingerprint,request,cancellable,started) VALUES(?,?,?,?,?,?,?,?,?,?,?,?);
 -- name: SetLatestTask :exec
 UPDATE settings SET latest_task=? WHERE singleton=1;
 -- name: UpdateTask :execrows
-UPDATE tasks SET state=sqlc.arg(state),phase=sqlc.arg(phase),updated=sqlc.arg(updated),result=sqlc.arg(result),error=sqlc.arg(error),request=CASE sqlc.arg(state) WHEN 'queued' THEN request WHEN 'running' THEN request END WHERE id=sqlc.arg(id);
+UPDATE tasks SET downloaded=sqlc.arg(downloaded),total=sqlc.arg(total),speed=sqlc.arg(speed),cancellable=CASE sqlc.arg(state) WHEN 'queued' THEN cancellable WHEN 'running' THEN cancellable ELSE 0 END,state=sqlc.arg(state),phase=sqlc.arg(phase),updated=sqlc.arg(updated),result=sqlc.arg(result),error=sqlc.arg(error),request=CASE sqlc.arg(state) WHEN 'queued' THEN request WHEN 'running' THEN request END WHERE id=sqlc.arg(id);
 -- name: Updates :one
 SELECT checked_at,self_current,self_latest,self_state,self_error,core_current,core_latest,core_state,core_error,dashboard_current,dashboard_latest,dashboard_state,dashboard_error FROM update_checks WHERE singleton=1;
 -- name: SaveUpdates :exec
 INSERT INTO update_checks(singleton,checked_at,self_current,self_latest,self_state,self_error,core_current,core_latest,core_state,core_error,dashboard_current,dashboard_latest,dashboard_state,dashboard_error) VALUES(1,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(singleton) DO UPDATE SET checked_at=excluded.checked_at,self_current=excluded.self_current,self_latest=excluded.self_latest,self_state=excluded.self_state,self_error=excluded.self_error,core_current=excluded.core_current,core_latest=excluded.core_latest,core_state=excluded.core_state,core_error=excluded.core_error,dashboard_current=excluded.dashboard_current,dashboard_latest=excluded.dashboard_latest,dashboard_state=excluded.dashboard_state,dashboard_error=excluded.dashboard_error;
+
+-- name: CancelTask :execrows
+UPDATE tasks SET cancel_requested=1 WHERE id=? AND state IN ('queued','running') AND cancellable=1;
+-- name: CommitTask :execrows
+UPDATE tasks SET cancellable=0 WHERE id=? AND state IN ('queued','running') AND cancel_requested=0;

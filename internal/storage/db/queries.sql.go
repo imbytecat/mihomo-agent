@@ -10,6 +10,18 @@ import (
 	"database/sql"
 )
 
+const cancelTask = `-- name: CancelTask :execrows
+UPDATE tasks SET cancel_requested=1 WHERE id=? AND state IN ('queued','running') AND cancellable=1
+`
+
+func (q *Queries) CancelTask(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, cancelTask, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const clearLatest = `-- name: ClearLatest :exec
 UPDATE settings SET latest_task=NULL WHERE singleton=1
 `
@@ -26,6 +38,18 @@ DELETE FROM pending
 func (q *Queries) ClearPending(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, clearPending)
 	return err
+}
+
+const commitTask = `-- name: CommitTask :execrows
+UPDATE tasks SET cancellable=0 WHERE id=? AND state IN ('queued','running') AND cancel_requested=0
+`
+
+func (q *Queries) CommitTask(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, commitTask, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const configuration = `-- name: Configuration :one
@@ -203,7 +227,7 @@ func (q *Queries) Identity(ctx context.Context) (IdentityRow, error) {
 }
 
 const insertTask = `-- name: InsertTask :exec
-INSERT INTO tasks(id,action,state,phase,updated,result,error,hash,fingerprint,request) VALUES(?,?,?,?,?,?,?,?,?,?)
+INSERT INTO tasks(id,action,state,phase,updated,result,error,hash,fingerprint,request,cancellable,started) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
 `
 
 type InsertTaskParams struct {
@@ -217,6 +241,8 @@ type InsertTaskParams struct {
 	Hash        string `json:"hash"`
 	Fingerprint string `json:"fingerprint"`
 	Request     []byte `json:"request"`
+	Cancellable bool   `json:"cancellable"`
+	Started     string `json:"started"`
 }
 
 func (q *Queries) InsertTask(ctx context.Context, arg InsertTaskParams) error {
@@ -231,6 +257,8 @@ func (q *Queries) InsertTask(ctx context.Context, arg InsertTaskParams) error {
 		arg.Hash,
 		arg.Fingerprint,
 		arg.Request,
+		arg.Cancellable,
+		arg.Started,
 	)
 	return err
 }
@@ -247,7 +275,7 @@ func (q *Queries) Installed(ctx context.Context) (bool, error) {
 }
 
 const interruptTasks = `-- name: InterruptTasks :exec
-UPDATE tasks SET state='interrupted',error=?,updated=?,request=NULL WHERE state IN ('queued','running')
+UPDATE tasks SET cancellable=0,state='interrupted',error=?,updated=?,request=NULL WHERE state IN ('queued','running')
 `
 
 type InterruptTasksParams struct {
@@ -497,18 +525,24 @@ func (q *Queries) Settings(ctx context.Context) (SettingsRow, error) {
 }
 
 const task = `-- name: Task :one
-SELECT id,action,state,phase,updated,result,error,hash FROM tasks WHERE id=?
+SELECT id,action,state,phase,updated,result,error,hash,downloaded,total,speed,cancellable,cancel_requested,started FROM tasks WHERE id=?
 `
 
 type TaskRow struct {
-	ID      string `json:"id"`
-	Action  string `json:"action"`
-	State   string `json:"state"`
-	Phase   string `json:"phase"`
-	Updated string `json:"updated"`
-	Result  string `json:"result"`
-	Error   string `json:"error"`
-	Hash    string `json:"hash"`
+	ID              string  `json:"id"`
+	Action          string  `json:"action"`
+	State           string  `json:"state"`
+	Phase           string  `json:"phase"`
+	Updated         string  `json:"updated"`
+	Result          string  `json:"result"`
+	Error           string  `json:"error"`
+	Hash            string  `json:"hash"`
+	Downloaded      int     `json:"downloaded"`
+	Total           int     `json:"total"`
+	Speed           float64 `json:"speed"`
+	Cancellable     bool    `json:"cancellable"`
+	CancelRequested bool    `json:"cancelRequested"`
+	Started         string  `json:"started"`
 }
 
 func (q *Queries) Task(ctx context.Context, id string) (TaskRow, error) {
@@ -523,25 +557,37 @@ func (q *Queries) Task(ctx context.Context, id string) (TaskRow, error) {
 		&i.Result,
 		&i.Error,
 		&i.Hash,
+		&i.Downloaded,
+		&i.Total,
+		&i.Speed,
+		&i.Cancellable,
+		&i.CancelRequested,
+		&i.Started,
 	)
 	return i, err
 }
 
 const updateTask = `-- name: UpdateTask :execrows
-UPDATE tasks SET state=?1,phase=?2,updated=?3,result=?4,error=?5,request=CASE ?1 WHEN 'queued' THEN request WHEN 'running' THEN request END WHERE id=?6
+UPDATE tasks SET downloaded=?1,total=?2,speed=?3,cancellable=CASE ?4 WHEN 'queued' THEN cancellable WHEN 'running' THEN cancellable ELSE 0 END,state=?4,phase=?5,updated=?6,result=?7,error=?8,request=CASE ?4 WHEN 'queued' THEN request WHEN 'running' THEN request END WHERE id=?9
 `
 
 type UpdateTaskParams struct {
-	State   string `json:"state"`
-	Phase   string `json:"phase"`
-	Updated string `json:"updated"`
-	Result  string `json:"result"`
-	Error   string `json:"error"`
-	ID      string `json:"id"`
+	Downloaded int     `json:"downloaded"`
+	Total      int     `json:"total"`
+	Speed      float64 `json:"speed"`
+	State      string  `json:"state"`
+	Phase      string  `json:"phase"`
+	Updated    string  `json:"updated"`
+	Result     string  `json:"result"`
+	Error      string  `json:"error"`
+	ID         string  `json:"id"`
 }
 
 func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, updateTask,
+		arg.Downloaded,
+		arg.Total,
+		arg.Speed,
 		arg.State,
 		arg.Phase,
 		arg.Updated,

@@ -27,7 +27,19 @@ export const phases: Record<string, string> = {
   done: '已完成',
   interrupted: '任务已中断',
   failed: '任务失败',
+  cancelled: '已取消',
 };
+export class TaskCancelled extends Error {
+  constructor() { super('任务已取消'); }
+}
+export function transferText(job: DeviceJob, now = Date.now()) {
+  const size = (bytes: number) => bytes >= 1048576
+    ? `${(bytes / 1048576).toFixed(1)} MiB`
+    : `${(bytes / 1024).toFixed(1)} KiB`;
+  const idle = Math.max(0, Math.floor((now - Date.parse(job.updated)) / 1000));
+  const speed = idle > 3 ? 0 : job.speed;
+  return `${size(job.downloaded)}${job.total ? ` / ${size(job.total)} · ${Math.min(100, Math.floor(job.downloaded / job.total * 100))}%` : ' · 总大小未知'} · ${size(speed)}/s${idle >= 10 ? ` · 已 ${idle} 秒无新数据` : ''}`;
+}
 export async function waitTask(
   initial: DeviceJob,
   progress: (job: DeviceJob) => void,
@@ -59,6 +71,7 @@ export async function waitTask(
     if (!job) throw new Error('任务记录不可读');
   }
   progress(job);
+  if (job.state === 'cancelled') throw new TaskCancelled();
   if (job.state !== 'succeeded') {
     const log = await jobLog(job).catch(() => '暂时无法读取任务日志');
     throw new Error(
@@ -88,6 +101,11 @@ export function describeTask(job: DeviceJob) {
   return [
     names[job.action],
     `执行阶段：${phases[job.phase] || job.phase}`,
+    `开始时间：${new Date(job.started).toLocaleString()}`,
+    `${['queued', 'running'].includes(job.state) ? '最近更新' : '结束时间'}：${new Date(job.updated).toLocaleString()}`,
+    `耗时：${Math.max(0, Math.floor(((['queued', 'running'].includes(job.state) ? Date.now() : Date.parse(job.updated)) - Date.parse(job.started)) / 1000))} 秒`,
+    job.downloaded || job.total ? transferText(job) : '',
+    job.cancelRequested ? '取消请求已接收，正在清理' : '',
     job.result,
     job.error,
     `任务 ID：${job.id}`,

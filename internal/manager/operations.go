@@ -70,6 +70,9 @@ func (a *Manager) installRuntime() error {
 }
 
 func (a *Manager) execute(ctx context.Context, request Request, phase func(string)) (string, error) {
+	if err := context.Cause(ctx); err != nil {
+		return "", err
+	}
 	if err := a.authorize(request); err != nil {
 		return "", err
 	}
@@ -267,6 +270,9 @@ func (a *Manager) installCore(ctx context.Context, archive, work, digest string,
 			return err
 		}
 	}
+	if err := commitTask(ctx); err != nil {
+		return err
+	}
 	phase("installing")
 	return os.Rename(candidate, a.corePath())
 }
@@ -298,6 +304,9 @@ func (a *Manager) updateConfig(ctx context.Context, request Request, work string
 	}
 	control, err := a.controller()
 	if err != nil {
+		return "", err
+	}
+	if err := commitTask(ctx); err != nil {
 		return "", err
 	}
 	if err = a.applyConfig(ctx, request.ID, source, address, control, phase); err != nil {

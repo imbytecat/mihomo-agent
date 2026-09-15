@@ -80,6 +80,13 @@ func New(version string) *cobra.Command {
 			}
 			return job, file.Consume()
 		}},
+		{"cancel ID", "Cancel a task before installation or configuration commit", cobra.ExactArgs(1), false, func(cmd *cobra.Command, m *manager.Manager, args []string) (any, error) {
+			job, err := m.Cancel(args[0])
+			if err != nil || noWait {
+				return job, err
+			}
+			return awaitTask(cmd.Context(), m, job)
+		}},
 		{"job ID", "Print task state", cobra.ExactArgs(1), false, func(_ *cobra.Command, m *manager.Manager, args []string) (any, error) { return m.Job(args[0]) }},
 		{"job-log ID", "Print sanitized task logs", cobra.ExactArgs(1), false, func(_ *cobra.Command, m *manager.Manager, args []string) (any, error) { return m.JobLog(args[0]) }},
 		{"controller-secret PUBLIC_KEY", "Encrypt the API key for the supplied public key", cobra.ExactArgs(1), false, func(_ *cobra.Command, m *manager.Manager, args []string) (any, error) {
@@ -158,6 +165,8 @@ func New(version string) *cobra.Command {
 			child.Flags().StringVar(&releaseProxy, "release-proxy", "", "Public HTTPS origin hosting netnr/workers cors.js (empty: direct)")
 			child.Flags().StringVar(&config.Unit, "unit", "", "Service name (Linux)")
 			child.Flags().StringVar(&config.ListenAddress, "listen-address", "", "Local IPv4 listen address (Linux; loopback by default)")
+		case "cancel":
+			child.Flags().BoolVar(&noWait, "no-wait", false, "Return the cancellation request immediately")
 		case "submit":
 			child.Flags().StringVar(&uploads, "uploads", platform.UFIUploads, "UFI public upload directory")
 		}
@@ -211,7 +220,7 @@ func awaitTask(ctx context.Context, m *manager.Manager, initial *manager.Job) (*
 		}
 		task = next
 	}
-	if task.State != "succeeded" {
+	if task.State != "succeeded" && task.State != "cancelled" {
 		return task, fmt.Errorf("任务 %s 失败：%s", task.ID, task.Error)
 	}
 	return task, nil

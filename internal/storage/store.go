@@ -19,7 +19,7 @@ import (
 
 const Filename = "state.db"
 const Lockfile = "state.lock"
-const schemaVersion = 5
+const schemaVersion = 6
 
 type Store struct {
 	db      *sql.DB
@@ -54,14 +54,20 @@ type Pending struct {
 	WasRunning     bool
 }
 type Task struct {
-	ID      string `json:"id"`
-	Action  string `json:"action"`
-	State   string `json:"state"`
-	Phase   string `json:"phase"`
-	Updated string `json:"updated"`
-	Result  string `json:"result,omitempty"`
-	Error   string `json:"error,omitempty"`
-	Hash    string `json:"hash"`
+	ID              string  `json:"id"`
+	Action          string  `json:"action"`
+	State           string  `json:"state"`
+	Phase           string  `json:"phase"`
+	Updated         string  `json:"updated"`
+	Result          string  `json:"result,omitempty"`
+	Error           string  `json:"error,omitempty"`
+	Hash            string  `json:"hash"`
+	Downloaded      int     `json:"downloaded"`
+	Total           int     `json:"total"`
+	Speed           float64 `json:"speed"`
+	Cancellable     bool    `json:"cancellable"`
+	CancelRequested bool    `json:"cancelRequested"`
+	Started         string  `json:"started"`
 }
 
 //go:embed schema.sql
@@ -313,7 +319,7 @@ func (s *Store) CreateTask(t Task, fingerprint string, request []byte) error {
 	if err = q.InterruptTasks(ctx, db.InterruptTasksParams{Updated: t.Updated, Error: "设备任务已中断"}); err != nil {
 		return err
 	}
-	if err = q.InsertTask(ctx, db.InsertTaskParams{ID: t.ID, Action: t.Action, State: t.State, Phase: t.Phase, Updated: t.Updated, Result: t.Result, Error: t.Error, Hash: t.Hash, Fingerprint: fingerprint, Request: request}); err != nil {
+	if err = q.InsertTask(ctx, db.InsertTaskParams{ID: t.ID, Action: t.Action, State: t.State, Phase: t.Phase, Updated: t.Updated, Result: t.Result, Error: t.Error, Hash: t.Hash, Fingerprint: fingerprint, Request: request, Cancellable: t.Cancellable, Started: t.Started}); err != nil {
 		return err
 	}
 	if err = q.SetLatestTask(ctx, sql.NullString{String: t.ID, Valid: true}); err != nil {
@@ -322,7 +328,7 @@ func (s *Store) CreateTask(t Task, fingerprint string, request []byte) error {
 	return tx.Commit()
 }
 func (s *Store) UpdateTask(t Task) error {
-	n, err := s.queries.UpdateTask(context.Background(), db.UpdateTaskParams{State: t.State, Phase: t.Phase, Updated: t.Updated, Result: t.Result, Error: t.Error, ID: t.ID})
+	n, err := s.queries.UpdateTask(context.Background(), db.UpdateTaskParams{Downloaded: t.Downloaded, Total: t.Total, Speed: t.Speed, State: t.State, Phase: t.Phase, Updated: t.Updated, Result: t.Result, Error: t.Error, ID: t.ID})
 	if err == nil && n != 1 {
 		return sql.ErrNoRows
 	}
@@ -361,4 +367,16 @@ func (s *Store) SaveUpdates(u Updates) error {
 		CoreCurrent: u.Core.Current, CoreLatest: u.Core.Latest, CoreState: u.Core.State, CoreError: u.Core.Error,
 		DashboardCurrent: u.Dashboard.Current, DashboardLatest: u.Dashboard.Latest, DashboardState: u.Dashboard.State, DashboardError: u.Dashboard.Error,
 	})
+}
+
+func (s *Store) CancelTask(id string) (bool, error) {
+	n, err := s.queries.CancelTask(context.Background(), id)
+	return n == 1, err
+}
+func (s *Store) CommitTask(id string) error {
+	n, err := s.queries.CommitTask(context.Background(), id)
+	if err == nil && n != 1 {
+		return context.Canceled
+	}
+	return err
 }

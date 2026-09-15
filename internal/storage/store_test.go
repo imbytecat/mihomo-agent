@@ -114,7 +114,7 @@ func TestTerminalTasksClearRequestsAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	for _, state := range []string{"succeeded", "failed", "interrupted", "superseded"} {
+	for _, state := range []string{"succeeded", "failed", "interrupted", "cancelled", "superseded"} {
 		t.Run(state, func(t *testing.T) {
 			task := Task{ID: state, Action: "update", State: "queued"}
 			if err := s.CreateTask(task, "keep-hmac", []byte("ciphertext")); err != nil {

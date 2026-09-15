@@ -1,4 +1,5 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import { existsSync } from 'node:fs';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -25,7 +26,7 @@ test('bootstrap polling reads the real shell record by ID and latest pointer', a
   const id = 'a1'.repeat(16), job = join(base, 'jobs', id);
   const record = {
     id, action: 'bootstrap', state: 'succeeded', phase: 'done',
-    updated: '2026-09-15T00:00:00Z', hash: '', result: '', error: '',
+    updated: '2026-09-15T00:00:00Z', hash: '', started: new Date().toISOString(), downloaded: 0, total: 0, speed: 0, cancellable: false, cancelRequested: false, result: '', error: '',
   };
   try {
     await mkdir(job, { recursive: true });
@@ -90,6 +91,8 @@ test('bootstrap verifies bytes before execution and reports failures without los
         '',
         String(expectedProtocol),
         proxy,
+        String(binary.length),
+        String(binary.length),
       ],
       {
         env: {
@@ -123,6 +126,19 @@ test('bootstrap verifies bytes before execution and reports failures without los
     expect((await run('worker', digest, protocol, 'https://mirror.example.com')).code).toBe(0);
     expect(await readFile(join(base, 'install-args'), 'utf8')).toBe('--platform\nufi\ninstall\n--release-proxy\nhttps://mirror.example.com\n');
     expect((await readFile(join(base, 'curl-args'), 'utf8')).split('\n')).not.toContain('-L');
+    // Cancel the real bootstrap shell while its current curl child is running.
+    await rm(marker);
+    await writeFile(curl, '#!/bin/sh\nwhile [ "$#" -gt 0 ]; do if [ "$1" = -o ]; then out=$2; break; fi; shift; done\ncp "$UFI_TEST_FIXTURE" "$out"\nexec sleep 3\n', { mode: 0o700 });
+    const child = spawn('sh', [script, 'worker', id, 'https://fixture.invalid/mihomoctl', digest, '', '', String(protocol), '', String(binary.length), String(binary.length)], {
+      env: { ...process.env, UFI_TEST_FIXTURE: fixture, UFI_TEST_EXEC_MARK: marker, UFI_TEST_INSTALL_ARGS: join(base, 'install-args') },
+    });
+    const exited = once(child, 'exit');
+    await expect.poll(async () => JSON.parse(await readFile(join(job, 'state.json'), 'utf8')).phase).toBe('download');
+    expect((await run('cancel')).code).toBe(0);
+    expect((await exited)[0]).toBe(0);
+    expect(JSON.parse((await run('status')).output).state).toBe('cancelled');
+    expect(existsSync(marker)).toBe(false);
+    expect(existsSync(join(job, 'mihomoctl'))).toBe(false);
     const stale = JSON.stringify({
       id,
       action: 'bootstrap',
@@ -148,6 +164,7 @@ test('initial metadata uses official GitHub and rejects malformed releases', asy
     prerelease: false,
     assets: ['arm64', 'armv7'].map((arch) => ({
       name: `mihomoctl-linux-${arch}`,
+      size: 1048576,
       browser_download_url: `https://github.com/imbytecat/mihomoctl/releases/download/v9.8.7/mihomoctl-linux-${arch}`,
       digest: 'sha256:' + 'a'.repeat(64),
     })),
