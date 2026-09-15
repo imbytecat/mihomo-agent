@@ -122,13 +122,13 @@ network_start`;
   expect(calls).not.toContain('OUTPUT');
   expect(calls).not.toContain(' -F ');
   expect(await readFile(join(dir, 'network.active'), 'utf8')).toBe(
-    'A\nwlan0 rndis0\n',
+    'A\nwlan0 rndis0\n127.0.0.1\n',
   );
   await writeFile(join(dir, 'interfaces'), 'wlan0 rndis0 usb0\n');
   await writeFile(join(dir, 'fail-switch'), '');
   expect((await run()).code).toBe(1);
   expect(await readFile(join(dir, 'network.active'), 'utf8')).toBe(
-    'A\nwlan0 rndis0\n',
+    'A\nwlan0 rndis0\n127.0.0.1\n',
   );
   for (const name of [
     'fw-4-filter-UFI_MH_IN',
@@ -141,7 +141,7 @@ network_start`;
   expect(existsSync(join(dir, 'network.pending'))).toBe(false);
   expect((await run()).code).toBe(0);
   expect(await readFile(join(dir, 'network.active'), 'utf8')).toBe(
-    'B\nwlan0 rndis0 usb0\n',
+    'B\nwlan0 rndis0 usb0\n127.0.0.1\n',
   );
   await rm(join(dir, 'ready'));
   expect((await run()).code).toBe(1);
@@ -186,8 +186,19 @@ test('startup and missing-LAN states keep listener guards without capturing traf
   await writeFile(join(dir, 'ready'), '');
   await writeFile(join(dir, 'interfaces'), 'wlan0');
   await run('network_sync');
+  await writeFile(join(dir, 'local-addresses'), '1: lo inet 127.0.0.1/8 scope host lo\n2: rmnet_data0 inet 203.0.113.9/32 scope global rmnet_data0\n');
+  await run('network_sync');
+  let localSlot = (await readFile(join(dir, 'network.active'), 'utf8')).split('\n')[0]!;
+  expect(await readFile(join(dir, `fw-4-mangle-UFI_MH_${localSlot}`), 'utf8')).toContain('-d 203.0.113.9/32 -j RETURN');
+  await writeFile(join(dir, 'local-addresses'), '1: lo inet 127.0.0.1/8 scope host lo\n2: rmnet_data0 inet 203.0.113.10/32 scope global rmnet_data0\n');
+  await run('network_sync');
+  localSlot = (await readFile(join(dir, 'network.active'), 'utf8')).split('\n')[0]!;
+  const localRules = await readFile(join(dir, `fw-4-mangle-UFI_MH_${localSlot}`), 'utf8');
+  expect(localRules).toContain('-d 203.0.113.10/32 -j RETURN');
+  expect(localRules).not.toContain('203.0.113.9/32');
+  expect(localRules).not.toContain('addrtype');
   await run('resolve_interfaces() { echo; }; network_sync');
-  const slot = (await readFile(join(dir, 'network.active'), 'utf8')).trim();
+  const slot = (await readFile(join(dir, 'network.active'), 'utf8')).split('\n')[0]!;
   const guard = await readFile(
     join(dir, `fw-4-filter-UFI_MH_IN_${slot}`),
     'utf8',
@@ -265,6 +276,8 @@ test('network refresh tracks LAN changes and waits without restarting core', asy
   const source = await networkFunctions();
   const script = `DIR=${quote(dir)}\n${source}
 resolve_interfaces() { printf '%s' "$desired"; }
+local_ipv4() { echo 127.0.0.1; }
+active_addresses() { echo 127.0.0.1; }
 listeners_ready() { return 0; }
 active_interfaces() { cat "$DIR/interfaces.active" 2>/dev/null; }
 network_ok() { return 0; }

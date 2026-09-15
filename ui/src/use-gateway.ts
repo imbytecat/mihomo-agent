@@ -1,4 +1,4 @@
-import { waitTask, describeTask, TaskCancelled } from './gateway';
+import { waitTask, describeTask, taskDetails, TaskCancelled } from './gateway';
 import { useEffect, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import PQueue from 'p-queue';
@@ -12,9 +12,6 @@ import {
   deviceLogs,
   readDeviceState,
   submitTask,
-  readJob,
-  readUninstallJob,
-  jobLog,
   readControllerSecret,
   stopAgent,
 } from './transport/ufi';
@@ -174,15 +171,33 @@ export function useGateway() {
     setDetail(describeTask(task));
     setDetailOpen(true);
     try {
-      const latest =
-        task.action === 'bootstrap' ? task : task.action === 'uninstall'
-          ? await readUninstallJob(task) || task : await readJob(task.id);
-      const log = await jobLog(latest);
+      const text = await taskDetails(task);
       if (revision === detailRequest.current)
-        setDetail(describeTask(latest) + (log ? '\n\n' + log : ''));
+        setDetail(text);
     } catch {
       if (revision === detailRequest.current)
         setDetail((value) => value + '\n\n暂时无法读取任务日志');
+    }
+  };
+
+  const refreshDetail = async () => {
+    const revision = detailRequest.current;
+    const task = deviceRef.current?.task || observedTask;
+    const text = detailTitle === '任务详情' && task ? await taskDetails(task)
+      : detailTitle === '运行日志' ? await deviceLogs() : null;
+    if (text !== null && revision === detailRequest.current) setDetail(text);
+  };
+
+  const showRuntimeLogs = async () => {
+    const revision = ++detailRequest.current;
+    setDetailTitle('运行日志');
+    setDetail('正在读取运行日志…');
+    setDetailOpen(true);
+    try {
+      const text = await deviceLogs();
+      if (revision === detailRequest.current) setDetail(text || '暂无运行日志');
+    } catch (error) {
+      if (revision === detailRequest.current) setDetail(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -444,6 +459,7 @@ export function useGateway() {
       const text = error instanceof Error ? error.message : String(error);
       setError(true);
       setDetail(text);
+      setDetailOpen(true);
       if (!quiet)
         toast.error(text.split('\n')[0]!.slice(0, 160), {
           ...notification,
@@ -582,6 +598,8 @@ export function useGateway() {
     setDetailOpen,
     error,
     showTask,
+    refreshDetail,
+    showRuntimeLogs,
     secret,
     setSecret,
   };

@@ -22,3 +22,25 @@ func TestReadTailKeepsCompleteLinesWithinLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestReadTailSinceExcludesOldAndPartialLines(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "log")
+	for _, tc := range []struct {
+		text          string
+		offset, limit int64
+		want          string
+	}{
+		{"old\nnew\n", 4, 100, "new\n"},
+		{"token=hidden\nsafe\n", 6, 100, "safe\n"},
+		{"rotated\n", 100, 100, "rotated\n"},
+		{"old\nlonger-line\nend\n", 4, 8, "end\n"},
+	} {
+		if err := os.WriteFile(path, []byte(tc.text), 0600); err != nil {
+			t.Fatal(err)
+		}
+		data, err := ReadTailSince(path, tc.offset, tc.limit)
+		if err != nil || string(data) != tc.want {
+			t.Fatalf("offset=%d: %q, %v", tc.offset, data, err)
+		}
+	}
+}

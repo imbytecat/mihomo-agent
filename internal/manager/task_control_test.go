@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,13 @@ import (
 	"testing"
 	"time"
 )
+
+func TestTimeoutFormattingPreservesStartupEvidence(t *testing.T) {
+	text := taskError(errors.Join(context.DeadlineExceeded, errors.New("core.log: address already in use")))
+	if !strings.Contains(text, "请求超时") || !strings.Contains(text, "address already in use") {
+		t.Fatal("timeout discarded the actual cause", text)
+	}
+}
 
 func TestDownloadProgressAndCancellationInDetachedWorker(t *testing.T) {
 	a := testAgent(t)

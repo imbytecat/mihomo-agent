@@ -4,6 +4,7 @@ fake_iptables() {
   table=filter
   if [ "$1" = -t ]; then table=$2; shift 2; fi
   operation=$1; chain=$2; shift 2
+  case " $* " in *' -m addrtype '*) echo "Couldn't find match addrtype" >&2; return 1;; esac
   file="$DIR/fw-$family-$table-$chain"
   printf '%s %s %s %s %s\n' "$family" "$table" "$operation" "$chain" "$*" >> "$DIR/network.calls"
   if [ -f "$DIR/fail-switch" ] && [ "$operation $chain $*" = '-R UFI_MH_DNS 1 -j UFI_MH_DNS_B' ]; then
@@ -27,6 +28,8 @@ ipt() { fake_iptables 4 "$@"; }
 ip6t() { fake_iptables 6 "$@"; }
 ip() {
   case "$*" in
+    '-o -4 addr show')
+      if [ -f "$DIR/local-addresses" ]; then cat "$DIR/local-addresses"; else echo '1: lo inet 127.0.0.1/8 scope host lo'; fi;;
     '-4 route show table 2026') cat "$DIR/routes";;
     '-4 route show table all') sed 's/$/ table 2026/' "$DIR/routes";;
     '-4 rule show') cat "$DIR/rules";;

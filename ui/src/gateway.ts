@@ -114,6 +114,14 @@ export function describeTask(job: DeviceJob) {
     .join('\n');
 }
 
+export async function taskDetails(task: DeviceJob) {
+  const latest = task.action === 'bootstrap'
+    ? await readBootstrap(task.id) || task
+    : task.action === 'uninstall' ? await readUninstallJob(task) || task : await readJob(task.id);
+  const log = await jobLog(latest).catch(() => '暂时无法读取任务日志');
+  return describeTask(latest) + (log ? '\n\n' + log : '');
+}
+
 export function controllerURL(base: string, port: number) {
   if (!Number.isInteger(port) || port < 1024 || port > 65535)
     throw new Error('无效面板端口');

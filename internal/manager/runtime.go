@@ -28,8 +28,7 @@ func (a *Manager) running() bool {
 func (a *Manager) testCore(ctx context.Context, core, config string) error {
 	output, err := a.run(ctx, core, "-t", "-d", a.runtime(), "-f", config)
 	if err != nil {
-		fmt.Println(redact.String(string(output)))
-		return errors.New("内核配置校验失败")
+		return fmt.Errorf("内核配置校验失败：%w\n%s", err, redact.String(string(output)))
 	}
 	return nil
 }

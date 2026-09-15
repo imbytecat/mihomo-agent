@@ -99,19 +99,19 @@ test('controller transactions, encrypted secrets and task details', async () => 
   await app.getByRole('button', { name: '更多操作', exact: true }).click();
   await app.getByRole('menuitem', { name: '运行日志', exact: true }).click();
   await expect
-    .element(app.getByCSS('[data-dialog=result][data-state=open]'))
+    .element(app.getByCSS('[data-log-panel][open]'))
     .toBeVisible();
   await expect
-    .element(app.getByCSS('[data-dialog=result] [data-dialog-title]'))
+    .element(app.getByCSS('[data-log-source]'))
     .toHaveTextContent('运行日志');
   await closeModal();
   await app.getByRole('button', { name: '更多操作', exact: true }).click();
   await app.getByRole('menuitem', { name: '最近任务', exact: true }).click();
   await expect
-    .element(app.getByCSS('[data-dialog=result][data-state=open]'))
+    .element(app.getByCSS('[data-log-panel][open]'))
     .toBeVisible();
   await expect
-    .element(app.getByCSS('[data-dialog=result] [data-dialog-title]'))
+    .element(app.getByCSS('[data-log-source]'))
     .toHaveTextContent('任务详情');
   await expect
     .element(app.getByCSS('[data-output]'))
@@ -188,8 +188,30 @@ test('update checks show component results without submitting mutations or clear
   await idle();
   await expect
     .element(app.getByCSS('[data-update=self]'))
-    .not.toBeInTheDocument();
+    .toHaveTextContent('已是最新');
   await expect
     .element(app.getByCSS('[data-update=core]'))
     .toHaveTextContent('已是最新');
+});
+
+
+test('install after checking updates immediately disables redundant component updates', async () => {
+  await open('missing-core');
+  await app.getByRole('button', { name: '检查更新', exact: true }).click();
+  await idle();
+  const checked = evaluate('mockDeviceState.updates.checkedAt');
+  for (const action of ['download', 'download-dashboard']) {
+    await app.getByCSS(`[data-group=maintenance] [data-action=${action}]`).click();
+    await idle();
+    await expect.element(app.getByCSS(`[data-group=maintenance] [data-action=${action}]`)).toBeDisabled();
+  }
+  expect(evaluate('mockDeviceState.updates.checkedAt')).toBe(checked);
+  expect(evaluate('mockCommands.filter(c => c.includes("check-updates")).length')).toBe(1);
+  await reload();
+  await app.getByCSS('[data-plugin] > summary').click();
+  await idle();
+  if (!evaluate('document.querySelector("[data-settings]").open')) await app.getByCSS('[data-settings] > summary').click();
+  await expect.element(app.getByCSS('[data-group=maintenance] [data-action=download]')).toBeDisabled();
+  await expect.element(app.getByCSS('[data-group=maintenance] [data-action=download-dashboard]')).toBeDisabled();
+  expect(evaluate('mockCommands.some(c => c.includes("check-updates"))')).toBe(false);
 });

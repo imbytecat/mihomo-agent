@@ -286,7 +286,7 @@ func (a *Manager) Worker(id string) (err error) {
 		}
 		if runErr != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) && errors.Is(runErr, context.DeadlineExceeded) {
-				runErr = errors.New("任务执行超过 12 分钟，已停止；请检查网络或发行转发服务后重试")
+				runErr = fmt.Errorf("任务执行超过 12 分钟，已停止：%w", runErr)
 			}
 			job.Error = taskError(runErr)
 		}

@@ -83,6 +83,11 @@ func (a *Manager) Inspect() (Status, error) {
 	if status.Settings.Interfaces == nil {
 		status.Settings.Interfaces = []string{}
 	}
+	if status.Updates != nil {
+		compareUpdate(&status.Updates.Self, status.Version, true)
+		compareUpdate(&status.Updates.Core, status.CoreVersion, status.Core)
+		compareUpdate(&status.Updates.Dashboard, status.Dashboard.Version, status.Dashboard.Installed)
+	}
 	status.Task = a.latestJob()
 	if lock, e := a.lock(); e == nil {
 		lock.Close()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/imbytecat/mihomoctl/internal/redact"
+	"strings"
 	"time"
 )
 
@@ -73,8 +74,5 @@ func (a *Manager) watchCancellation(ctx context.Context, id string, cancel conte
 }
 
 func taskError(err error) string {
-	if errors.Is(err, context.DeadlineExceeded) {
-		return "请求超时，请检查网络或发行转发服务后重试"
-	}
-	return redact.String(err.Error())
+	return redact.String(strings.ReplaceAll(err.Error(), context.DeadlineExceeded.Error(), "请求超时"))
 }

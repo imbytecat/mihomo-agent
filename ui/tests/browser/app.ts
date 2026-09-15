@@ -72,7 +72,8 @@ export async function idle() {
 }
 export async function closeModal(name = '关闭详情') {
   await app.getByRole('button', { name, exact: true }).click();
-  await expect.element(app.getByCSS('[data-dialog]')).not.toBeInTheDocument();
+  if (name === '关闭详情') await expect.element(app.getByCSS('[data-log-panel]')).not.toHaveAttribute('open');
+  else await expect.element(app.getByCSS('[data-dialog]')).not.toBeInTheDocument();
   await idle();
 }
 export async function open(state: string) {

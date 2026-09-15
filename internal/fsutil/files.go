@@ -15,6 +15,11 @@ import (
 // ReadTail bounds memory and drops a partial first line so callers can redact
 // whole log lines even when a secret's field name lies before the read window.
 func ReadTail(path string, limit int64) ([]byte, error) {
+	return ReadTailSince(path, 0, limit)
+}
+
+// ReadTailSince limits diagnostics to this run and never exposes a partial line.
+func ReadTailSince(path string, offset, limit int64) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -24,9 +29,16 @@ func ReadTail(path string, limit int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	start := max(0, info.Size()-limit-1)
+	if offset > info.Size() {
+		offset = 0
+	} // The log rotated or was truncated.
+	start := max(offset, info.Size()-limit)
+	dropPartial := start > 0
+	if dropPartial {
+		start--
+	}
 	data, err := io.ReadAll(io.NewSectionReader(f, start, info.Size()-start))
-	if info.Size() > limit {
+	if dropPartial {
 		_, data, _ = bytes.Cut(data, []byte("\n"))
 	}
 	return data, err

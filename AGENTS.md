@@ -36,6 +36,7 @@
 ## 平台所有权
 
 - UFI 使用自己的链、mark 和路由，不清空系统防火墙或全局路由。启动内核前建立监听保护；等待 LAN 时仍保留保护，内核退出后才撤掉。
+- UFI 本机 IPv4 目的地址用显式 /32 规则排除，不依赖 addrtype 扩展；地址快照与活动规则同次提交，地址变化触发同步，规则切换期间保留监听保护。启动失败返回最后的就绪错误、仅本次新增的脱敏日志及清理失败原因。
 - UFI 自动接口识别只接受共享入口，排除蜂窝、上游和 VPN；未知固件保留手动接口配置。能力标识不保证任意硬件已支持 TPROXY。
 - Linux 使用 go-systemd 的 D-Bus 客户端和 unit 序列化；unit 源文件位于私有目录，通过 D-Bus 注册。操作前核对源文件、FragmentPath、有效 Id、ExecStart / argv、WorkingDirectory、KillMode 和命名空间设置；拒绝外部同名 unit、mask 和 drop-in，链接及启用不使用 force。ExecStart 使用 : 禁用环境变量展开，路径中的 % 仍需转义。
 - 两平台均由 Agent 管理私有目录内的自身二进制和 Mihomo；下载、更新、自启为共有功能，能力标识仅表达 interfaces / capture 平台差异；共用下载、校验与更新流程，按平台和架构选择官方资产，不支持外部内核模式或旧状态迁移。Linux 的 service 安装、自启和卸载由 CLI 调用 systemd 完成；先停止、禁用并移除 unit，确认不再引用配置，再删除 Agent 数据。
@@ -51,7 +52,7 @@
 - modernc.org/libc 必须与所用 modernc.org/sqlite 的 go.mod 匹配；保持 CGO_ENABLED=0 和 ARM64 / ARMv7 / AMD64 构建。
 - Go、Bun、just、sqlc、GoReleaser 和检查工具的版本集中在 mise.toml，CI 通过 mise 安装；Vitest 与 Playwright 驱动是 ui/ 的锁定开发依赖，GitHub Actions 固定完整提交 SHA。
 - SQLite 的 schema.sql 同时用于初始化与 sqlc；queries.sql 生成 internal/storage/db，生成文件随源码提交，just check 用 sqlc diff 校验。事务与状态锁归 storage，生成层不依赖 Manager；修改状态格式同步升级 schema 与协议，旧安装重装。
-- 版本检查快照持久化 SQLite；status 只读缓存，check-updates 显式联网并保存各组件结果。当前 Agent、内核和面板版本仍以实际安装为准；前端仅展示与当前版本一致的缓存比较。
+- 版本检查快照持久化 SQLite；status 用实际安装版本重新比较缓存 latest，不写回快照或检查时间，check-updates 才显式联网保存结果。比较统一使用 Go semver；前端仅展示与当前版本一致的比较。
 - 根目录为 Go module，前端包与测试独立位于 ui/。构建与验证入口见 justfile；Go 构建不能依赖 Bun 或前端资产；go.mod 用 ignore ./ui 排除前端依赖中附带的 Go 示例，保持 test/tidy 的边界。
 - 交互修改运行 just test-ui；ui/tests/browser 使用 Vitest Browser Mode 和 Playwright 驱动，通过真实 DOMParser 加载生产 IIFE，并验证窄屏布局与宿主隔离。ui/tests/native.test.ts 在 Bun 运行的 Vitest node 项目中验证前端请求 → 纯 Go CLI；platform 测试替换 D-Bus；真实 systemd 验证仅在隔离 CI runner 通过 MIHOMOCTL_SYSTEMD_TEST 显式启用。
 - 浏览器测试通过官方 [frameLocator](https://vitest.dev/api/browser/context#framelocator) 操作同源应用 iframe；仅刷新应用 iframe，不导航 Vitest 运行器。同文件用例顺序执行，每例清理专属 sessionStorage 并收集应用异常；[失败截图和 trace](https://vitest.dev/guide/browser/playwright-traces) 由 Vitest 管理。

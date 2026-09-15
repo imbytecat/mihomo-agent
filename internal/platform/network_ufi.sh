@@ -44,21 +44,29 @@ resolve_interfaces() {
     }' | sort -u | tr '\n' ' ' | sed 's/ *$//'
 }
 
+local_ipv4() {
+  addresses=$(ip -o -4 addr show) || { echo '无法读取本机 IPv4 地址' >&2; return 1; }
+  printf '%s\n' "$addresses" | awk '$3 == "inet" { split($4, addr, "/"); print addr[1] }' | sort -u | tr '\n' ' ' | sed 's/ *$//'
+}
+
 network_sync() {
   selected=$(resolve_interfaces) || { pause_capture; return 1; }
+  local_addresses=$(local_ipv4) || { pause_capture; return 1; }
   listeners_ready || { pause_capture; return $?; }
+  if [ "$local_addresses" != "$(active_addresses)" ]; then pause_capture || return 1; fi
   # An old downstream may have become an upstream. Do not keep capturing it on rollback.
   previous_interfaces=$(active_interfaces)
   for previous_iface in $previous_interfaces; do
     case " $selected " in *" $previous_iface "*) ;; *) pause_capture || return 1; break;; esac
   done
-  if [ "$selected" != "$(active_interfaces)" ] || ! network_ok; then
+  if [ "$selected" != "$(active_interfaces)" ] || [ "$local_addresses" != "$(active_addresses)" ] || ! network_ok; then
     network_start || return 1
   fi
 }
 
 active_slot() { sed -n '1p' "$DIR/network.active" 2>/dev/null; }
 active_interfaces() { sed -n '2p' "$DIR/network.active" 2>/dev/null; }
+active_addresses() { sed -n '3p' "$DIR/network.active" 2>/dev/null; }
 
 # Detach traffic before changing a former LAN into an upstream. Keep INPUT guards.
 pause_capture() {
@@ -132,7 +140,10 @@ build_slot() {
   done
   ipt -A "UFI_MH_IN_$next" -i lo -j RETURN || return 1
   ip6t -A "UFI_MH_IN6_$next" -i lo -j RETURN || return 1
-  ipt -t mangle -A "UFI_MH_$next" -m addrtype --dst-type LOCAL -j RETURN || return 1
+  # Enumerate assigned addresses: Android's iptables may omit the addrtype match.
+  for address in $local_addresses; do
+    ipt -t mangle -A "UFI_MH_$next" -d "$address/32" -j RETURN || return 1
+  done
   for subnet in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 240.0.0.0/4; do
     ipt -t mangle -A "UFI_MH_$next" -d "$subnet" -j RETURN || return 1
   done
@@ -192,6 +203,7 @@ network_ok() {
 
 network_start() {
   network_tools || return 1
+  local_addresses=$(local_ipv4) || return 1
   if [ "${ACTION:-sync}" = prepare ]; then
     selected=''
   else
@@ -229,7 +241,7 @@ network_start() {
   build_slot || return 1
   printf '%s\n' "$next" > "$DIR/network.pending" || return 1
   if switch_slot "$next"; then
-    if printf '%s\n%s\n' "$next" "$selected" > "$DIR/network.active.next" &&
+    if printf '%s\n%s\n%s\n' "$next" "$selected" "$local_addresses" > "$DIR/network.active.next" &&
       mv "$DIR/network.active.next" "$DIR/network.active"; then
       rm -f "$DIR/network.pending"
       return 0
@@ -258,7 +270,11 @@ case "$ACTION" in
   prepare) network_start;;
   sync) network_sync;;
   stop) network_stop;;
-  ready) listeners_ready && network_ok;;
+  ready)
+    alive || { echo 'Mihomo 内核进程未运行'; exit 1; }
+    listeners_ready || { echo '内核监听未就绪，请检查 DNS、TPROXY 和控制端口及内核日志'; exit 1; }
+    network_ok || { echo '本安装的网络规则或策略路由未就绪'; exit 1; }
+    ;;
   inspect)
     listening=false; captured=false
     listeners_ready && listening=true

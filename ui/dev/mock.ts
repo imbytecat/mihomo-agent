@@ -80,6 +80,7 @@ const uploads: { name: string; bytes: Uint8Array }[] = [];
 const keys = sodium.ready.then(() => sodium.crypto_box_keypair());
 const flags = globalThis as typeof globalThis & {
   mockProbeError?: boolean;
+  mockRuntimeLog?: string;
   mockUpdateFailure?: boolean;
   mockUploadFailure?: boolean;
   mockUploadDelayMs?: number;
@@ -91,6 +92,24 @@ const save = () =>
     storageKey,
     JSON.stringify({ state, pending, jobs, controllerSecret }),
   );
+function statusSnapshot() {
+  const snapshot = structuredClone(state);
+  if (snapshot.updates) {
+    for (const [key, installed, current] of [
+      ['self', state.agent, state.version],
+      ['core', state.core, state.coreVersion],
+      ['dashboard', state.dashboard.installed, state.dashboard.version],
+    ] as const) {
+      const update = snapshot.updates[key];
+      update.current = installed ? current : '';
+      if (update.state === 'error') continue;
+      // Fixture tags are numeric stable versions; production comparison is Go semver.
+      update.state = !installed ? 'not-installed' : !current ? 'unknown'
+        : update.latest.replace(/^v/, '').localeCompare(current.replace(/^v/, ''), 'en', { numeric: true }) > 0 ? 'available' : 'up-to-date';
+    }
+  }
+  return snapshot;
+}
 function advance() {
   if (!pending || Date.now() < pending.end) return;
   const { intent, failure } = pending;
@@ -272,7 +291,7 @@ Object.assign(globalThis, {
         result = { id: job.id, action: job.action, state: job.state, phase: job.phase, updated: job.updated };
       }
       else if (inner.includes('/data/mihomoctl/mihomoctl status')) result = !state.agent ? null : scenario === 'unreadable-state'
-        ? { broken: true } : state;
+        ? { broken: true } : statusSnapshot();
       else if (args[0] === '/data/mihomoctl/mihomoctl') {
         switch (args[1]) {
           case 'submit': {
@@ -321,7 +340,7 @@ Object.assign(globalThis, {
               },
               core: {
                 current: state.coreVersion,
-                latest: state.coreVersion || 'v1.19.30',
+                latest: state.coreVersion || 'v9.8.7',
                 state: state.core ? 'up-to-date' : 'not-installed',
               },
               dashboard: {
@@ -348,7 +367,7 @@ Object.assign(globalThis, {
             result = '设备任务日志';
             break;
           case 'logs':
-            result = 'core.log\n代理运行正常';
+            result = flags.mockRuntimeLog ?? 'core.log\n代理运行正常';
             break;
           case 'diagnose':
             result = 'wlan0 192.168.0.1/24';

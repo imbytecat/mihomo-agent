@@ -106,7 +106,7 @@ func (a *UFIAdapter) network(ctx context.Context, action string) error {
 	}
 	output, err := a.command(ctx, []*os.File{lock}, "/system/bin/sh", a.runtime("network.sh"), a.runtime(), action)
 	if err != nil {
-		return fmt.Errorf("网络规则 %s 失败：%s", action, redact.String(string(output)))
+		return fmt.Errorf("网络规则 %s 失败：%w\n%s", action, err, redact.String(string(output)))
 	}
 	return nil
 }
@@ -169,6 +169,28 @@ func (a *UFIAdapter) Start(ctx context.Context, options StartOptions) error {
 	if err := fsutil.AtomicWrite(a.runtime("network.sh"), networkScript, 0700); err != nil {
 		return err
 	}
+	offsets := map[string]int64{}
+	for _, name := range []string{"supervisor.log", "core.log"} {
+		if info, err := os.Stat(a.runtime(name)); err == nil {
+			offsets[name] = info.Size()
+		}
+	}
+	var readyErr error
+	failure := func(cause error) error {
+		state := fmt.Errorf("代理启动失败：守护进程存活=%t，内核存活=%t", a.alive("supervisor"), a.alive("core"))
+		cleanup := a.Stop(context.Background())
+		if cleanup != nil {
+			cleanup = fmt.Errorf("启动失败后的清理也失败：%w", cleanup)
+		}
+		details := []error{state, cause, readyErr, cleanup}
+		for _, name := range []string{"supervisor.log", "core.log"} {
+			data, err := fsutil.ReadTailSince(a.runtime(name), offsets[name], 8*1024)
+			if err == nil && len(data) > 0 {
+				details = append(details, fmt.Errorf("%s（本次启动）:\n%s", name, redact.String(string(data))))
+			}
+		}
+		return errors.Join(details...)
+	}
 	log, err := os.OpenFile(a.runtime("supervisor.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return err
@@ -179,18 +201,18 @@ func (a *UFIAdapter) Start(ctx context.Context, options StartOptions) error {
 	cmd.Stderr = log
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err = cmd.Start(); err != nil {
-		return err
+		return failure(err)
 	}
 	_ = cmd.Process.Release()
 	stable := 0
 	for i := 0; i < 20; i++ {
 		select {
 		case <-ctx.Done():
-			_ = a.Stop(context.Background())
-			return ctx.Err()
+			return failure(ctx.Err())
 		case <-time.After(time.Second):
 		}
-		if a.network(ctx, "ready") == nil {
+		readyErr = a.network(ctx, "ready")
+		if readyErr == nil {
 			stable++
 		} else {
 			stable = 0
@@ -199,8 +221,7 @@ func (a *UFIAdapter) Start(ctx context.Context, options StartOptions) error {
 			return nil
 		}
 	}
-	_ = a.Stop(context.Background())
-	return errors.New("代理启动未就绪，请查看日志")
+	return failure(errors.New("启动就绪检查未通过（要求连续通过 5 次）"))
 }
 
 func (a *UFIAdapter) Supervise() error {

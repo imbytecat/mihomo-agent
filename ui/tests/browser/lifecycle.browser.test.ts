@@ -17,7 +17,7 @@ test('install, encrypted subscription, runtime, autostart and uninstall', async 
   await app.getByCSS('[data-url]').fill('https://example.com/subscription');
   await app.getByRole('button', { name: '保存并更新', exact: true }).click();
   await expect
-    .element(app.getByText('配置已更新', { exact: true }).first())
+    .element(app.getByCSS('[data-sonner-toast]').getByText('配置已更新', { exact: true }))
     .toBeVisible();
   await idle();
   expect(evaluate('mockDeviceState.config')).toBe(true);
@@ -38,7 +38,7 @@ test('install, encrypted subscription, runtime, autostart and uninstall', async 
   await app.getByRole('button', { name: '更多操作', exact: true }).click();
   await app.getByRole('menuitem', { name: '运行日志', exact: true }).click();
   await expect
-    .element(app.getByCSS('[data-dialog=result][data-state=open]'))
+    .element(app.getByCSS('[data-log-panel][open]'))
     .toBeVisible();
   await closeModal();
   await app.getByRole('button', { name: '卸载', exact: true }).click();
@@ -86,7 +86,7 @@ test('reconnect observes the original task without resubmitting', async () => {
     .toBeTruthy();
   await app.getByCSS('[data-task]').click();
   await expect
-    .element(app.getByCSS('[data-dialog=result][data-state=open]'))
+    .element(app.getByCSS('[data-log-panel][open]'))
     .toBeVisible();
   await expect
     .element(app.getByCSS('[data-output]'))

@@ -8,6 +8,7 @@ import { Overview, runtimeTitle, stageOf } from './components/Overview';
 import { Settings } from './components/Settings';
 import { Subscription } from './components/Subscription';
 import { TaskNotice } from './components/TaskNotice';
+import { LogPanel } from './components/LogPanel';
 import { Button, Input, Modal, focus } from './components/ui';
 
 export default function Gateway({ container }: { container: HTMLElement }) {
@@ -107,6 +108,7 @@ export default function Gateway({ container }: { container: HTMLElement }) {
           {setup
             ? [settingsCard, subscriptionCard]
             : [subscriptionCard, settingsCard]}
+          <LogPanel model={model} />
         </div>
       </details>
       <Modal
@@ -133,20 +135,6 @@ export default function Gateway({ container }: { container: HTMLElement }) {
             卸载并删除数据
           </Button>
         </div>
-      </Modal>
-      <Modal
-        container={container}
-        kind="result"
-        open={model.detailOpen}
-        onOpenChange={model.setDetailOpen}
-        title={model.detailTitle}
-      >
-        <pre
-          data-output
-          className="ufi:m-0 ufi:max-h-[60vh] ufi:overflow-auto ufi:whitespace-pre-wrap ufi:wrap-break-word ufi:text-xs ufi:leading-relaxed"
-        >
-          {model.detail}
-        </pre>
       </Modal>
       <Modal
         container={container}
