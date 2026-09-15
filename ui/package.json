@@ -22,12 +22,12 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-hook-form": "^7.88.0",
-    "shell-quote": "^1.10.0",
     "sonner": "^2.0.8",
     "zod": "^4.6.5",
     "@imbytecat/ufi-sdk": "workspace:*"
   },
   "devDependencies": {
+    "shell-quote": "^1.10.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.5.1",
     "@types/react": "^19.3.0",

@@ -54,7 +54,7 @@ test('input validation and shell results preserve the trust boundary', async () 
   expect(() => subscriptionURL('file:///etc/passwd')).toThrow();
   expect(() => subscriptionURL('https://example.com/\noutput=/bad')).toThrow();
   expect(subscriptionURL('https://example.com/?key=x')).toContain('key=x');
-  const value = "a'b $(printf injected) `printf injected`\n中文";
+  const value = "a'b ! \\! $(printf injected) `printf injected`\n中文";
   const proc = spawnSync(
     'sh',
     ['-c', shellCommand(`printf '%s' ${quote(value)}`, 'TEST_')],

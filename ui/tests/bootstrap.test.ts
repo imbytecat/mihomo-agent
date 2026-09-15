@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { quote, latestAgentAssets } from '../src/transport/ufi';
+import { quote, latestAgentAssets, readBootstrap } from '../src/transport/ufi';
 import { protocol } from '../src/state';
 
 beforeEach(() => {
@@ -18,6 +18,39 @@ test('missing native host fetch fails without using the signed wrapper', async (
   const fetch = vi.spyOn(globalThis, 'fetch');
   await expect(latestAgentAssets()).rejects.toThrow('UFI 原始请求接口不可用');
   expect(fetch).not.toHaveBeenCalled();
+});
+
+test('bootstrap polling reads the real shell record by ID and latest pointer', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'ufi-bootstrap-status-'));
+  const id = 'a1'.repeat(16), job = join(base, 'jobs', id);
+  const record = {
+    id, action: 'bootstrap', state: 'succeeded', phase: 'done',
+    updated: '2026-09-15T00:00:00Z', hash: '', result: '', error: '',
+  };
+  try {
+    await mkdir(job, { recursive: true });
+    await writeFile(join(base, 'latest'), id);
+    await writeFile(join(job, 'state.json'), JSON.stringify(record));
+    await writeFile(join(job, 'bootstrap.sh'),
+      (await readFile('src/transport/ufi-bootstrap.sh', 'utf8'))
+        .replace('BASE=/data/mihomoctl-bootstrap', 'BASE=' + quote(base)));
+    vi.stubGlobal('KANO_baseURL', 'http://ufi.invalid/api');
+    vi.stubGlobal('location', { href: 'http://ufi.invalid/' });
+    vi.stubGlobal('common_headers', {});
+    vi.stubGlobal('originFetch', async (request: Request) => {
+      const { command } = await request.json() as { command: string };
+      // Execute the actual transport command against a private local fixture.
+      const child = spawnSync('sh', ['-c', command.replaceAll('/data/mihomoctl-bootstrap', base)], {
+        encoding: 'utf8', timeout: 10_000,
+      });
+      expect(child.status).toBe(0);
+      return Response.json({ result: child.stdout });
+    });
+    expect(await readBootstrap(id)).toEqual(record);
+    expect(await readBootstrap()).toEqual(record);
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
 });
 
 test('bootstrap verifies bytes before execution and reports failures without losing status', async () => {

@@ -1,7 +1,6 @@
 import sodium from 'libsodium-wrappers';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { quote as shellQuote } from 'shell-quote';
 import { z } from 'zod';
 import { rootShell, uploadFile } from '@imbytecat/ufi-sdk';
 import { createUfiHostClient, hostFetch } from '@imbytecat/ufi-sdk/host';
@@ -22,7 +21,9 @@ declare const KANO_baseURL: string;
 export const DIR = '/data/mihomoctl';
 const AGENT = DIR + '/mihomoctl';
 const BOOT = '/data/mihomoctl-bootstrap';
-export const quote = (value: string) => shellQuote([value]);
+// POSIX sh preserves \! inside double quotes; shell-quote corrupts scripts
+// containing negated patterns. Single-quote arguments without changing bytes.
+export const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 const uploadResponse = z.object({
   url: z
     .string()
