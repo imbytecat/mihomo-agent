@@ -364,9 +364,9 @@ function Installation({
         </span>
         <ActionButton
           model={model}
-          action={lifecycle || 'install'}
+          action={lifecycle}
           label={
-            lifecycle === 'uninstall' ? '卸载' : device ? '安装' : '状态未知'
+            lifecycle === 'uninstall' ? '卸载' : '安装'
           }
           onClick={lifecycle === 'uninstall' ? confirmUninstall : undefined}
         />

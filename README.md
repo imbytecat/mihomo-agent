@@ -25,7 +25,7 @@ flowchart TD
   Supervisor --> Core
 ```
 
-- **UFI 插件负责交互**：首次安装引导下载并校验 mihomoctl。后续请求先用设备公钥加密，再通过 UFI 上传；Root Shell 只把上传引用和摘要交给 ctl。ctl 解密并校验请求，插件通过任务 ID 查询进度。订阅和密钥明文不会进入公开上传文件或 Root Shell 命令。
+- **UFI 插件负责交互**：首次安装引导下载并校验 mihomoctl。订阅和设置等请求先用设备公钥加密，再通过 UFI 上传；Root Shell 只把上传引用和摘要交给 ctl。ctl 解密并校验请求，插件通过任务 ID 查询进度。订阅和密钥明文不会进入公开上传文件或 Root Shell 命令。
 - **ctl 负责完整操作**：本地 CLI 与 UFI 请求进入同一个 Manager。任务接收后写入 SQLite，并启动独立的 `mihomoctl worker`，由它完成下载、校验、配置切换、重启验证与失败回滚。终端或页面关闭不会取消已接收任务；重新连接后查询原任务。worker 执行结束便退出，进程意外中断会标记任务中断，不会自动重放请求。
 - **平台负责持续运行**：Linux 的 systemd service 直接运行 Mihomo，短期 worker 通过 systemd scope 托管；Android 上的 `mihomoctl supervise` 持续守护 Mihomo 并同步共享网络规则。自启分别交给 systemd 和 UFI 自启机制。CLI 命令退出后，内核仍能继续运行。
 
@@ -42,7 +42,7 @@ flowchart TD
 
 GitHub 连接不佳时，可自行部署 [netnr/workers 的 cors.js](https://github.com/netnr/workers)，在「设置 → 安装与更新 → 发行转发地址」填写 HTTPS 域名，例如 `https://mirror.example.com`，不附路径、参数或口令。首次安装直接使用所填地址并保存到设备；安装后修改需点击「保存转发设置」，留空恢复直连。初装、三组件版本检查与下载共用设置，订阅和 UFI 通信不经过转发。请使用自己部署或信任的服务；同一服务提供的文件与摘要不是独立来源证明。
 
-当前协议为 8、数据库 schema 为 6。旧安装请先用原插件或原 CLI 卸载，再导入新插件并安装；不提供旧状态迁移。
+当前协议为 8、数据库 schema 为 6，不提供旧状态迁移。替换插件后若状态不可读取，可直接点击首页「卸载现有安装」；插件会调用设备上的 ctl 停止服务并清理，确认安装目录和引导目录消失后即可重新安装。卸载入口不依赖运行状态解析，失败会显示具体原因，不直接强删目录。
 
 ## Linux 安装
 

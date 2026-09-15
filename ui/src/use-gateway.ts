@@ -6,12 +6,14 @@ import { toast } from 'sonner';
 import { subscriptionURL, interfaces, releaseProxy } from './config';
 import {
   bootstrapAgent,
+  uninstallAgent,
   cancelDeviceTask,
   checkUpdates,
   deviceLogs,
   readDeviceState,
   submitTask,
   readJob,
+  readUninstallJob,
   jobLog,
   readControllerSecret,
   stopAgent,
@@ -57,6 +59,8 @@ export function useGateway() {
   const values = useWatch({ control: form.control }) as Fields;
   const [queue] = useState(() => new PQueue({ concurrency: 1 }));
   const [device, setDevice] = useState<DeviceState | null>(null);
+  const [stateError, setStateError] = useState('');
+  const [observedTask, setObservedTask] = useState<DeviceJob | null>(null);
   const deviceRef = useRef<DeviceState | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const cancelPending = useRef(false);
@@ -83,12 +87,14 @@ export function useGateway() {
       };
       deviceRef.current = state;
       setDevice(state);
-    }
+    } else setObservedTask(task);
   };
 
   const readState = async () => {
     try {
       const state = await readDeviceState();
+      setStateError('');
+      setObservedTask(null);
       if (!state.service && loaded.current) {
         loaded.current = false;
         savedRef.current = null;
@@ -98,6 +104,7 @@ export function useGateway() {
       setDevice(state);
       return state;
     } catch (error) {
+      setStateError(error instanceof Error ? error.message : String(error));
       deviceRef.current = null;
       setDevice(null);
       throw error;
@@ -160,7 +167,7 @@ export function useGateway() {
   };
 
   const showTask = async () => {
-    const task = deviceRef.current?.task;
+    const task = deviceRef.current?.task || observedTask;
     if (!task) return;
     const revision = ++detailRequest.current;
     setDetailTitle('任务详情');
@@ -168,7 +175,8 @@ export function useGateway() {
     setDetailOpen(true);
     try {
       const latest =
-        task.action === 'bootstrap' ? task : await readJob(task.id);
+        task.action === 'bootstrap' ? task : task.action === 'uninstall'
+          ? await readUninstallJob(task) || task : await readJob(task.id);
       const log = await jobLog(latest);
       if (revision === detailRequest.current)
         setDetail(describeTask(latest) + (log ? '\n\n' + log : ''));
@@ -278,7 +286,7 @@ export function useGateway() {
     try {
       await queue.add(async () => {
         const state = await readState().catch((error) => {
-          if (id === 'stop') return null;
+          if (id === 'stop' || id === 'uninstall') return null;
           throw error;
         });
         const reason = disabledReason(id, state, false, snapshot.subscription);
@@ -393,7 +401,7 @@ export function useGateway() {
             result = '密钥已读取';
             break;
           case 'uninstall':
-            result = await waitTask(await submitTask('uninstall'), observe);
+            result = await waitTask(await uninstallAgent(), observe);
             loaded.current = false;
             form.reset(defaults);
             savedRef.current = null;
@@ -555,6 +563,8 @@ export function useGateway() {
   };
   return {
     device,
+    stateError,
+    task: device?.task || observedTask,
     cancelling,
     cancelTask,
     updates: device?.updates ?? null,

@@ -79,6 +79,7 @@ export default function Gateway({ container }: { container: HTMLElement }) {
           <Overview
             model={model}
             container={container}
+            confirmUninstall={() => setUninstallOpen(true)}
             addSubscription={() => {
               subscription.current?.scrollIntoView({
                 block: 'center',
@@ -94,13 +95,13 @@ export default function Gateway({ container }: { container: HTMLElement }) {
                 variant="danger"
                 onClick={() => model.setDetailOpen(true)}
               >
-                操作未完成 · 查看详情
+                查看错误详情
               </Button>
             </div>
           ) : (
-            topTask(model.device?.task) &&
-            model.device?.task && (
-              <TaskNotice model={model} job={model.device.task} />
+            topTask(model.task) &&
+            model.task && (
+              <TaskNotice model={model} job={model.task} />
             )
           )}
           {setup

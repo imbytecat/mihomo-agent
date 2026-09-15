@@ -349,12 +349,12 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
     service: true,
     controller: { enabled: true, port: 9090, applied: false },
   };
-  expect(lifecycleAction(null)).toBe(null);
+  expect(lifecycleAction(null)).toBe('uninstall');
   expect(lifecycleAction(emptyState)).toBe('install');
   expect(lifecycleAction(installed)).toBe('uninstall');
   expect(disabledReason('install', installed)).toContain('已安装');
   expect(disabledReason('self-update', installed)).toBe('');
-  expect(disabledReason('uninstall', null)).not.toBe('');
+  expect(disabledReason('uninstall', null)).toBe('');
   expect(disabledReason('uninstall', installed, true)).not.toBe('');
   for (const action of ['start', 'restart', 'update', 'boot-on'] as const)
     expect(disabledReason(action, installed)).not.toBe('');

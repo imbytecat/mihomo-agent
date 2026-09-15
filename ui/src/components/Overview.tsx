@@ -34,7 +34,7 @@ export function stageOf(model: GatewayModel) {
 
 export function runtimeTitle(model: GatewayModel) {
   const device = model.device;
-  if (!device) return model.busy ? '正在连接' : '连接失败';
+  if (!device) return model.busy === 'uninstall' ? '正在卸载' : model.busy ? '正在检测' : '状态不可用';
   if (!device.running)
     return stageOf(model) === 'ready' ? '已停止' : '尚未就绪';
   return !device.supervisor
@@ -50,10 +50,12 @@ export function Overview({
   model,
   container,
   addSubscription,
+  confirmUninstall,
 }: {
   model: GatewayModel;
   container: HTMLElement;
   addSubscription: () => void;
+  confirmUninstall: () => void;
 }) {
   const { device, busy } = model;
   const stage = stageOf(model);
@@ -136,7 +138,7 @@ export function Overview({
       </h2>
       <p className="ufi:m-0 ufi:mt-1 ufi:mb-5 ufi:text-sm ufi:opacity-60">
         {!device
-          ? '检查 UFI 登录与高级功能'
+          ? model.busy === 'uninstall' ? '正在停止服务并清理安装文件' : model.stateError.split('\n')[0] || '可重新检测，或卸载现有安装后重新安装'
           : healthy
             ? device.capabilities.capture
               ? '本地接管就绪'
@@ -192,6 +194,14 @@ export function Overview({
         >
           添加订阅
         </Button>
+      )}
+      {stage === 'unknown' && (
+        <div className="ufi:mt-3">
+          <Button full variant="danger" disabled={!!busy} loading={busy === 'uninstall'} onClick={confirmUninstall}>
+            {busy === 'uninstall' ? '正在卸载现有安装…' : '卸载现有安装'}
+          </Button>
+          <Hint>卸载不依赖状态读取；完成后可重新初始化安装。</Hint>
+        </div>
       )}
       {device?.service && (
         <div className="ufi:mt-3">

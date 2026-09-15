@@ -35,6 +35,7 @@ const scenarios: Record<string, DeviceState> = {
   },
   'missing-config': { ...ready, config: false, subscription: false },
   ready,
+  'unreadable-state': { ...ready },
   'managed-linux': {
     ...ready,
     platform: 'linux',
@@ -265,8 +266,13 @@ Object.assign(globalThis, {
         (x): x is string => typeof x === 'string',
       );
       if (inner.includes('ufi-uninstall-status'))
-        result = state.agent ? state.task : null;
-      else if (inner.includes('/data/mihomoctl/mihomoctl status')) result = state.agent ? state : null;
+        result = state.agent && state.task ? { id: state.task.id, action: state.task.action, state: state.task.state, phase: state.task.phase, updated: state.task.updated, error: state.task.error } : null;
+      else if (inner.includes('/data/mihomoctl/mihomoctl uninstall')) {
+        const job = submit({ id: args[args.indexOf('--id') + 1]!, action: 'uninstall', params: {} });
+        result = { id: job.id, action: job.action, state: job.state, phase: job.phase, updated: job.updated };
+      }
+      else if (inner.includes('/data/mihomoctl/mihomoctl status')) result = !state.agent ? null : scenario === 'unreadable-state'
+        ? { broken: true } : state;
       else if (args[0] === '/data/mihomoctl/mihomoctl') {
         switch (args[1]) {
           case 'submit': {

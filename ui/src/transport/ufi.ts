@@ -180,6 +180,32 @@ export async function readJob(id: string) {
   return parseJob(await agent(['job', id]));
 }
 
+// Uninstall is a native control command and does not need a readable UI state.
+export async function uninstallAgent(): Promise<DeviceJob> {
+  const id = taskID();
+  const now = new Date().toISOString();
+  const initial: DeviceJob = {
+    id, action: 'uninstall', state: 'queued', phase: 'stopping',
+    started: now, updated: now, hash: '', result: '', error: '',
+    downloaded: 0, total: 0, speed: 0, cancellable: false, cancelRequested: false,
+  };
+  try {
+    await shell(`
+      [ "$(id -u)" = 0 ] || { echo '请开启 UFI 高级功能'; exit 1; }
+      [ ! -L ${DIR} ] && [ ! -L ${BOOT} ] && [ ! -L ${AGENT} ] || { echo '卸载路径异常'; exit 1; }
+      if [ ! -e ${DIR} ] && [ ! -e ${BOOT} ]; then exit 0; fi
+      [ -x ${AGENT} ] || { echo '设备上的卸载程序不可用，无法完成服务清理'; exit 1; }
+      exec ${AGENT} uninstall --id ${id} --no-wait
+    `);
+  } catch (error) {
+    // A missing submit response is never a reason to submit a second uninstall.
+    const recovered = await readUninstallJob(initial).catch(() => null);
+    if (recovered) return recovered;
+    throw new Error(`卸载未完成\n任务 ID：${id}\n${error instanceof Error ? error.message : String(error)}`);
+  }
+  return initial;
+}
+
 // Completion is the absence of both owned directories, not a surviving receipt.
 export async function readUninstallJob(
   initial: DeviceJob,
@@ -187,6 +213,7 @@ export async function readUninstallJob(
   if (!/^[a-f0-9]{32}$/.test(initial.id)) throw new Error('无效任务 ID');
   const state = await shell(`
     # ufi-uninstall-status
+    [ "$(id -u)" = 0 ] || { echo '请开启 UFI 高级功能'; exit 1; }
     [ ! -L ${DIR} ] && [ ! -L ${BOOT} ] || { echo '卸载目录异常'; exit 1; }
     if [ ! -e ${DIR} ] && [ ! -L ${DIR} ] && [ ! -e ${BOOT} ] && [ ! -L ${BOOT} ]; then printf null
     elif [ -x ${AGENT} ] && record=$(${AGENT} job ${initial.id} 2>/dev/null); then printf '%s' "$record"
@@ -201,7 +228,18 @@ export async function readUninstallJob(
       result: 'Mihomo 服务已卸载',
     };
   if (value?.removing === true) return null;
-  const job = parseJob(value);
+  // Observe only the command receipt. Runtime settings and task progress are
+  // irrelevant to removal and must not gate this independent control path.
+  const receipt = z.object({
+    id: z.literal(initial.id),
+    action: z.literal('uninstall'),
+    state: z.enum(['queued', 'running', 'succeeded', 'failed', 'interrupted', 'cancelled']),
+    phase: z.string(),
+    updated: z.string(),
+    error: z.string().default(''),
+    result: z.string().default(''),
+  }).parse(value);
+  const job = { ...initial, ...receipt };
   if (job.state === 'succeeded')
     return { ...job, state: 'failed', error: '卸载未完成，设备文件仍存在' };
   return job;

@@ -160,12 +160,12 @@ export function parseJob(value: unknown): DeviceJob {
 
 export function lifecycleAction(
   state: DeviceState | null,
-): 'install' | 'uninstall' | null {
+): 'install' | 'uninstall' {
   return state
     ? state.agent || state.service
       ? 'uninstall'
       : 'install'
-    : null;
+    : 'uninstall';
 }
 
 export function componentVersion(
@@ -203,7 +203,7 @@ export function disabledReason(
 ): string {
   if (busy) return '正在执行操作，请稍候';
   if (action === 'refresh') return '';
-  if (!state) return action === 'stop' ? '' : '尚未确认设备状态，请刷新状态';
+  if (!state) return action === 'stop' || action === 'uninstall' ? '' : '尚未确认设备状态，请刷新状态';
   if (action === 'check-updates')
     return state.agent ? '' : '请先安装 mihomoctl';
   if (action === 'logs' || action === 'diagnose')
