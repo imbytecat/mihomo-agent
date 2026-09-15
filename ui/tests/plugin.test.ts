@@ -210,6 +210,48 @@ test('startup and missing-LAN states keep listener guards without capturing traf
   ).not.toContain('TPROXY');
 });
 
+test('firewall probe uses unhooked rules and cleanup never treats failed reads as absence', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'mihomoctl-probe-'));
+  temporary.push(dir);
+  for (const name of ['routes', 'rules', 'ready', 'fw-4-mangle-PREROUTING', 'fw-4-nat-PREROUTING', 'fw-4-filter-INPUT', 'fw-6-filter-INPUT', 'fw-6-filter-FORWARD'])
+    await writeFile(join(dir, name), '');
+  await writeFile(join(dir, 'interfaces'), 'wlan0');
+  await writeFile(join(dir, 'fw-4-filter-OTHER'), '-j RETURN\n');
+  const source = await networkFunctions();
+  const harness = await readFile('tests/fake-net.sh', 'utf8');
+  const run = (action: string) => spawnSync('sh', ['-c', `DIR=${quote(dir)}\n${source}\n${harness}\n${action}`], { encoding: 'utf8', timeout: 10_000 });
+  await writeFile(join(dir, 'no-tproxy'), '');
+  const unsupported = run('network_check');
+  expect(unsupported.status).toBe(1);
+  expect(unsupported.stderr).toContain('TPROXY target unavailable');
+  expect(existsSync(join(dir, 'network.owned'))).toBe(false);
+  expect(await readFile(join(dir, 'fw-4-mangle-PREROUTING'), 'utf8')).toBe('');
+  await rm(join(dir, 'no-tproxy'));
+  expect(run('network_check').status).toBe(0);
+  const calls = await readFile(join(dir, 'network.calls'), 'utf8');
+  expect(calls).toContain('-p tcp ! --dport 53 -j TPROXY');
+  expect(calls).toContain('-p udp ! --dport 53 -j TPROXY');
+  expect(calls).toContain('-p tcp --dport 53 -j REDIRECT');
+  expect(calls).not.toContain(' -I ');
+  expect(existsSync(join(dir, 'network.active'))).toBe(false);
+
+  expect(run('network_start').status).toBe(0);
+  await writeFile(join(dir, 'fail-query'), '');
+  const failedRead = run('network_stop');
+  expect(failedRead.status).toBe(1);
+  expect(failedRead.stderr).toContain('permission denied');
+  expect(existsSync(join(dir, 'network.owned'))).toBe(true);
+  expect(existsSync(join(dir, 'network.active'))).toBe(true);
+  await rm(join(dir, 'fail-query'));
+  await writeFile(join(dir, 'fail-delete'), '');
+  expect(run('network_stop').status).toBe(1);
+  expect(existsSync(join(dir, 'network.owned'))).toBe(true);
+  await rm(join(dir, 'fail-delete'));
+  expect(run('network_stop').status).toBe(0);
+  expect(existsSync(join(dir, 'network.owned'))).toBe(false);
+  expect(await readFile(join(dir, 'fw-4-filter-OTHER'), 'utf8')).toBe('-j RETURN\n');
+});
+
 test('built plugin is one classic script with HTML-safe boundaries', async () => {
   const output = await readFile('dist/mihomoctl-ufi.js', 'utf8');
   expect(output.startsWith('//<script>')).toBe(true);
@@ -367,6 +409,7 @@ test('UI gates actions by real prerequisites and keeps recovery actions accessib
   expect(lifecycleAction(installed)).toBe('uninstall');
   expect(disabledReason('install', installed)).toContain('已安装');
   expect(disabledReason('self-update', installed)).toBe('');
+  expect(disabledReason('self-update', { ...installed, capture: true })).toContain('清理');
   expect(disabledReason('uninstall', null)).toBe('');
   expect(disabledReason('uninstall', installed, true)).not.toBe('');
   for (const action of ['start', 'restart', 'update', 'boot-on'] as const)

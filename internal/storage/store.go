@@ -19,7 +19,7 @@ import (
 
 const Filename = "state.db"
 const Lockfile = "state.lock"
-const schemaVersion = 6
+const schemaVersion = 7
 
 type Store struct {
 	db      *sql.DB

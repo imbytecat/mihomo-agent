@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const protocol = 8;
+export const protocol = 9;
 const capabilitiesSchema = z.object({
   interfaces: z.boolean(),
   capture: z.boolean(),
@@ -219,6 +219,7 @@ export function disabledReason(
         ? '请先停止代理'
         : '';
   if (!state.service) return '请先安装 Mihomo 服务';
+  if (action === 'self-update' && state.capture) return '请先停止代理并完成网络规则清理';
   if (
     action === 'save-release-proxy' ||
     action === 'save-controller' ||

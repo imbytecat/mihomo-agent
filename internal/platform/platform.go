@@ -4,10 +4,12 @@ package platform
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/imbytecat/mihomoctl/internal/host"
 	"github.com/imbytecat/mihomoctl/internal/storage"
@@ -45,6 +47,7 @@ type Adapter interface {
 	SetBoot(context.Context, bool) error
 	Remove(context.Context) error
 	AttachTask(context.Context, int, string) error
+	Diagnostics(context.Context) (string, error)
 }
 type Supervisor interface{ Supervise() error }
 type Runner func(context.Context, []*os.File, string, ...string) ([]byte, error)
@@ -65,6 +68,18 @@ func (e Environment) command(ctx context.Context, files []*os.File, name string,
 		return e.Run(ctx, files, name, args...)
 	}
 	return host.Command(ctx, files, name, args...)
+}
+
+func (e Environment) Diagnostics(ctx context.Context) (string, error) {
+	var result strings.Builder
+	for _, args := range [][]string{{"-o", "-4", "addr", "show"}, {"-4", "rule", "show"}, {"-4", "route", "show", "table", "all"}, {"-6", "route", "show", "table", "all"}} {
+		output, err := e.command(ctx, nil, "ip", args...)
+		fmt.Fprintf(&result, "ip %s\n%s\n", strings.Join(args, " "), output)
+		if err != nil {
+			fmt.Fprintf(&result, "失败：%v\n", err)
+		}
+	}
+	return result.String(), nil
 }
 func DefaultKind() string {
 	if _, err := os.Stat("/system/bin/sh"); err == nil {

@@ -36,6 +36,7 @@
 ## 平台所有权
 
 - UFI 使用自己的链、mark 和路由，不清空系统防火墙或全局路由。启动内核前建立监听保护；等待 LAN 时仍保留保护，内核退出后才撤掉。
+- UFI 防火墙路径与后端记录在私有 runtime/firewall.json，首次检查在 network.lock 内绑定；默认入口优先，缺失时仅接受唯一完整的 legacy/nft 配对，拒绝混合或后端变更。停止与卸载使用同一记录；不按其他代理规则猜测后端。启动前在未挂接链中验证实际 TPROXY、DNS、mark 与 IPv6 保护规则，失败保留清理证据；查询失败不能等同规则不存在。
 - UFI 本机 IPv4 目的地址用显式 /32 规则排除，不依赖 addrtype 扩展；地址快照与活动规则同次提交，地址变化触发同步，规则切换期间保留监听保护。启动失败返回最后的就绪错误、仅本次新增的脱敏日志及清理失败原因。
 - UFI 自动接口识别只接受共享入口，排除蜂窝、上游和 VPN；未知固件保留手动接口配置。能力标识不保证任意硬件已支持 TPROXY。
 - Linux 使用 go-systemd 的 D-Bus 客户端和 unit 序列化；unit 源文件位于私有目录，通过 D-Bus 注册。操作前核对源文件、FragmentPath、有效 Id、ExecStart / argv、WorkingDirectory、KillMode 和命名空间设置；拒绝外部同名 unit、mask 和 drop-in，链接及启用不使用 force。ExecStart 使用 : 禁用环境变量展开，路径中的 % 仍需转义。

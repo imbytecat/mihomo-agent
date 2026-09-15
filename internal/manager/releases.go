@@ -75,8 +75,9 @@ func (a *Manager) latestRelease(ctx context.Context, owner, repo string) (releas
 }
 
 func (a *Manager) updateAgent(ctx context.Context, work string, phase func(string)) (string, error) {
-	if a.running() {
-		return "", errors.New("请先停止代理")
+	state, err := a.Platform.Inspect(ctx)
+	if err != nil || state.Running || state.Capture {
+		return "", errors.New("请先停止代理并完成网络规则清理")
 	}
 	phase("release")
 	r, err := a.latestRelease(ctx, "imbytecat", "mihomoctl")

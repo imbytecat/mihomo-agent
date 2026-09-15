@@ -9,4 +9,4 @@ CREATE TABLE pending (singleton INTEGER PRIMARY KEY CHECK(singleton=1), previous
 CREATE TABLE dashboards (id TEXT PRIMARY KEY, version TEXT NOT NULL);
 CREATE TABLE core_version (singleton INTEGER PRIMARY KEY CHECK(singleton=1), identity TEXT NOT NULL, version TEXT NOT NULL);
 CREATE TABLE update_checks (singleton INTEGER PRIMARY KEY CHECK(singleton=1), checked_at TEXT NOT NULL, self_current TEXT NOT NULL, self_latest TEXT NOT NULL, self_state TEXT NOT NULL, self_error TEXT NOT NULL, core_current TEXT NOT NULL, core_latest TEXT NOT NULL, core_state TEXT NOT NULL, core_error TEXT NOT NULL, dashboard_current TEXT NOT NULL, dashboard_latest TEXT NOT NULL, dashboard_state TEXT NOT NULL, dashboard_error TEXT NOT NULL);
-PRAGMA user_version=6;
+PRAGMA user_version=7;

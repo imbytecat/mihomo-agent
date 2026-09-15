@@ -62,7 +62,14 @@ func (a *UFIAdapter) Inspect(ctx context.Context) (State, error) {
 	} else if !os.IsNotExist(err) {
 		return s, err
 	}
-	output, err := a.command(ctx, nil, "/system/bin/sh", a.runtime("network.sh"), a.runtime(), "inspect")
+	if !s.Running && !s.Capture {
+		return s, nil
+	}
+	fw, err := a.firewall(ctx, false)
+	if err != nil {
+		return s, nil
+	}
+	output, err := a.command(ctx, nil, "/system/bin/sh", a.runtime("network.sh"), a.runtime(), "inspect", fw.IPv4, fw.IPv6)
 	if err == nil {
 		var n struct{ Listeners, Network bool }
 		if json.Unmarshal(output, &n) == nil {
@@ -104,9 +111,13 @@ func (a *UFIAdapter) network(ctx context.Context, action string) error {
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
-	output, err := a.command(ctx, []*os.File{lock}, "/system/bin/sh", a.runtime("network.sh"), a.runtime(), action)
+	fw, err := a.firewall(ctx, action == "check" || action == "prepare")
 	if err != nil {
-		return fmt.Errorf("网络规则 %s 失败：%w\n%s", action, err, redact.String(string(output)))
+		return err
+	}
+	output, err := a.command(ctx, []*os.File{lock}, "/system/bin/sh", a.runtime("network.sh"), a.runtime(), action, fw.IPv4, fw.IPv6)
+	if err != nil {
+		return fmt.Errorf("网络规则 %s 失败（%s，%s / %s）：%w\n%s", action, fw.Backend, fw.IPv4, fw.IPv6, err, redact.String(string(output)))
 	}
 	return nil
 }
@@ -169,16 +180,57 @@ func (a *UFIAdapter) Start(ctx context.Context, options StartOptions) error {
 	if err := fsutil.AtomicWrite(a.runtime("network.sh"), networkScript, 0700); err != nil {
 		return err
 	}
+	if err := a.network(ctx, "check"); err != nil {
+		return errors.Join(fmt.Errorf("启动前能力检查失败：%w", err), a.Stop(context.Background()))
+	}
 	offsets := map[string]int64{}
 	for _, name := range []string{"supervisor.log", "core.log"} {
 		if info, err := os.Stat(a.runtime(name)); err == nil {
 			offsets[name] = info.Size()
 		}
 	}
+	log, err := os.OpenFile(a.runtime("supervisor.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		return err
+	}
+	defer log.Close()
+	cmd := exec.Command(a.Executable, "supervise", "--root", a.Root)
+	cmd.Stdout = log
+	cmd.Stderr = log
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	var done chan struct{}
+	var exitErr error
 	var readyErr error
 	failure := func(cause error) error {
-		state := fmt.Errorf("代理启动失败：守护进程存活=%t，内核存活=%t", a.alive("supervisor"), a.alive("core"))
-		cleanup := a.Stop(context.Background())
+		state := fmt.Errorf("代理启动失败：失败时守护进程存活=%t，内核存活=%t", a.alive("supervisor"), a.alive("core"))
+		if readyErr == nil {
+			probe, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			readyErr = a.network(probe, "ready")
+			cancel()
+		}
+		var childErr error
+		if done != nil {
+			select {
+			case <-done:
+			default:
+				if err := cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
+					childErr = err
+				}
+				select {
+				case <-done:
+				case <-time.After(5 * time.Second):
+					if err := cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+						childErr = errors.Join(childErr, err)
+					}
+					select {
+					case <-done:
+					case <-time.After(2 * time.Second):
+						childErr = errors.Join(childErr, errors.New("等待本次守护进程退出超时"))
+					}
+				}
+			}
+		}
+		cleanup := errors.Join(childErr, a.Stop(context.Background()))
 		if cleanup != nil {
 			cleanup = fmt.Errorf("启动失败后的清理也失败：%w", cleanup)
 		}
@@ -191,34 +243,39 @@ func (a *UFIAdapter) Start(ctx context.Context, options StartOptions) error {
 		}
 		return errors.Join(details...)
 	}
-	log, err := os.OpenFile(a.runtime("supervisor.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
-	if err != nil {
-		return err
-	}
-	defer log.Close()
-	cmd := exec.Command(a.Executable, "supervise", "--root", a.Root)
-	cmd.Stdout = log
-	cmd.Stderr = log
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err = cmd.Start(); err != nil {
 		return failure(err)
 	}
-	_ = cmd.Process.Release()
+	done = make(chan struct{})
+	go func() { exitErr = cmd.Wait(); close(done) }()
 	stable := 0
 	for i := 0; i < 20; i++ {
 		select {
 		case <-ctx.Done():
 			return failure(ctx.Err())
+		case <-done:
+			if exitErr == nil {
+				exitErr = errors.New("守护进程提前退出")
+			}
+			return failure(fmt.Errorf("本次守护进程退出：%w", exitErr))
 		case <-time.After(time.Second):
 		}
 		readyErr = a.network(ctx, "ready")
+		if readyErr == nil && !a.alive("supervisor") {
+			readyErr = errors.New("守护进程记录不可验证")
+		}
 		if readyErr == nil {
 			stable++
 		} else {
 			stable = 0
 		}
 		if stable >= 5 {
-			return nil
+			select {
+			case <-done:
+				return failure(errors.New("守护进程在就绪检查期间退出"))
+			default:
+				return nil
+			}
 		}
 	}
 	return failure(errors.New("启动就绪检查未通过（要求连续通过 5 次）"))

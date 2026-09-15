@@ -25,7 +25,7 @@ sudo ./mihomoctl-linux-amd64 --root /opt/mihomoctl install \
 
 如需发行转发，可在安装时加 `--release-proxy https://mirror.example.com`，指向自行部署的 [netnr/workers cors.js](https://github.com/netnr/workers)。安装后使用 `save-release-proxy --input 文件` 保存 `{"releaseProxy":"https://mirror.example.com"}`，空字符串恢复直连。设置保存在设备 SQLite，后台任务和三组件版本检查、下载都会读取；订阅不走转发。入口只接受无路径、参数及凭据的 HTTPS 域名。
 
-当前数据库 schema 为 6、协议为 8；旧安装须先用原安装目录内的 CLI 卸载，再用新二进制安装，不迁移旧状态。
+当前数据库 schema 为 7、协议为 9；旧安装须先用原安装目录内的 CLI 卸载，再用新二进制安装，不迁移旧状态。
 
 长下载可用 `--no-wait` 提交，通过 `job ID` 查看字节进度和取消状态，`job-log ID` 查看带时间的日志；`cancel ID` 请求取消并等待清理。取消仅在下载／准备阶段接受，提交安装或应用配置后会拒绝取消；不会关闭正在运行的代理。
 

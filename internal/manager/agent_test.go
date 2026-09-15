@@ -341,6 +341,7 @@ func TestOfficialAssetAndCoreIntegrity(t *testing.T) {
 
 func TestUninstallPreservesRuntimeOnCleanupFailure(t *testing.T) {
 	a := testAgent(t)
+	_ = fsutil.WriteJSON(a.runtime("firewall.json"), map[string]string{"ipv4": "/fixture/iptables", "ipv6": "/fixture/ip6tables", "backend": "legacy"})
 	_ = fsutil.AtomicWrite(a.runtime("network.owned"), nil, 0600)
 	_ = fsutil.AtomicWrite(a.runtime("private-data"), []byte("keep me"), 0600)
 	_ = fsutil.AtomicWrite(a.Platform.(*platform.UFIAdapter).BootPath, []byte("other-plugin start\n"+a.Platform.(*platform.UFIAdapter).BootLine()+"\n"), 0644)
@@ -352,7 +353,12 @@ func TestUninstallPreservesRuntimeOnCleanupFailure(t *testing.T) {
 	if !fsutil.RegularFile(a.runtime("private-data")) {
 		t.Fatal("removed files before cleanup")
 	}
-	a.runCommand = func(context.Context, string, ...string) ([]byte, error) { return nil, nil }
+	a.runCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if args[len(args)-1] == "--version" {
+			return []byte("iptables v1.8.7 (legacy)"), nil
+		}
+		return nil, nil
+	}
 	if _, err := a.execute(context.Background(), request, func(string) {}); err != nil {
 		t.Fatal(err)
 	}

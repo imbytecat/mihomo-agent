@@ -2,6 +2,8 @@
 # UFI Android network adapter. Only these chains, mark bit and table belong to us.
 DIR=$1
 ACTION=$2
+IPT=$3
+IP6T=$4
 alive() {
   pid=$(cat "$DIR/core.pid" 2>/dev/null)
   case "$pid" in ''|*[!0-9]*) return 1;; esac
@@ -11,8 +13,8 @@ MARK=0x40000000
 TABLE=2026
 PRIORITY=9000
 
-ipt() { iptables -w 5 "$@"; }
-ip6t() { ip6tables -w 5 "$@"; }
+ipt() { "$IPT" -w 5 "$@"; }
+ip6t() { "$IP6T" -w 5 "$@"; }
 
 resolve_interfaces() {
   configured=$(cat "$DIR/interfaces" 2>/dev/null)
@@ -69,14 +71,26 @@ active_interfaces() { sed -n '2p' "$DIR/network.active" 2>/dev/null; }
 active_addresses() { sed -n '3p' "$DIR/network.active" 2>/dev/null; }
 
 # Detach traffic before changing a former LAN into an upstream. Keep INPUT guards.
-pause_capture() {
-  for group in 'ipt mangle PREROUTING UFI_MH' 'ipt nat PREROUTING UFI_MH_DNS'; do
-    # shellcheck disable=SC2086
-    set -- $group
-    while "$1" -t "$2" -C "$3" -j "$4" >/dev/null 2>&1; do
-      "$1" -t "$2" -D "$3" -j "$4" || return 1
-    done
+table_snapshot() {
+  snapshot=$("$1" -t "$2" -S) || { echo "无法读取防火墙表：$1 $2" >&2; return 1; }
+  printf '%s\n' "$snapshot"
+}
+
+remove_hook() {
+  while :; do
+    snapshot=$(table_snapshot "$1" "$2") || return 1
+    printf '%s\n' "$snapshot" | grep -qxF -- "-A $3 -j $4" || return 0
+    "$1" -t "$2" -D "$3" -j "$4" || return 1
   done
+}
+
+pause_capture() {
+  remove_hook ipt mangle PREROUTING UFI_MH && remove_hook ipt nat PREROUTING UFI_MH_DNS
+}
+
+owned_routes() {
+  routes=$(ip -N -4 route show table all) || { echo '无法读取 IPv4 路由表' >&2; return 1; }
+  printf '%s\n' "$routes" | awk -v table="$TABLE" '{ for(i=1;i<NF;i++) if($i=="table" && $(i+1)==table) { print; break } }'
 }
 
 # The file descriptors prove these sockets belong to our core, not another process.
@@ -104,37 +118,43 @@ network_stop() {
   [ -f "$DIR/network.owned" ] || return 0
   network_tools || return 1
   for group in 'ipt mangle PREROUTING UFI_MH' 'ipt nat PREROUTING UFI_MH_DNS' 'ip6t filter FORWARD UFI_MH6' 'ipt filter INPUT UFI_MH_IN' 'ip6t filter INPUT UFI_MH_IN6'; do
-    # Fixed tuples, not user input.
     # shellcheck disable=SC2086
     set -- $group
-    while "$1" -t "$2" -C "$3" -j "$4" >/dev/null 2>&1; do
-      "$1" -t "$2" -D "$3" -j "$4" || return 1
-    done
-    if "$1" -t "$2" -S "$4" >/dev/null 2>&1; then "$1" -t "$2" -F "$4" || return 1; fi
+    remove_hook "$1" "$2" "$3" "$4" || return 1
+    snapshot=$(table_snapshot "$1" "$2") || return 1
+    if printf '%s\n' "$snapshot" | grep -qxF -- "-N $4"; then "$1" -t "$2" -F "$4" || return 1; fi
     for chain in "${4}_A" "${4}_B" "$4"; do
-      if "$1" -t "$2" -S "$chain" >/dev/null 2>&1; then
+      if printf '%s\n' "$snapshot" | grep -qxF -- "-N $chain"; then
         "$1" -t "$2" -F "$chain" && "$1" -t "$2" -X "$chain" || return 1
       fi
     done
+    snapshot=$(table_snapshot "$1" "$2") || return 1
+    if printf '%s\n' "$snapshot" | grep -Eq "^-N ($4|${4}_A|${4}_B)$"; then echo "网络链未完全清理：$4" >&2; return 1; fi
   done
-  while ip -4 rule del priority "$PRIORITY" fwmark "$MARK/$MARK" table "$TABLE" >/dev/null 2>&1; do :; done
-  ip -4 route del local 0.0.0.0/0 dev lo table "$TABLE" >/dev/null 2>&1
-  rules=$(ip -4 rule show) || return 1
-  routes=$(ip -4 route show table all) || return 1
-  if printf '%s\n' "$rules" | grep -Eq "^$PRIORITY:.*fwmark 0x40000000/0x40000000.*lookup $TABLE( |$)" ||
-    printf '%s\n' "$routes" | grep -Eq "^local (default|0.0.0.0/0).*dev lo.*table $TABLE( |$)"; then
-    echo '网络规则未完全清理，保留运行文件' >&2
-    return 1
+  while :; do
+    rules=$(ip -N -4 rule show) || return 1
+    printf '%s\n' "$rules" | grep -Eq "^$PRIORITY:.*fwmark 0x40000000/0x40000000.*lookup $TABLE( |$)" || break
+    ip -4 rule del priority "$PRIORITY" fwmark "$MARK/$MARK" table "$TABLE" || return 1
+  done
+  routes=$(owned_routes) || return 1
+  if printf '%s\n' "$routes" | grep -Eq '^local (default|0.0.0.0/0).*dev lo( |$)'; then
+    ip -4 route del local 0.0.0.0/0 dev lo table "$TABLE" || return 1
   fi
-  rm -f "$DIR/network.active" "$DIR/network.pending"
-  return 0
+  routes=$(owned_routes) || return 1
+  rules=$(ip -N -4 rule show) || return 1
+  if printf '%s\n' "$routes" | grep -Eq '^local (default|0.0.0.0/0).*dev lo( |$)' ||
+    printf '%s\n' "$rules" | grep -Eq "^$PRIORITY:.*fwmark 0x40000000/0x40000000.*lookup $TABLE( |$)"; then
+    echo '网络路由未完全清理，保留运行文件' >&2; return 1
+  fi
+  rm -f "$DIR/network.active" "$DIR/network.pending" "$DIR/network.active.next" "$DIR/network.owned"
 }
 
 build_slot() {
   for group in 'ipt mangle UFI_MH' 'ipt nat UFI_MH_DNS' 'ip6t filter UFI_MH6' 'ipt filter UFI_MH_IN' 'ip6t filter UFI_MH_IN6'; do
     # shellcheck disable=SC2086
     set -- $group
-    if "$1" -t "$2" -S "${3}_$next" >/dev/null 2>&1; then
+    snapshot=$(table_snapshot "$1" "$2") || return 1
+    if printf '%s\n' "$snapshot" | grep -qxF -- "-N ${3}_$next"; then
       "$1" -t "$2" -F "${3}_$next" || return 1
     else "$1" -t "$2" -N "${3}_$next" || return 1; fi
   done
@@ -171,7 +191,8 @@ switch_slot() {
   for group in 'ipt filter INPUT UFI_MH_IN' 'ip6t filter INPUT UFI_MH_IN6' 'ip6t filter FORWARD UFI_MH6' 'ipt nat PREROUTING UFI_MH_DNS' 'ipt mangle PREROUTING UFI_MH'; do
     # shellcheck disable=SC2086
     set -- $group
-    "$1" -t "$2" -S "$4" >/dev/null 2>&1 || "$1" -t "$2" -N "$4" || return 1
+    snapshot=$(table_snapshot "$1" "$2") || return 1
+    printf '%s\n' "$snapshot" | grep -qxF -- "-N $4" || "$1" -t "$2" -N "$4" || return 1
     wrapper_rules=$("$1" -t "$2" -S "$4") || return 1
     entries=$(printf '%s\n' "$wrapper_rules" | awk '$1=="-A" {n++} END {print n+0}')
     case "$entries" in
@@ -179,13 +200,15 @@ switch_slot() {
       1) "$1" -t "$2" -R "$4" 1 -j "${4}_$slot" || return 1;;
       *) echo '入口链状态异常，请停止代理后重试' >&2; return 1;;
     esac
-    "$1" -t "$2" -C "$3" -j "$4" >/dev/null 2>&1 || "$1" -t "$2" -I "$3" 1 -j "$4" || return 1
+    printf '%s\n' "$snapshot" | grep -qxF -- "-A $3 -j $4" || "$1" -t "$2" -I "$3" 1 -j "$4" || return 1
   done
 }
 
 network_routes_ok() {
-  ip -4 rule show | grep -Eq "^$PRIORITY:.*fwmark 0x40000000/0x40000000.*lookup $TABLE( |$)" &&
-  ip -4 route show table "$TABLE" | grep -q 'local default dev lo'
+  rules=$(ip -N -4 rule show) || return 1
+  routes=$(owned_routes) || return 1
+  printf '%s\n' "$rules" | grep -Eq "^$PRIORITY:.*fwmark 0x40000000/0x40000000.*lookup $TABLE( |$)" &&
+  printf '%s\n' "$routes" | grep -q 'local default dev lo'
 }
 
 network_ok() {
@@ -199,6 +222,33 @@ network_ok() {
     "$1" -t "$2" -C "$4" -j "${4}_$slot" >/dev/null 2>&1 || return 1
   done
   network_routes_ok
+}
+
+claim_network() {
+  [ ! -f "$DIR/network.owned" ] || return 0
+  routes=$(owned_routes) || return 1
+  [ -z "$routes" ] || { echo '策略路由表已被其他程序占用' >&2; return 1; }
+  rules=$(ip -N -4 rule show) || return 1
+  if printf '%s\n' "$rules" | grep -q "^$PRIORITY:"; then echo '策略路由优先级已被占用' >&2; return 1; fi
+  for group in 'ipt mangle UFI_MH' 'ipt nat UFI_MH_DNS' 'ip6t filter UFI_MH6' 'ipt filter UFI_MH_IN' 'ip6t filter UFI_MH_IN6'; do
+    # shellcheck disable=SC2086
+    set -- $group
+    snapshot=$(table_snapshot "$1" "$2") || return 1
+    if printf '%s\n' "$snapshot" | grep -Eq "^-N ($3|${3}_A|${3}_B)$"; then echo "同名网络链已存在：$3" >&2; return 1; fi
+  done
+  touch "$DIR/network.owned"
+}
+
+# Compile the exact required rules in unhooked owned chains before starting core.
+network_check() {
+  network_tools && network_stop && claim_network || return 1
+  next=A
+  selected=lo
+  local_addresses=$(local_ipv4) || return 1
+  result=0
+  build_slot || result=$?
+  network_stop || { echo '能力检查后的清理失败' >&2; return 1; }
+  [ "$result" = 0 ] || { echo '设备缺少 TProxy/DNS 或监听保护所需的防火墙能力' >&2; return "$result"; }
 }
 
 network_start() {
@@ -216,24 +266,15 @@ network_start() {
     if [ -n "$old" ]; then switch_slot "$old" || return 1; else network_stop || return 1; fi
     rm -f "$DIR/network.pending"
   fi
-  if [ ! -f "$DIR/network.owned" ]; then
-    [ -z "$(ip -4 route show table "$TABLE" 2>/dev/null)" ] || return 1
-    ! ip -4 rule show | grep -q "^$PRIORITY:" || return 1
-    for group in 'ipt mangle UFI_MH' 'ipt nat UFI_MH_DNS' 'ip6t filter UFI_MH6' 'ipt filter UFI_MH_IN' 'ip6t filter UFI_MH_IN6'; do
-      # shellcheck disable=SC2086
-      set -- $group
-      for chain in "$3" "${3}_A" "${3}_B"; do
-        ! "$1" -t "$2" -S "$chain" >/dev/null 2>&1 || return 1
-      done
-    done
-    touch "$DIR/network.owned" || return 1
-  fi
+  claim_network || return 1
   if ! network_routes_ok; then
     # Only add missing owned routes; never replace foreign entries.
-    if [ -z "$(ip -4 route show table "$TABLE" 2>/dev/null)" ]; then
+    routes=$(owned_routes) || return 1
+    if [ -z "$routes" ]; then
       ip -4 route add local 0.0.0.0/0 dev lo table "$TABLE" || return 1
     fi
-    if ! ip -4 rule show | grep -q "^$PRIORITY:"; then
+    rules=$(ip -N -4 rule show) || return 1
+    if ! printf '%s\n' "$rules" | grep -q "^$PRIORITY:"; then
       ip -4 rule add priority "$PRIORITY" fwmark "$MARK/$MARK" table "$TABLE" || return 1
     fi
     network_routes_ok || return 1
@@ -255,18 +296,20 @@ network_start() {
 }
 
 network_tools() {
-  for tool in ip iptables ip6tables; do
+  for tool in ip "$IPT" "$IP6T"; do
     command -v "$tool" >/dev/null 2>&1 || { echo "缺少系统命令：$tool" >&2; return 1; }
   done
-  if ! ipt -t mangle -S >/dev/null 2>&1 || ! ipt -t nat -S >/dev/null 2>&1 ||
-    ! ipt -t filter -S >/dev/null 2>&1 || ! ip6t -t filter -S >/dev/null 2>&1; then
-    echo '无法读取系统防火墙，请检查 root 和内核支持' >&2; return 1
-  fi
+  for group in 'ipt mangle' 'ipt nat' 'ipt filter' 'ip6t filter'; do
+    # shellcheck disable=SC2086
+    set -- $group
+    table_snapshot "$1" "$2" >/dev/null || return 1
+  done
 }
 
 PROTECTED_PORTS=$(cat "$DIR/current/ports" 2>/dev/null)
 case "$PROTECTED_PORTS" in ''|*[!0-9,]*) PROTECTED_PORTS=7894,1053;; esac
 case "$ACTION" in
+  check) network_check;;
   prepare) network_start;;
   sync) network_sync;;
   stop) network_stop;;

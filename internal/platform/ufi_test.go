@@ -6,7 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -26,8 +28,17 @@ func TestUFIStartupReturnsReadinessLogsAndCleanupFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	stops := 0
+	if err := fsutil.WriteJSON(filepath.Join(root, "runtime", "firewall.json"), firewall{IPv4: "/system/bin/iptables", IPv6: "/system/bin/ip6tables", Backend: "legacy"}); err != nil {
+		t.Fatal(err)
+	}
 	a := NewUFI(Environment{Root: root, Executable: executable, Run: func(_ context.Context, _ []*os.File, _ string, args ...string) ([]byte, error) {
-		if args[len(args)-1] == "stop" {
+		if args[len(args)-1] == "--version" {
+			return []byte("iptables v1.8.7 (legacy)"), nil
+		}
+		if args[2] == "check" {
+			return nil, nil
+		}
+		if args[2] == "stop" {
 			stops++
 			if stops > 1 {
 				return []byte("cleanup route failed"), errors.New("exit status 1")
@@ -51,6 +62,57 @@ func TestUFIStartupReturnsReadinessLogsAndCleanupFailure(t *testing.T) {
 		if strings.Contains(err.Error(), hidden) {
 			t.Errorf("leaked secret or stale evidence: %v", err)
 		}
+	}
+}
+
+func TestUFIStartCancellationReapsItsChildWithoutAProcessRecord(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "mihomoctl")
+	executable := filepath.Join(root, "mihomoctl")
+	pidFile := filepath.Join(root, "child.pid")
+	if err := fsutil.AtomicWrite(executable, []byte("#!/bin/sh\necho $$ > '"+pidFile+"'\nexec sleep 3\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := fsutil.WriteJSON(filepath.Join(root, "runtime", "firewall.json"), firewall{IPv4: "/fixture/iptables", IPv6: "/fixture/ip6tables", Backend: "legacy"}); err != nil {
+		t.Fatal(err)
+	}
+	a := NewUFI(Environment{Root: root, Executable: executable, Run: func(_ context.Context, _ []*os.File, _ string, args ...string) ([]byte, error) {
+		if args[len(args)-1] == "--version" {
+			return []byte("iptables v1.8.7 (legacy)"), nil
+		}
+		return nil, nil
+	}})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- a.Start(ctx, StartOptions{}) }()
+	deadline := time.Now().Add(2 * time.Second)
+	for !fsutil.RegularFile(pidFile) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("startup cancellation did not finish")
+	}
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := os.FindProcess(pid)
+	if err != nil {
+		return
+	}
+	defer child.Release()
+	if err := child.Signal(syscall.Signal(0)); err == nil {
+		t.Fatal("startup failure left its unregistered supervisor alive")
 	}
 }
 

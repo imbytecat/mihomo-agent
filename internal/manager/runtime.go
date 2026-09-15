@@ -86,13 +86,8 @@ func (a *Manager) Logs() (string, error) {
 	return result.String(), nil
 }
 func (a *Manager) Diagnose() (string, error) {
-	var result strings.Builder
-	for _, args := range [][]string{{"-o", "-4", "addr", "show"}, {"-4", "rule", "show"}, {"-4", "route", "show", "table", "all"}, {"-6", "route", "show", "table", "all"}} {
-		output, err := a.run(context.Background(), "ip", args...)
-		fmt.Fprintf(&result, "ip %s\n%s\n", strings.Join(args, " "), redact.String(string(output)))
-		if err != nil {
-			fmt.Fprintf(&result, "失败：%v\n", err)
-		}
-	}
-	return result.String(), nil
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	text, err := a.Platform.Diagnostics(ctx)
+	return redact.String(text), err
 }

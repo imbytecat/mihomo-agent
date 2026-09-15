@@ -3,8 +3,23 @@ fake_iptables() {
   family=$1; shift
   table=filter
   if [ "$1" = -t ]; then table=$2; shift 2; fi
-  operation=$1; chain=$2; shift 2
+  operation=$1; shift
+  chain=${1:-}; [ "$#" = 0 ] || shift
+  if [ "$operation" = -S ] && [ -f "$DIR/fail-query" ]; then echo 'permission denied reading table' >&2; return 1; fi
+  if [ "$operation" = -D ] && [ -f "$DIR/fail-delete" ]; then echo 'delete failed' >&2; return 1; fi
+  if [ "$operation" = -S ] && [ -z "$chain" ]; then
+    for item in "$DIR/fw-$family-$table-"*; do
+      [ -f "$item" ] || continue
+      entry=${item##*/fw-$family-$table-}
+      printf '%s\n' "-N $entry"
+      sed "s/^/-A $entry /" "$item"
+    done
+    return 0
+  fi
   case " $* " in *' -m addrtype '*) echo "Couldn't find match addrtype" >&2; return 1;; esac
+  if [ -f "$DIR/no-tproxy" ]; then
+    case " $* " in *' -j TPROXY '*) echo 'TPROXY target unavailable' >&2; return 1;; esac
+  fi
   file="$DIR/fw-$family-$table-$chain"
   printf '%s %s %s %s %s\n' "$family" "$table" "$operation" "$chain" "$*" >> "$DIR/network.calls"
   if [ -f "$DIR/fail-switch" ] && [ "$operation $chain $*" = '-R UFI_MH_DNS 1 -j UFI_MH_DNS_B' ]; then
@@ -31,8 +46,8 @@ ip() {
     '-o -4 addr show')
       if [ -f "$DIR/local-addresses" ]; then cat "$DIR/local-addresses"; else echo '1: lo inet 127.0.0.1/8 scope host lo'; fi;;
     '-4 route show table 2026') cat "$DIR/routes";;
-    '-4 route show table all') sed 's/$/ table 2026/' "$DIR/routes";;
-    '-4 rule show') cat "$DIR/rules";;
+    '-4 route show table all'|'-N -4 route show table all') sed 's/$/ table 2026/' "$DIR/routes";;
+    '-4 rule show'|'-N -4 rule show') cat "$DIR/rules";;
     '-4 route add local 0.0.0.0/0 dev lo table 2026') echo 'local default dev lo scope host' > "$DIR/routes";;
     '-4 rule add priority 9000 fwmark 0x40000000/0x40000000 table 2026') echo '9000: from all fwmark 0x40000000/0x40000000 lookup 2026' > "$DIR/rules";;
     '-4 rule del priority 9000 fwmark 0x40000000/0x40000000 table 2026') [ -s "$DIR/rules" ] || return 1; : > "$DIR/rules";;
